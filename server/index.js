@@ -14,6 +14,8 @@ const allowedOrigins = [
   'http://localhost:5173',       // 本地开发前端
   'http://localhost:3001',       // 本地开发前端备用端口
   'http://127.0.0.1:5173',
+  'https://sh01.eu.org',         // 自定义域名
+  'http://sh01.eu.org',
   process.env.FRONTEND_URL,      // 生产环境前端URL（通过环境变量配置）
 ]
 
@@ -27,7 +29,8 @@ app.use(cors({
     if (allowedOrigins.includes(origin) || 
         origin.includes('github.io') ||
         origin.includes('vercel.app') ||
-        origin.includes('koyeb.app')) {
+        origin.includes('koyeb.app') ||
+        origin.includes('eu.org')) {
       callback(null, true)
     } else {
       callback(new Error('不允许的跨域请求'))
