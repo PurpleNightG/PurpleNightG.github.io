@@ -7,7 +7,7 @@ import authRoutes from './routes/auth.js'
 dotenv.config()
 
 const app = express()
-const PORT = process.env.PORT || 3000
+const PORT = process.env.PORT || 8000
 
 // CORS配置 - 允许的来源
 const allowedOrigins = [
