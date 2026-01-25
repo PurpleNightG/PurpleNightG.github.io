@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, memo } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -9,6 +9,28 @@ interface DocItem {
   name: string
   path: string
 }
+
+// 使用 memo 包装 Markdown 内容，避免滚动时重新渲染导致 iframe 重新加载
+const MarkdownContent = memo(({ content }: { content: string }) => (
+  <article className="px-12 py-10 animate-fade-in animate-delay-200">
+    <div className="markdown-content">
+      <ReactMarkdown 
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeRaw]}
+        components={{
+          iframe: ({ node, ...props }) => {
+            const { allowfullscreen, ...rest } = props as any
+            return <iframe {...rest} allowFullScreen />
+          }
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  </article>
+))
+
+MarkdownContent.displayName = 'MarkdownContent'
 
 export default function DocsLayout() {
   const { docName } = useParams<{ docName?: string }>()
@@ -78,7 +100,7 @@ export default function DocsLayout() {
   // 延迟提取标题，等待ReactMarkdown渲染完成
   useEffect(() => {
     const timer = setTimeout(() => {
-      const headingElements = document.querySelectorAll('.markdown-content h1, .markdown-content h2, .markdown-content h3')
+      const headingElements = document.querySelectorAll('.markdown-content h1, .markdown-content h2, .markdown-content h3, .markdown-content h4')
       const headingsData = Array.from(headingElements).map((heading, index) => {
         const id = `heading-${index}`
         heading.id = id
@@ -223,13 +245,13 @@ export default function DocsLayout() {
 
       <div className="flex">
       {/* Left Sidebar - Sticky */}
-      <aside className="w-64 flex-shrink-0 bg-gray-900 border-r border-gray-800">
+      <aside className="w-64 flex-shrink-0 bg-gray-900 border-r border-gray-800 animate-slide-in-left">
         <div className="sticky top-16 h-[calc(100vh-4rem)] flex flex-col">
           {/* Header */}
           <div className="p-5 border-b border-gray-800">
             <div className="flex items-center space-x-3 mb-2">
-              <FolderOpen className="text-purple-500" size={22} />
-              <h2 className="text-lg font-bold text-white">紫夜文档</h2>
+              <FolderOpen className="text-purple-500 animate-scale-in animate-delay-200" size={22} />
+              <h2 className="text-lg font-bold text-white animate-fade-in animate-delay-200">紫夜文档</h2>
             </div>
             <p className="text-gray-500 text-xs">
               选择文档了解相关内容
@@ -237,7 +259,7 @@ export default function DocsLayout() {
           </div>
 
           {/* Search */}
-          <div className="p-4 border-b border-gray-800">
+          <div className="p-4 border-b border-gray-800 animate-fade-in animate-delay-300">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" size={16} />
               <input
@@ -251,7 +273,7 @@ export default function DocsLayout() {
           </div>
 
           {/* Document List */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto animate-fade-in animate-delay-400">
             {filteredDocs.length > 0 ? (
               filteredDocs.map((doc) => {
                 const docPath = doc.path.replace('.md', '')
@@ -260,7 +282,7 @@ export default function DocsLayout() {
                   <Link
                     key={doc.path}
                     to={`/docs/${encodeURIComponent(docPath)}`}
-                    className={`flex items-center space-x-3 px-5 py-3 transition-colors border-l-2 ${
+                    className={`flex items-center space-x-3 px-5 py-3 transition-all duration-300 border-l-2 ${
                       isActive
                         ? 'bg-gray-800 border-purple-600 text-white'
                         : 'border-transparent text-gray-400 hover:bg-gray-800/50 hover:text-gray-300'
@@ -291,33 +313,18 @@ export default function DocsLayout() {
               </div>
             </div>
           ) : (
-            <article className="px-12 py-10">
-              <div className="markdown-content">
-                <ReactMarkdown 
-                  remarkPlugins={[remarkGfm]}
-                  rehypePlugins={[rehypeRaw]}
-                  components={{
-                    iframe: ({ node, ...props }) => {
-                      const { allowfullscreen, ...rest } = props as any
-                      return <iframe {...rest} allowFullScreen />
-                    }
-                  }}
-                >
-                  {content}
-                </ReactMarkdown>
-              </div>
-            </article>
+            <MarkdownContent content={content} />
           )}
         </div>
 
         {/* Table of Contents */}
         {!loading && headings.length > 0 && (
-          <aside className="w-64 flex-shrink-0 border-l border-gray-800">
-            <div className="sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto p-6">
-              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">
+          <aside className="w-64 flex-shrink-0 border-l border-gray-800 animate-slide-in-right">
+            <div className="sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto p-6 toc-scrollbar-hidden">
+              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4 animate-fade-in animate-delay-300">
                 本页目录
               </h3>
-              <nav className="space-y-1 border-l-2 border-gray-700 pl-4 relative">
+              <nav className="space-y-1 border-l-2 border-gray-700 pl-4 relative animate-fade-in animate-delay-400">
                 {headings.map((heading) => (
                   <a
                     key={heading.id}

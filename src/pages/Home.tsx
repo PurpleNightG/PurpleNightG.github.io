@@ -9,25 +9,25 @@ export default function Home() {
         <img
           src="https://s21.ax1x.com/2024/12/08/pA72i5R.png"
           alt="紫夜公会"
-          className="h-32 w-32 mx-auto mb-6 rounded-2xl shadow-2xl shadow-purple-500/50"
+          className="h-32 w-32 mx-auto mb-6 rounded-2xl shadow-2xl shadow-purple-500/50 animate-float"
         />
-        <h1 className="text-5xl font-bold text-white mb-4">
+        <h1 className="text-5xl font-bold text-white mb-4 animate-fade-in">
           欢迎来到紫夜公会
         </h1>
-        <p className="text-xl text-gray-300 mb-8">
+        <p className="text-xl text-gray-300 mb-8 animate-slide-in-up animate-delay-100">
           专注于 Ready Or Not（严阵以待）游戏的教学与交流
         </p>
         <div className="flex justify-center gap-4">
           <Link
             to="/docs"
-            className="bg-purple-600 hover:bg-purple-700 text-white font-semibold px-8 py-3 rounded-lg transition-colors flex items-center space-x-2"
+            className="bg-purple-600 hover:bg-purple-700 text-white font-semibold px-8 py-3 rounded-lg transition-all duration-300 flex items-center space-x-2 animate-slide-in-left animate-delay-200 hover:scale-105 hover:shadow-xl hover:shadow-purple-500/50"
           >
             <BookOpen size={20} />
             <span>查看紫夜文档</span>
           </Link>
           <Link
             to="/docs/HTJ"
-            className="bg-gradient-to-r from-purple-500 to-purple-700 hover:from-purple-600 hover:to-purple-800 text-white font-semibold px-8 py-3 rounded-lg transition-all shadow-lg shadow-purple-500/50 hover:shadow-purple-600/60"
+            className="bg-gradient-to-r from-purple-500 to-purple-700 hover:from-purple-600 hover:to-purple-800 text-white font-semibold px-8 py-3 rounded-lg transition-all duration-300 shadow-lg shadow-purple-500/50 hover:shadow-purple-600/60 animate-slide-in-right animate-delay-200 hover:scale-105"
           >
             加入公会
           </Link>
@@ -36,7 +36,7 @@ export default function Home() {
 
       {/* Features Section */}
       <section className="grid md:grid-cols-3 gap-8">
-        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 hover:border-purple-600 transition-colors">
+        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 hover:border-purple-600 transition-all duration-300 animate-slide-in-up animate-delay-300 hover-lift">
           <div className="bg-purple-600 w-12 h-12 rounded-lg flex items-center justify-center mb-4">
             <Target size={24} className="text-white" />
           </div>
@@ -46,7 +46,7 @@ export default function Home() {
           </p>
         </div>
 
-        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 hover:border-purple-600 transition-colors">
+        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 hover:border-purple-600 transition-all duration-300 animate-slide-in-up animate-delay-400 hover-lift">
           <div className="bg-purple-600 w-12 h-12 rounded-lg flex items-center justify-center mb-4">
             <Users size={24} className="text-white" />
           </div>
@@ -56,7 +56,7 @@ export default function Home() {
           </p>
         </div>
 
-        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 hover:border-purple-600 transition-colors">
+        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 hover:border-purple-600 transition-all duration-300 animate-slide-in-up animate-delay-500 hover-lift">
           <div className="bg-purple-600 w-12 h-12 rounded-lg flex items-center justify-center mb-4">
             <Trophy size={24} className="text-white" />
           </div>
@@ -68,7 +68,7 @@ export default function Home() {
       </section>
 
       {/* About Section */}
-      <section className="bg-gray-800/30 backdrop-blur-sm rounded-xl p-8 border border-gray-700">
+      <section className="bg-gray-800/30 backdrop-blur-sm rounded-xl p-8 border border-gray-700 animate-fade-in animate-delay-300 hover-glow">
         <h2 className="text-3xl font-bold text-white mb-4">关于紫夜</h2>
         <div className="text-gray-300 space-y-4">
           <p>
@@ -91,7 +91,7 @@ export default function Home() {
         <div className="grid md:grid-cols-2 gap-6">
           <Link
             to="/docs"
-            className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 hover:border-purple-600 transition-colors group"
+            className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 hover:border-purple-600 transition-all duration-300 group hover-lift animate-slide-in-left animate-delay-200"
           >
             <h3 className="text-xl font-bold text-white mb-2 group-hover:text-purple-400">
               浏览紫夜文档 →
@@ -102,7 +102,7 @@ export default function Home() {
           </Link>
           <Link
             to="/login"
-            className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 hover:border-purple-600 transition-colors group"
+            className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 hover:border-purple-600 transition-all duration-300 group hover-lift animate-slide-in-right animate-delay-200"
           >
             <div className="flex items-center space-x-3 mb-2">
               <LogIn size={24} className="text-purple-400" />

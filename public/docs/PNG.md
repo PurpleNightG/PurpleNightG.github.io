@@ -63,7 +63,7 @@
 
 如果要加入我们，请先做好以下章节的准备工作 **（QQ群号已放在下面这个章节）**：
 
-<a href="/docs/HTJ" class="doc-card">
+<a href="#/docs/HTJ" class="doc-card">
   <div class="doc-card-title">紫夜新训须知</div>
   <div class="doc-card-desc">查看新人入队前的准备工作和必装模组安装教程</div>
 </a>

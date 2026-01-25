@@ -39,10 +39,10 @@ export default function Docs() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-8 border border-gray-700">
+      <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-8 border border-gray-700 animate-fade-in">
         <div className="flex items-center space-x-3 mb-4">
-          <FolderOpen className="text-purple-500" size={32} />
-          <h1 className="text-4xl font-bold text-white">紫夜文档</h1>
+          <FolderOpen className="text-purple-500 animate-scale-in animate-delay-100" size={32} />
+          <h1 className="text-4xl font-bold text-white animate-slide-in-right animate-delay-100">紫夜文档</h1>
         </div>
         <p className="text-gray-300">
           这里收录了紫夜公会的所有相关文档，包括公会介绍、战术教学、入队须知和相关规定
@@ -50,7 +50,7 @@ export default function Docs() {
       </div>
 
       {/* Search */}
-      <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-4 border border-gray-700">
+      <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-4 border border-gray-700 animate-slide-in-up animate-delay-200">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
           <input
@@ -66,11 +66,11 @@ export default function Docs() {
       {/* Document List */}
       <div className="space-y-3">
         {filteredDocs.length > 0 ? (
-          filteredDocs.map((doc) => (
+          filteredDocs.map((doc, index) => (
             <Link
               key={doc.path}
               to={`/docs/${encodeURIComponent(doc.path.replace('.md', ''))}`}
-              className="block bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 hover:border-purple-600 transition-colors group"
+              className={`block bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 hover:border-purple-600 transition-all duration-300 group hover-lift animate-slide-in-up animate-delay-${Math.min(500, 300 + index * 100)}`}
             >
               <div className="flex items-center space-x-4">
                 <div className="bg-purple-600 w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0">
@@ -91,7 +91,7 @@ export default function Docs() {
             </Link>
           ))
         ) : (
-          <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-12 border border-gray-700 text-center">
+          <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-12 border border-gray-700 text-center animate-fade-in animate-delay-300">
             <FileText size={48} className="text-gray-600 mx-auto mb-4" />
             <h3 className="text-xl font-semibold text-gray-400 mb-2">
               {searchTerm ? '未找到匹配的文档' : '暂无文档'}
@@ -106,7 +106,7 @@ export default function Docs() {
       </div>
 
       {/* Help Text */}
-      <div className="bg-blue-900/20 backdrop-blur-sm rounded-xl p-6 border border-blue-800">
+      <div className="bg-blue-900/20 backdrop-blur-sm rounded-xl p-6 border border-blue-800 animate-slide-in-up animate-delay-400 hover-glow">
         <h3 className="text-lg font-semibold text-blue-300 mb-2">💡 如何添加文档？</h3>
         <p className="text-blue-200 text-sm">
           将 Markdown 格式的文档放置在 <code className="bg-blue-950 px-2 py-1 rounded">public/docs/</code> 目录下，

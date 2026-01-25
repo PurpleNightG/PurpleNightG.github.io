@@ -1,11 +1,15 @@
 [
-{
+  {
     "name": "紫夜CQB战术公会",
     "path": "PNG.md"
   },
   {
     "name": "紫夜新训须知",
     "path": "HTJ.md"
+  },
+  {
+    "name": "模组详细说明",
+    "path": "mod-explan.md"
   },
   {
     "name": "紫夜战术公会公告细则",

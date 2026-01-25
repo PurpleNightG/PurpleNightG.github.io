@@ -2,7 +2,7 @@
 
 如果你还不完全了解我们，那么可以到以下章节中了解我们：
 
-<a href="/docs/PNG" class="doc-card">
+<a href="#/docs/PNG" class="doc-card">
   <div class="doc-card-title">紫夜CQB战术公会</div>
   <div class="doc-card-desc">了解紫夜战术公会的历史、文化和核心价值观</div>
 </a>
@@ -44,11 +44,22 @@
 
 <img src="https://s21.ax1x.com/2024/07/05/pkRKLzd.png" alt="文件夹">
 
-3. 接下来将你刚刚下载好的名为 **"出警必装.zip"** 的压缩文件解压 *（需要压缩软件）* ，会得到11个pak文件
+3. 接下来将你刚刚下载好的名为 **"出警必装.zip"** 的压缩文件解压 *（需要压缩软件）* ，会得到20个文件
    
-<img src="https://s21.ax1x.com/2025/01/13/pEPH9hT.png" alt="pak文件">
+<img src="https://s41.ax1x.com/2026/01/25/pZ2smvT.png" alt="pak文件">
 
-4. 将这11个pak文件全部丢进刚刚你打开的Paks文件夹内 **（一定！一定！是17个pak文件啊！就算没有.pak的后缀也应该是17个没有图标的白块文件，不是一个zip压缩包！）**
+4. 由于 **pakchunk999-Mods_FX_AmmoLSS_1_P** 模组与 **pakchunk99-Mods_Gunfighter_6_Ballistic_P** 模组冲突，会使 **pakchunk99-Mods_Gunfighter_6_Ballistic_P** 模组失效，因此你可以自行决定是否添加此模组。然后将18个pak文件拖进Paks文件夹中 **（一定！一定！是18个pak文件啊！就算没有.pak的后缀也应该是18个没有图标的白块文件，不是一个zip压缩包！）**
+
+<div class="note info">
+<b>💡 不了解这些模组的作用？</b><br>
+你可以查看文件夹内的 <b>模组详细说明.pdf</b>，也可以点击下方卡片查看在线文档：
+</div>
+
+<a href="#/docs/mod-explan" class="doc-card">
+  <div class="doc-card-title">模组详细说明</div>
+  <div class="doc-card-desc">查看所有模组的功能介绍、配置方法和使用说明</div>
+</a>
+
 5. 好了，恭喜你，模组已经安装完毕，但是我们还需要进行一些设置。
 
 ---
@@ -139,7 +150,7 @@
 
 ### 战术装备
 
-我们建议携带 **短管霰弹枪（破门霰弹）** 和 **"陆用全景夜视镜"**。夜视镜必带，短管霰弹枪我们不做特殊要求 **（但是不允许带盾牌！！！）**
+我们建议携带 **闪光发射器** 和 **"陆用全景夜视镜"**。夜视镜必带，短管霰弹枪我们不做特殊要求 **（但是不允许带盾牌！！！）**
 
 ---
 
@@ -147,6 +158,10 @@
 
 如果你暂时没有时间上线玩游戏，那么我们就无法对你进行入门课程的培训。但你仍然可以通过视频来做一个简略的学习，使得后续的教学更加简单。  
 **视频来源：鲶大禹NDYian**
+
+### 新手必看‼️严阵以待模组安装完整流程｜附键位教程及常见问题🔥
+
+<iframe src="//player.bilibili.com/player.html?isOutside=true&aid=114131189567160&bvid=BV1B7RbY4EDR&cid=28775154694&p=1" scrolling="no" border="0" frameborder="no" framespacing="0" allowfullscreen="true"></iframe>
 
 ### 1.1-1.3 严阵以待CQB理论知识&进门SOP
 
@@ -160,6 +175,10 @@
 
 <iframe src="//player.bilibili.com/player.html?isOutside=true&aid=113022232232892&bvid=BV1SiWkeQEAx&cid=500001661816150&p=1" scrolling="no" border="0" frameborder="no" framespacing="0" allowfullscreen="true"></iframe>
 
+### 1.5 基础灯语
+
+<iframe src="//player.bilibili.com/player.html?isOutside=true&aid=114165834318069&bvid=BV1E3QSYgEMp&cid=28877980531&p=1" scrolling="no" border="0" frameborder="no" framespacing="0" allowfullscreen="true"></iframe>
+
 <div class="note info">
 <span style="color: #60a5fa; font-weight: bold;">郑重声明：</span>我们所讲述的所有教程以及理论已根据本游戏做了调整及更改，请勿以现实生活中的突击方式去评价与衡量此套教程。
 </div>
@@ -170,18 +189,53 @@
 
 ### 我该使用什么加速器？
 
-你可以去Steam++（现改名Watt Toolkit）官网下载安装包，加速Steam，确保Steam稳定在线。
+你可以去各知名加速器官网下载安装包，加速Steam，确保Steam稳定在线。
 
 **推荐加速器：**
-- [Watt Toolkit](https://steampp.net/) - 免费Steam加速器
 
-或者你可以尝试使用你自己的加速器加速Steam（节点最好选择登录失败/异常专用），如果没有那就加速Steam普通节点。除了雷神加速器可以直接加速游戏之外，其他加速器我们都建议只加速Steam。
+<a href="https://www.leigod.com/" target="_blank" rel="noopener noreferrer" class="doc-card">
+  <div class="doc-card-title">雷神加速器</div>
+  <div class="doc-card-desc">专业游戏加速器，支持直接加速游戏</div>
+</a>
+
+<a href="https://www.xunyou.com/" target="_blank" rel="noopener noreferrer" class="doc-card">
+  <div class="doc-card-title">迅游加速器</div>
+  <div class="doc-card-desc">老牌游戏加速器，稳定可靠</div>
+</a>
+
+<a href="https://uu.163.com/" target="_blank" rel="noopener noreferrer" class="doc-card">
+  <div class="doc-card-title">网易UU加速器</div>
+  <div class="doc-card-desc">网易出品，性能优秀</div>
+</a>
+
+或者你可以尝试使用你自己的加速器加速Steam，若无法进入房间，可尝试将节点更换为**登录失败/异常专用**。除了雷神加速器可以直接加速游戏之外，其他加速器我们都建议只加速Steam。
 
 ### 我安装了模组但不生效
 
 请确认你将模组安装在了Paks文件夹内，且是后缀为.pak的白块文件，而并非压缩包。  
 若是模组冲突导致不生效的问题，那就请你一个一个删除试着吧。  
 若是模组过旧，也会产生这种问题，尝试去官网寻找它的最新版本！
+
+### 我无法创建房间！
+
+这个问题是由于 **pakchunk99-Mod_PlayerLimitEditor.pak** 模组造成的，在之前的版本中出现过此类问题，现在作者已经修复了此类Bug。你可以去NexusMods下载最新版本的模组。
+
+此外，如果你还是无法创建房间，那么可能是由于运营商拦截，请尝试以下方法：
+> 开始之前，请确保加速器正在加速Steam，保证Steam稳定在线。
+
+1. 退出Steam，使Steam处于关闭状态。
+2. 找到游戏根目录（方法同上），进入 `ReadyOrNot\Binaries\Win64` 文件夹内。
+3. 找到游戏主进程 **ReadyOrNotSteam-Win64-Shipping.exe** ，打开它。
+<img src="https://s41.ax1x.com/2026/01/25/pZ2sSv8.png" alt="游戏根目录">
+
+4. 待游戏进入主界面后，会提示 **无法连接至EPIC服务。请稍后重试**。点击 **好** 即可。
+<img src="https://s41.ax1x.com/2026/01/25/pZ2s9KS.png" alt="无法连接至EPIC服务">
+
+5. 打开Steam，等待Steam进入主页。
+6. 在游戏中的多人游戏选项，选择 **重新连接EPIC SERVERS**。
+<img src="https://s41.ax1x.com/2026/01/25/pZ2sPbQ.png" alt="重新连接EPIC SERVERS">
+
+现在你应该可以创建房间了。
 
 ---
 
@@ -190,17 +244,15 @@
 ### 群公告
 
 #### 公告人：鲶大禹（新训总负责人）
-欢迎来到紫夜严阵以待战术公会！我们对你的加入感到由衷的欢迎～
-在此，我们需要对于以下几点提前做出说明，还请各位认真阅读。
 
-1. 本群是紫夜的分群，用来接待想要新训的新人，待新训的课程结束并考核通过后方可正式成为紫夜队员。
-2. 在正式开始新训之前，请务必确保你能接受有一定压力且略微严肃的氛围，喜欢且想要学习战术风格类的打法，而并非娱乐，我们偶尔会打几把娱乐用于放松，但并非以娱乐为主。
-3. 在进行教学和实战的过程中，禁止做出不尊重他人的行为，如：嘲讽、辱骂等，不允许伤害队友和拿枪指队友。有任何关于战术上的疑问，欢迎各位提出问题，但请不要质疑侮辱我们的战术，并且希望你尊重每个人。
-4. 成为紫夜正式队员后，可参加尖兵训练，通过教官认可后方可进入紫夜尖兵组。
-5. 若你已经做好打战术的准备，请在群文件里下载"出警必备整合包"并安装。
-6. 请下载YY，并加入公会语音频道：1461324566，我们基本上每天都在。
-7. 请各位新兵把自己的QQ群昵称、YY昵称和steam昵称统一，并且不超过3个读音/汉字，以方便其他人认出和称呼你。
-8. 新训和出警时间通常为每天20:00，想要额外约新训的小伙伴在群内 @教官 即可。
+欢迎来到紫夜严阵以待战术公会！欢迎你的加入～
+我们需要对于以下几点提前做出说明，请各位认真阅读
+1. 本群为紫夜分群，用来接待想要参加紫夜新训的新人，待新训的课程结束并考核通过后方可正式成为紫夜队员
+2. 本群仅用于接待公会新人和严阵以待战术交流，禁止发送和讨论不相关内容，情节严重的可能会禁言和移出群聊，有以上需求者请移步至紫夜公开交流群或黄昼公开交流群
+3. 在正式加入公会成为新训队员之前，请确保你今后有足够的在线时间，能接受相对严肃有一定压力的氛围，喜欢且想要学习战术风格类的打法，我们偶尔会组织娱乐活动用于放松，但依然以战术为主
+4. 在进行游玩的过程中，有任何关于战术上的疑问，欢迎各位友善提问与讨论，但请不要质疑侮辱我们的玩法与战术，和做出包括但不限于：嘲讽、辱骂、枪指他人、伤害他人的行为，教学时禁止使用影响游戏难度的未授权mod，和做出任何妨碍训练的行为，希望大家能尊重每个人
+5. 出警时间通常为每晚8～11点，届时想要新训的队员请直接去语音频道开麦询问，时间外想要约新训的小伙伴在群内 @教官 即可
+6. 如果你已经准备好成为我们的新成员，请仔细阅读其他公告，非常期待你的加入，希望你在紫夜的大家庭中玩的愉快！
 
 最后，感谢你的加入，祝你在紫夜的大家庭中玩的愉快！
 
@@ -226,25 +278,6 @@
 ## 课程总览
 
 <table>
-    <thead>
-        <tr>
-            <th colspan="2">准 备 工 作</th>
-        </tr>
-    </thead>
-    <tbody>
-        <tr>
-            <td colspan="2" align="center">
-                询问准备工作是否完成<br />
-                询问公会所属<br />
-                询问游戏时间<br />
-                键位要求<br />
-                CQB定义和三大要素<br />
-                死亡漏斗概念<br />
-                门和强弱手位分工<br />
-                单开门双纵队进门SOP
-            </td>
-        </tr>
-    </tbody>
     <thead>
         <tr>
             <th colspan="2">一、入门课程</th>

@@ -60,18 +60,18 @@ export default function Login() {
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 flex items-center justify-center p-6">
       <div className="max-w-md w-full">
         {/* Logo */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-8 animate-fade-in">
           <img 
             src="https://s21.ax1x.com/2024/12/08/pA72i5R.png" 
             alt="紫夜队标" 
-            className="w-20 h-20 mx-auto rounded-xl mb-4"
+            className="w-20 h-20 mx-auto rounded-xl mb-4 animate-scale-in animate-delay-100"
           />
-          <h1 className="text-3xl font-bold text-white mb-2">紫夜战术公会</h1>
-          <p className="text-gray-400">管理系统登录</p>
+          <h1 className="text-3xl font-bold text-white mb-2 animate-slide-in-down animate-delay-200">紫夜战术公会</h1>
+          <p className="text-gray-400 animate-slide-in-down animate-delay-300">管理系统登录</p>
         </div>
 
         {/* Login Form */}
-        <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-8 border border-gray-700 shadow-2xl">
+        <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-8 border border-gray-700 shadow-2xl animate-slide-in-up animate-delay-200 hover-glow">
           <form onSubmit={handleLogin} className="space-y-6">
             {/* User Type Selection */}
             <div className="grid grid-cols-2 gap-4 mb-6">

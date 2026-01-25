@@ -31,12 +31,12 @@ export default function Layout({ children }: LayoutProps) {
   if (isMobile) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-gray-800/50 backdrop-blur-sm rounded-2xl p-8 border-2 border-purple-600/50 shadow-2xl shadow-purple-500/20">
+        <div className="max-w-md w-full bg-gray-800/50 backdrop-blur-sm rounded-2xl p-8 border-2 border-purple-600/50 shadow-2xl shadow-purple-500/20 animate-scale-in">
           <div className="flex flex-col items-center text-center space-y-6">
-            <div className="w-20 h-20 bg-gradient-to-br from-purple-600 to-purple-800 rounded-full flex items-center justify-center">
+            <div className="w-20 h-20 bg-gradient-to-br from-purple-600 to-purple-800 rounded-full flex items-center justify-center animate-pulse-slow">
               <Smartphone size={40} className="text-white" />
             </div>
-            <h1 className="text-2xl font-bold text-white">
+            <h1 className="text-2xl font-bold text-white animate-slide-in-down animate-delay-200">
               请使用电脑端打开
             </h1>
             <div className="space-y-3 text-gray-300">
@@ -64,7 +64,7 @@ export default function Layout({ children }: LayoutProps) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-900 to-purple-900 flex flex-col">
       {/* Navigation */}
-      <nav className="bg-gray-900/50 backdrop-blur-sm border-b border-gray-800 sticky top-0 z-50">
+      <nav className="bg-gray-900/50 backdrop-blur-sm border-b border-gray-800 sticky top-0 z-50 animate-slide-in-down">
         <div className="px-6">
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
