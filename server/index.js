@@ -26,7 +26,8 @@ app.use(cors({
     // 检查origin是否在允许列表中，或者是GitHub Pages域名
     if (allowedOrigins.includes(origin) || 
         origin.includes('github.io') ||
-        origin.includes('vercel.app')) {
+        origin.includes('vercel.app') ||
+        origin.includes('koyeb.app')) {
       callback(null, true)
     } else {
       callback(new Error('不允许的跨域请求'))
