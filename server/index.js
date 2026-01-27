@@ -101,9 +101,22 @@ async function startServer() {
   })
 }
 
-// 仅在非Vercel环境下启动服务器
-if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+// 检测是否在Vercel环境
+const isVercel = process.env.VERCEL === '1' || process.env.VERCEL === 'true'
+
+// 仅在非Vercel环境（本地开发）下启动服务器
+if (!isVercel) {
   startServer()
+} else {
+  // Vercel环境下，初始化数据库连接
+  console.log('🔧 Vercel serverless环境检测')
+  testConnection().then(connected => {
+    if (connected) {
+      console.log('✅ Vercel数据库连接正常')
+    } else {
+      console.error('❌ Vercel数据库连接失败')
+    }
+  })
 }
 
 // 导出app供Vercel使用
