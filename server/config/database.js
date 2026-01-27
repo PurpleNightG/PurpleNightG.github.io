@@ -11,10 +11,13 @@ const pool = mysql.createPool({
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
   waitForConnections: true,
-  connectionLimit: 10,
+  connectionLimit: 5,  // 减少连接池大小，避免超过服务器限制
+  maxIdle: 3,  // 最大空闲连接数
+  idleTimeout: 60000,  // 空闲连接60秒后释放
   queueLimit: 0,
   enableKeepAlive: true,
-  keepAliveInitialDelay: 0
+  keepAliveInitialDelay: 0,
+  acquireTimeout: 10000  // 获取连接超时10秒
 })
 
 // 测试数据库连接

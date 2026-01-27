@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { BookOpen, Home, Users, Smartphone } from 'lucide-react'
+import { BookOpen, Home, LogIn, Smartphone } from 'lucide-react'
 import { useState, useEffect } from 'react'
 
 interface LayoutProps {
@@ -104,13 +104,17 @@ export default function Layout({ children }: LayoutProps) {
                 <BookOpen size={18} />
                 <span>紫夜文档</span>
               </Link>
-              <div
-                className="flex items-center space-x-2 px-4 py-2 rounded-lg text-gray-500 cursor-not-allowed"
-                title="功能开发中"
+              <Link
+                to="/login"
+                className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+                  isActive('/login')
+                    ? 'bg-purple-600 text-white'
+                    : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                }`}
               >
-                <Users size={18} />
-                <span>队员管理</span>
-              </div>
+                <LogIn size={18} />
+                <span>登录</span>
+              </Link>
             </div>
           </div>
         </div>

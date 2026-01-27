@@ -5,16 +5,18 @@ import DocsLayout from './pages/DocsLayout'
 import AdminDashboard from './pages/AdminDashboard'
 import StudentDashboard from './pages/StudentDashboard'
 import Login from './pages/Login'
+import ToastContainer from './components/ToastContainer'
 
 function App() {
   return (
-    <Router
-      future={{
-        v7_startTransition: true,
-        v7_relativeSplatPath: true,
-      }}
-    >
-      <Routes>
+    <>
+      <Router
+        future={{
+          v7_startTransition: true,
+          v7_relativeSplatPath: true,
+        }}
+      >
+        <Routes>
         {/* Login Route - No Layout */}
         <Route path="/login" element={<Login />} />
         
@@ -36,6 +38,8 @@ function App() {
         } />
       </Routes>
     </Router>
+    <ToastContainer />
+    </>
   )
 }
 

@@ -3,12 +3,15 @@ import {
   BookOpen, 
   FileCheck, 
   FileText,
-  Video,
-  User,
-  LogOut
+  Video
 } from 'lucide-react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, Routes, Route } from 'react-router-dom'
 import ProtectedRoute from '../components/ProtectedRoute'
+import StudentProgress from './StudentProgress'
+import PublicVideos from './PublicVideos'
+import StudentApplyAssessment from './StudentApplyAssessment'
+import StudentAssessmentReport from './StudentAssessmentReport'
+import StudentHome from './StudentHome'
 
 interface MenuItem {
   name: string
@@ -18,7 +21,6 @@ interface MenuItem {
 
 function StudentDashboardContent() {
   const location = useLocation()
-  const navigate = useNavigate()
 
   const menuItems: MenuItem[] = [
     { name: '首页', path: '/student', icon: <Home size={20} /> },
@@ -35,72 +37,75 @@ function StudentDashboardContent() {
   return (
     <div className="flex h-screen bg-gradient-to-br from-gray-900 via-gray-900 to-purple-900">
       {/* Left Sidebar */}
-      <aside className="w-64 bg-gray-900/50 backdrop-blur-sm border-r border-gray-800 flex flex-col">
+      <aside className="w-64 bg-gray-800/30 backdrop-blur-xl border-r border-gray-700/30 flex flex-col">
         {/* Logo */}
-        <div className="h-16 flex items-center px-6 border-b border-gray-800">
-          <img 
-            src="https://s21.ax1x.com/2024/12/08/pA72i5R.png" 
-            alt="紫夜队标" 
-            className="w-8 h-8 rounded-lg"
-          />
-          <span className="ml-3 text-white font-bold text-lg">学员中心</span>
+        <div className="relative h-16 flex items-center px-4 border-b border-gray-700/30 overflow-hidden">
+          {/* 背景渐变装饰 */}
+          <div className="absolute inset-0 bg-gradient-to-r from-purple-600/5 via-transparent to-transparent"></div>
+          <div className="absolute -left-10 -top-10 w-32 h-32 bg-purple-600/5 rounded-full blur-2xl"></div>
+          
+          <div className="relative flex items-center gap-3 w-full">
+            <div className="relative group">
+              <div className="absolute inset-0 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg blur opacity-30 group-hover:opacity-50 transition-opacity"></div>
+              <img 
+                src="https://s21.ax1x.com/2024/12/08/pA72i5R.png" 
+                alt="紫夜队标" 
+                className="relative w-9 h-9 rounded-lg shadow-lg"
+              />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-white font-bold text-lg tracking-tight">学员中心</span>
+              <span className="text-gray-500 text-xs">Student Center</span>
+            </div>
+          </div>
         </div>
 
         {/* Navigation Menu */}
-        <nav className="flex-1 overflow-y-auto py-4">
+        <nav className="flex-1 overflow-y-auto py-4 px-3">
           {menuItems.map((item) => (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={`flex items-center space-x-3 px-6 py-3 transition-colors ${
-                isActive(item.path)
-                  ? 'bg-purple-600/20 text-purple-400 border-l-2 border-purple-500'
-                  : 'text-gray-300 hover:bg-gray-800/50 hover:text-white'
-              }`}
-            >
-              {item.icon}
-              <span>{item.name}</span>
-            </Link>
+            <div key={item.path} className="mb-1">
+              <Link
+                to={item.path}
+                className="group block"
+              >
+                <div className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-all ${
+                  isActive(item.path)
+                    ? 'bg-purple-600/20 text-purple-300'
+                    : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/20'
+                }`}>
+                  <div className={`transition-colors ${
+                    isActive(item.path)
+                      ? 'text-purple-400'
+                      : 'text-gray-500 group-hover:text-gray-400'
+                  }`}>
+                    {item.icon}
+                  </div>
+                  <span className="text-sm font-medium">{item.name}</span>
+                </div>
+              </Link>
+            </div>
           ))}
         </nav>
 
-        {/* User Info */}
-        <div className="p-4 border-t border-gray-800 space-y-3">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-purple-600 to-purple-800 rounded-full flex items-center justify-center">
-              <User size={20} className="text-white" />
-            </div>
-            <div>
-              <p className="text-white text-sm font-semibold">学员</p>
-              <p className="text-gray-500 text-xs">紫夜学员中心</p>
-            </div>
+        {/* Footer */}
+        <div className="p-3 border-t border-gray-700/30">
+          <div className="text-center">
+            <p className="text-xs text-gray-500">
+              紫夜战术公会 · 学员系统
+            </p>
           </div>
-          <button
-            onClick={() => {
-              localStorage.removeItem('token')
-              localStorage.removeItem('user')
-              sessionStorage.removeItem('token')
-              sessionStorage.removeItem('user')
-              navigate('/login')
-            }}
-            className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white rounded-lg transition-colors"
-          >
-            <LogOut size={16} />
-            <span className="text-sm">退出登录</span>
-          </button>
         </div>
       </aside>
 
       {/* Main Content Area */}
       <main className="flex-1 overflow-y-auto">
-        <div className="p-8">
-          <h1 className="text-3xl font-bold text-white mb-6">欢迎来到紫夜学员中心</h1>
-          <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-8 border border-gray-700">
-            <p className="text-gray-400 text-center">
-              请从左侧菜单查看课程进度和相关信息
-            </p>
-          </div>
-        </div>
+        <Routes>
+          <Route index element={<StudentHome />} />
+          <Route path="progress" element={<StudentProgress />} />
+          <Route path="apply-assessment" element={<StudentApplyAssessment />} />
+          <Route path="assessment-report" element={<StudentAssessmentReport />} />
+          <Route path="videos" element={<PublicVideos />} />
+        </Routes>
       </main>
     </div>
   )

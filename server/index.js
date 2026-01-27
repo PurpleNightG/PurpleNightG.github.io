@@ -3,6 +3,21 @@ import cors from 'cors'
 import dotenv from 'dotenv'
 import { testConnection } from './config/database.js'
 import authRoutes from './routes/auth.js'
+import studentAuthRoutes from './routes/student-auth.js'
+import membersRoutes from './routes/members.js'
+import leavesRoutes from './routes/leaves.js'
+import blackpointsRoutes from './routes/blackpoints.js'
+import remindersRoutes from './routes/reminders.js'
+import quitRoutes from './routes/quit.js'
+import retentionRoutes from './routes/retention.js'
+import coursesRoutes from './routes/courses.js'
+import progressRoutes from './routes/progress.js'
+import settingsRoutes from './routes/settings.js'
+import assessmentsRoutes from './routes/assessments.js'
+import assessmentApplicationsRoutes from './routes/assessmentApplications.js'
+import assessmentGuidelinesRoutes from './routes/assessmentGuidelines.js'
+import publicVideosRoutes from './routes/publicVideos.js'
+import videoUploadRoutes from './routes/videoUpload.js'
 
 dotenv.config()
 
@@ -43,6 +58,21 @@ app.use(express.urlencoded({ extended: true }))
 
 // 路由
 app.use('/api/auth', authRoutes)
+app.use('/api/student', studentAuthRoutes)  // 学员端登录路由
+app.use('/api/members', membersRoutes)
+app.use('/api/leaves', leavesRoutes)
+app.use('/api/blackpoints', blackpointsRoutes)
+app.use('/api/reminders', remindersRoutes)
+app.use('/api/quit', quitRoutes)
+app.use('/api/retention', retentionRoutes)
+app.use('/api/courses', coursesRoutes)
+app.use('/api/progress', progressRoutes)
+app.use('/api/settings', settingsRoutes)
+app.use('/api/assessments', assessmentsRoutes)
+app.use('/api/assessment-applications', assessmentApplicationsRoutes)
+app.use('/api/assessment-guidelines', assessmentGuidelinesRoutes)
+app.use('/api/public-videos', publicVideosRoutes)
+app.use('/api/video-upload', videoUploadRoutes)
 
 // 健康检查
 app.get('/api/health', (req, res) => {

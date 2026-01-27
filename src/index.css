@@ -2,6 +2,58 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ====== 管理后台表格统一样式 ====== */
+@layer components {
+  /* 管理后台表格容器 */
+  .admin-table-container {
+    @apply overflow-x-auto;
+  }
+
+  /* 管理后台表格 */
+  .admin-table {
+    @apply w-full;
+  }
+
+  /* 表头样式 */
+  .admin-table thead {
+    @apply bg-gray-700/50;
+  }
+
+  .admin-table thead th {
+    @apply px-6 py-4 text-left text-base font-semibold text-gray-300;
+  }
+
+  /* 表体样式 */
+  .admin-table tbody {
+    @apply divide-y divide-gray-700;
+  }
+
+  .admin-table tbody tr {
+    @apply hover:bg-gray-700/30 transition-colors;
+  }
+
+  .admin-table tbody td {
+    @apply px-6 py-4 text-base text-gray-200;
+  }
+
+  /* 选择列样式 */
+  .admin-table th.checkbox-col,
+  .admin-table td.checkbox-col {
+    @apply w-12;
+  }
+
+  /* 操作列样式 */
+  .admin-table th.action-col,
+  .admin-table td.action-col {
+    @apply text-base;
+  }
+
+  /* 状态标签统一样式 */
+  .status-badge {
+    @apply px-2.5 py-1 rounded text-sm font-medium;
+  }
+}
+
 /* ====== 自定义动画 ====== */
 @keyframes fadeIn {
   from {
@@ -118,6 +170,10 @@
   animation: pulse 2s ease-in-out infinite;
 }
 
+.animate-slide-in {
+  animation: slideInRight 0.3s ease-out forwards;
+}
+
 /* 延迟动画 */
 .animate-delay-100 {
   animation-delay: 0.1s;
@@ -188,6 +244,7 @@
 body {
   margin: 0;
   min-height: 100vh;
+  overflow-x: hidden;
 }
 
 #root {
@@ -220,6 +277,69 @@ body {
 .toc-scrollbar-hidden {
   -ms-overflow-style: none;  /* IE and Edge */
   scrollbar-width: none;  /* Firefox */
+}
+
+/* Custom thin scrollbar for modals */
+.modal-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.modal-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modal-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(124, 58, 237, 0.5);
+  border-radius: 3px;
+}
+
+.modal-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(124, 58, 237, 0.7);
+}
+
+/* Firefox thin scrollbar */
+.modal-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(124, 58, 237, 0.5) transparent;
+}
+
+/* Custom scrollbar for content sections */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(31, 41, 55, 0.5);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(124, 58, 237, 0.6);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 92, 246, 0.8);
+}
+
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(124, 58, 237, 0.6) rgba(31, 41, 55, 0.5);
+}
+
+/* Custom select arrow */
+select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%239ca3af' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 12px;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+}
+
+select::-ms-expand {
+  display: none;
 }
 
 /* Note boxes */
@@ -721,4 +841,135 @@ body {
   padding: 0 1rem;
   color: #a78bfa;
   font-size: 0.75rem;
+}
+
+/* ====== 学员端进度条动画 ====== */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s infinite;
+}
+
+/* 日期输入框优化 */
+input[type="date"] {
+  position: relative;
+  cursor: pointer;
+}
+
+/* 让整个日期输入框都可点击 */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: auto;
+  height: auto;
+  color: transparent;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* 深色主题下的日期选择器 */
+input[type="date"]::-webkit-datetime-edit {
+  color: inherit;
+}
+
+input[type="date"]::-webkit-datetime-edit-fields-wrapper {
+  padding: 0;
+}
+
+input[type="date"]::-webkit-datetime-edit-text {
+  color: inherit;
+  padding: 0 0.3em;
+}
+
+input[type="date"]::-webkit-datetime-edit-month-field,
+input[type="date"]::-webkit-datetime-edit-day-field,
+input[type="date"]::-webkit-datetime-edit-year-field {
+  color: inherit;
+}
+
+input[type="date"]:disabled::-webkit-calendar-picker-indicator {
+  cursor: not-allowed;
+}
+
+/* 时间输入框优化 */
+input[type="time"] {
+  position: relative;
+  cursor: pointer;
+}
+
+/* 让整个时间输入框都可点击 */
+input[type="time"]::-webkit-calendar-picker-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: auto;
+  height: auto;
+  color: transparent;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* 深色主题下的时间选择器 */
+input[type="time"]::-webkit-datetime-edit {
+  color: inherit;
+}
+
+input[type="time"]::-webkit-datetime-edit-fields-wrapper {
+  padding: 0;
+}
+
+input[type="time"]::-webkit-datetime-edit-text {
+  color: inherit;
+  padding: 0 0.3em;
+}
+
+input[type="time"]::-webkit-datetime-edit-hour-field,
+input[type="time"]::-webkit-datetime-edit-minute-field,
+input[type="time"]::-webkit-datetime-edit-ampm-field {
+  color: inherit;
+}
+
+input[type="time"]:disabled::-webkit-calendar-picker-indicator {
+  cursor: not-allowed;
+}
+
+/* 学员首页动画 */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.animate-scaleIn {
+  animation: scaleIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }

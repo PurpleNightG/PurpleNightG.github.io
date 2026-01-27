@@ -1,0 +1,94 @@
+// 日期格式化工具函数
+
+/**
+ * 格式化日期为 YYYY-MM-DD 格式
+ * @param dateString - ISO日期字符串或null
+ * @returns 格式化后的日期字符串，如果为空则返回 '-'
+ */
+export const formatDate = (dateString: string | null | undefined): string => {
+  if (!dateString) return '-'
+  
+  try {
+    const date = new Date(dateString)
+    
+    // 检查日期是否有效
+    if (isNaN(date.getTime())) return '-'
+    
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    
+    return `${year}-${month}-${day}`
+  } catch (error) {
+    return '-'
+  }
+}
+
+/**
+ * 格式化日期时间为 YYYY-MM-DD HH:mm:ss 格式
+ * @param dateString - ISO日期时间字符串或null
+ * @returns 格式化后的日期时间字符串
+ */
+export const formatDateTime = (dateString: string | null | undefined): string => {
+  if (!dateString) return '-'
+  
+  try {
+    const date = new Date(dateString)
+    
+    if (isNaN(date.getTime())) return '-'
+    
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    const seconds = String(date.getSeconds()).padStart(2, '0')
+    
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
+  } catch (error) {
+    return '-'
+  }
+}
+
+/**
+ * 将日期转换为用于input[type="date"]的格式 (YYYY-MM-DD)
+ * @param dateString - ISO日期字符串或Date对象
+ * @returns YYYY-MM-DD 格式的字符串
+ */
+export const toInputDate = (dateString: string | Date | null | undefined): string => {
+  if (!dateString) return ''
+  
+  try {
+    const date = typeof dateString === 'string' ? new Date(dateString) : dateString
+    
+    if (isNaN(date.getTime())) return ''
+    
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    
+    return `${year}-${month}-${day}`
+  } catch (error) {
+    return ''
+  }
+}
+
+/**
+ * 计算两个日期之间的天数差
+ * @param startDate - 开始日期
+ * @param endDate - 结束日期
+ * @returns 天数差
+ */
+export const daysBetween = (startDate: string | Date, endDate: string | Date): number => {
+  try {
+    const start = typeof startDate === 'string' ? new Date(startDate) : startDate
+    const end = typeof endDate === 'string' ? new Date(endDate) : endDate
+    
+    const diffTime = Math.abs(end.getTime() - start.getTime())
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+    
+    return diffDays
+  } catch (error) {
+    return 0
+  }
+}

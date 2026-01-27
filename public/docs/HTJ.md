@@ -119,7 +119,7 @@
 | 瞄准镜 | 个人喜好而定，不做限制          |
 | 配件  | 红外激光指示器（必须带有"红外"两字）  |
 | 下挂  | 作战握把                 |
-| 备弹  | 5个弹匣                 |
+| 备弹  | 至少3个弹匣                |
 
 
 ### 手枪（副武器）
@@ -130,7 +130,7 @@
 |:---:|:--------------------:|
 | 瞄准镜 | 个人喜好而定，不做限制    |
 | 配件  | 手电筒                  |
-| 备弹  | 2个弹匣                 |
+| 备弹  | 至少2个弹匣                 |
 
 ### 防弹衣
 
@@ -148,6 +148,8 @@
 <img src="https://s21.ax1x.com/2024/07/07/pkWwY4J.png" alt="弹药设置1">
 <img src="https://s21.ax1x.com/2024/07/07/pkWwJN4.png" alt="弹药设置2">
 
+> 弹药种类根据个人喜好而定，不做限制。
+
 ### 战术装备
 
 我们建议携带 **闪光发射器** 和 **"陆用全景夜视镜"**。夜视镜必带，短管霰弹枪我们不做特殊要求 **（但是不允许带盾牌！！！）**
@@ -161,26 +163,26 @@
 
 ### 新手必看‼️严阵以待模组安装完整流程｜附键位教程及常见问题🔥
 
-<iframe src="//player.bilibili.com/player.html?isOutside=true&aid=114131189567160&bvid=BV1B7RbY4EDR&cid=28775154694&p=1" scrolling="no" border="0" frameborder="no" framespacing="0" allowfullscreen="true"></iframe>
+<iframe src="//player.bilibili.com/player.html?isOutside=true&aid=114131189567160&bvid=BV1B7RbY4EDR&cid=28775154694&p=1&muted=1" scrolling="no" border="0" frameborder="no" framespacing="0" allowfullscreen="true"></iframe>
 
 ### 1.1-1.3 严阵以待CQB理论知识&进门SOP
 
-<iframe src="//player.bilibili.com/player.html?isOutside=true&aid=112976933686657&bvid=BV18KpdedEXr&cid=500001652638614&p=1" scrolling="no" border="0" frameborder="no" framespacing="0" allowfullscreen="true"></iframe>
+<iframe src="//player.bilibili.com/player.html?isOutside=true&aid=112976933686657&bvid=BV18KpdedEXr&cid=500001652638614&p=1&muted=1" scrolling="no" border="0" frameborder="no" framespacing="0" allowfullscreen="true"></iframe>
 
 ### 1.2 强弱手位的判定和不同情况的进门方式（下）
 
-<iframe src="//player.bilibili.com/player.html?isOutside=true&aid=112988107375608&bvid=BV1WmpmedEUD&cid=500001654742101&p=1" scrolling="no" border="0" frameborder="no" framespacing="0" allowfullscreen="true"></iframe>
+<iframe src="//player.bilibili.com/player.html?isOutside=true&aid=112988107375608&bvid=BV1WmpmedEUD&cid=500001654742101&p=1&muted=1" scrolling="no" border="0" frameborder="no" framespacing="0" allowfullscreen="true"></iframe>
 
 ### 1.4 枪口指向与责任区间
 
-<iframe src="//player.bilibili.com/player.html?isOutside=true&aid=113022232232892&bvid=BV1SiWkeQEAx&cid=500001661816150&p=1" scrolling="no" border="0" frameborder="no" framespacing="0" allowfullscreen="true"></iframe>
+<iframe src="//player.bilibili.com/player.html?isOutside=true&aid=113022232232892&bvid=BV1SiWkeQEAx&cid=500001661816150&p=1&muted=1" scrolling="no" border="0" frameborder="no" framespacing="0" allowfullscreen="true"></iframe>
 
 ### 1.5 基础灯语
 
-<iframe src="//player.bilibili.com/player.html?isOutside=true&aid=114165834318069&bvid=BV1E3QSYgEMp&cid=28877980531&p=1" scrolling="no" border="0" frameborder="no" framespacing="0" allowfullscreen="true"></iframe>
+<iframe src="//player.bilibili.com/player.html?isOutside=true&aid=114165834318069&bvid=BV1E3QSYgEMp&cid=28877980531&p=1&muted=1" scrolling="no" border="0" frameborder="no" framespacing="0" allowfullscreen="true"></iframe>
 
 <div class="note info">
-<span style="color: #60a5fa; font-weight: bold;">郑重声明：</span>我们所讲述的所有教程以及理论已根据本游戏做了调整及更改，请勿以现实生活中的突击方式去评价与衡量此套教程。
+<b>郑重声明：</b>我们所讲述的所有教程以及理论已根据本游戏做了调整及更改，请勿带入现实或其他游戏去评价与衡量此套教程的合理性。
 </div>
 
 ---

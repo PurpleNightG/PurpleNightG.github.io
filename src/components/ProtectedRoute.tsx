@@ -18,9 +18,41 @@ export default function ProtectedRoute({ children, requiredUserType }: Protected
   }, [])
 
   const checkAuth = async () => {
-    // 尝试从localStorage或sessionStorage获取token
-    const token = localStorage.getItem('token') || sessionStorage.getItem('token')
-    const userStr = localStorage.getItem('user') || sessionStorage.getItem('user')
+    // 根据requiredUserType选择检查管理员或学员的token
+    let token: string | null = null
+    let userStr: string | null = null
+    let endpoint: string = '/auth/verify'
+    let detectedUserType: string | null = null
+
+    if (requiredUserType === 'student') {
+      // 学员路由：检查studentToken
+      token = localStorage.getItem('studentToken') || sessionStorage.getItem('studentToken')
+      userStr = localStorage.getItem('studentUser') || sessionStorage.getItem('studentUser')
+      endpoint = '/student/verify'
+      detectedUserType = 'student'
+    } else if (requiredUserType === 'admin') {
+      // 管理员路由：检查token
+      token = localStorage.getItem('token') || sessionStorage.getItem('token')
+      userStr = localStorage.getItem('user') || sessionStorage.getItem('user')
+      endpoint = '/auth/verify'
+      detectedUserType = 'admin'
+    } else {
+      // 未指定类型，尝试两种token
+      const adminToken = localStorage.getItem('token') || sessionStorage.getItem('token')
+      const studentToken = localStorage.getItem('studentToken') || sessionStorage.getItem('studentToken')
+      
+      if (adminToken) {
+        token = adminToken
+        userStr = localStorage.getItem('user') || sessionStorage.getItem('user')
+        endpoint = '/auth/verify'
+        detectedUserType = 'admin'
+      } else if (studentToken) {
+        token = studentToken
+        userStr = localStorage.getItem('studentUser') || sessionStorage.getItem('studentUser')
+        endpoint = '/student/verify'
+        detectedUserType = 'student'
+      }
+    }
 
     if (!token || !userStr) {
       setIsAuthenticated(false)
@@ -29,7 +61,7 @@ export default function ProtectedRoute({ children, requiredUserType }: Protected
 
     try {
       // 验证token是否有效
-      const response = await fetch(`${API_URL}/auth/verify`, {
+      const response = await fetch(`${API_URL}${endpoint}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -39,13 +71,20 @@ export default function ProtectedRoute({ children, requiredUserType }: Protected
 
       if (data.success) {
         setIsAuthenticated(true)
-        setUserType(data.data.userType)
+        setUserType(detectedUserType)
       } else {
         // token无效，清除存储
-        localStorage.removeItem('token')
-        localStorage.removeItem('user')
-        sessionStorage.removeItem('token')
-        sessionStorage.removeItem('user')
+        if (detectedUserType === 'student') {
+          localStorage.removeItem('studentToken')
+          localStorage.removeItem('studentUser')
+          sessionStorage.removeItem('studentToken')
+          sessionStorage.removeItem('studentUser')
+        } else {
+          localStorage.removeItem('token')
+          localStorage.removeItem('user')
+          sessionStorage.removeItem('token')
+          sessionStorage.removeItem('user')
+        }
         setIsAuthenticated(false)
       }
     } catch (error) {
