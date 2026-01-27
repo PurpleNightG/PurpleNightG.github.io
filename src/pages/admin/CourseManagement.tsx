@@ -252,10 +252,10 @@ export default function CourseManagement() {
   }
 
   const toggleFilter = (type: 'categories' | 'difficulties', value: string) => {
-    setFilters(prev => ({
+    setFilters((prev: { categories: string[], difficulties: string[] }) => ({
       ...prev,
       [type]: prev[type].includes(value)
-        ? prev[type].filter(v => v !== value)
+        ? prev[type].filter((v: string) => v !== value)
         : [...prev[type], value]
     }))
   }
