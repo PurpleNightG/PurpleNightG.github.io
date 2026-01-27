@@ -31,6 +31,9 @@ jobs:
         run: npm ci
 
       - name: Build
+        env:
+          NODE_ENV: production
+          VITE_API_URL: https://api.sh01.eu.org/api
         run: npm run build
 
       - name: Setup Pages
