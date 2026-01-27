@@ -85,7 +85,7 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: '紫夜公会后端服务运行中' })
 })
 
-// 启动服务器
+// 启动服务器（仅在本地开发时）
 async function startServer() {
   // 测试数据库连接
   const dbConnected = await testConnection()
@@ -101,4 +101,10 @@ async function startServer() {
   })
 }
 
-startServer()
+// 仅在非Vercel环境下启动服务器
+if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+  startServer()
+}
+
+// 导出app供Vercel使用
+export default app
