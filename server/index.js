@@ -40,7 +40,12 @@ app.use(cors({
     // 允许没有origin的请求（比如移动应用或Postman）
     if (!origin) return callback(null, true)
     
-    // 检查origin是否在允许列表中，或者是GitHub Pages域名
+    // 开发环境：允许所有localhost和127.0.0.1的请求
+    if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      return callback(null, true)
+    }
+    
+    // 检查origin是否在允许列表中，或者是部署平台域名
     if (allowedOrigins.includes(origin) || 
         origin.includes('github.io') ||
         origin.includes('vercel.app') ||
@@ -48,6 +53,7 @@ app.use(cors({
         origin.includes('eu.org')) {
       callback(null, true)
     } else {
+      console.log('❌ CORS阻止的请求来源:', origin)
       callback(new Error('不允许的跨域请求'))
     }
   },

@@ -16,8 +16,7 @@ const pool = mysql.createPool({
   idleTimeout: 60000,  // 空闲连接60秒后释放
   queueLimit: 0,
   enableKeepAlive: true,
-  keepAliveInitialDelay: 0,
-  acquireTimeout: 10000  // 获取连接超时10秒
+  keepAliveInitialDelay: 0
 })
 
 // 测试数据库连接
