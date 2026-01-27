@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { User, LogOut, KeyRound, Edit, Shield, ChevronDown } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { toast } from 'react-hot-toast'
+import { toast } from '../utils/toast'
 
 // API基础URL配置
 const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3000/api'
@@ -89,9 +89,6 @@ export default function UserDropdown({ userType }: UserDropdownProps) {
       return
     }
 
-    // 显示加载提示
-    const loadingToast = toast.loading('正在修改密码...')
-
     try {
       const endpoint = userType === 'student' ? '/student/change-password' : '/auth/change-password'
       const token = userType === 'student'
@@ -111,30 +108,18 @@ export default function UserDropdown({ userType }: UserDropdownProps) {
         })
       })
 
-      // 关闭加载提示
-      toast.dismiss(loadingToast)
-
-      // 处理HTTP错误状态码
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({ message: '服务器错误' }))
-        toast.error(data.message || `请求失败 (${response.status})`)
-        return
-      }
-
       const data = await response.json()
 
-      if (data.success) {
-        toast.success('✅ 密码修改成功，请重新登录')
+      if (response.ok && data.success) {
+        toast.success('密码修改成功')
         setShowPasswordModal(false)
         setTimeout(() => handleLogout(), 1500)
       } else {
-        toast.error(data.message || '密码修改失败，请重试')
+        toast.error(data.message || '密码修改失败')
       }
     } catch (error: any) {
-      // 关闭加载提示
-      toast.dismiss(loadingToast)
       console.error('密码修改错误:', error)
-      toast.error('❌ 密码修改失败：' + (error.message || '网络错误，请检查连接'))
+      toast.error(error.message || '密码修改失败')
     }
   }
 
