@@ -3,6 +3,9 @@ import { User, LogOut, KeyRound, Edit, Shield, ChevronDown } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'react-hot-toast'
 
+// API基础URL配置
+const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3000/api'
+
 interface UserDropdownProps {
   userType: 'student' | 'admin'
 }
@@ -87,13 +90,13 @@ export default function UserDropdown({ userType }: UserDropdownProps) {
     }
 
     try {
-      const endpoint = userType === 'student' ? '/api/student/change-password' : '/api/auth/change-password'
+      const endpoint = userType === 'student' ? '/student/change-password' : '/auth/change-password'
       const token = userType === 'student'
         ? localStorage.getItem('studentToken') || sessionStorage.getItem('studentToken')
         : localStorage.getItem('token') || sessionStorage.getItem('token')
 
-      const response = await fetch(endpoint, {
-        method: 'POST',
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
