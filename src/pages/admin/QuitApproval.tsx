@@ -235,14 +235,17 @@ export default function QuitApproval() {
   const confirmBatchApprove = async () => {
     setConfirmDialog({show: false, type: ''})
     try {
-      const adminId = localStorage.getItem('userId')
-      const adminName = localStorage.getItem('userName') || '管理员'
+      // 从 localStorage 获取管理员信息
+      const userStr = localStorage.getItem('user') || sessionStorage.getItem('user')
+      const user = userStr ? JSON.parse(userStr) : null
+      const adminId = user?.id
+      const adminName = user?.name || user?.username || '管理员'
       const ids = Array.from(selectedIds)
       const selectedApprovals = approvals.filter(a => ids.includes(a.id) && a.status === '待审批')
       
       for (const approval of selectedApprovals) {
         await quitAPI.approve(approval.id, {
-          approver_id: adminId ? parseInt(adminId) : 1,
+          approver_id: adminId || 1,
           approver_name: adminName,
           status: '已批准',
           remarks: approval.remarks
@@ -276,14 +279,17 @@ export default function QuitApproval() {
   const confirmBatchReject = async () => {
     setConfirmDialog({show: false, type: ''})
     try {
-      const adminId = localStorage.getItem('userId')
-      const adminName = localStorage.getItem('userName') || '管理员'
+      // 从 localStorage 获取管理员信息
+      const userStr = localStorage.getItem('user') || sessionStorage.getItem('user')
+      const user = userStr ? JSON.parse(userStr) : null
+      const adminId = user?.id
+      const adminName = user?.name || user?.username || '管理员'
       const ids = Array.from(selectedIds)
       const selectedApprovals = approvals.filter(a => ids.includes(a.id) && a.status === '待审批')
       
       for (const approval of selectedApprovals) {
         await quitAPI.approve(approval.id, {
-          approver_id: adminId ? parseInt(adminId) : 1,
+          approver_id: adminId || 1,
           approver_name: adminName,
           status: '已拒绝',
           remarks: approval.remarks
@@ -317,14 +323,17 @@ export default function QuitApproval() {
     }
     
     setSubmitting(true)
-    const adminId = localStorage.getItem('userId')
-    const adminName = localStorage.getItem('userName') || '管理员'
+    // 从 localStorage 获取管理员信息
+    const userStr = localStorage.getItem('user') || sessionStorage.getItem('user')
+    const user = userStr ? JSON.parse(userStr) : null
+    const adminId = user?.id
+    const adminName = user?.name || user?.username || '管理员'
     let approvalCreated = false
     
     try {
       await quitAPI.create({
         member_id: formData.member_id,
-        source_admin_id: adminId ? parseInt(adminId) : 1,
+        source_admin_id: adminId || 1,
         source_admin_name: adminName,
         remarks: formData.remarks
       })
@@ -370,8 +379,11 @@ export default function QuitApproval() {
   const confirmApproval = async () => {
     if (!approvingId) return
     
-    const adminId = localStorage.getItem('userId')
-    const adminName = localStorage.getItem('userName') || '管理员'
+    // 从 localStorage 获取管理员信息
+    const userStr = localStorage.getItem('user') || sessionStorage.getItem('user')
+    const user = userStr ? JSON.parse(userStr) : null
+    const adminId = user?.id
+    const adminName = user?.name || user?.username || '管理员'
     const approval = approvals.find(a => a.id === approvingId)
     if (!approval) return
     
@@ -379,7 +391,7 @@ export default function QuitApproval() {
     
     try {
       await quitAPI.approve(approvingId, {
-        approver_id: adminId ? parseInt(adminId) : 1,
+        approver_id: adminId || 1,
         approver_name: adminName,
         status: approvalData.status,
         remarks: approvalData.remarks
