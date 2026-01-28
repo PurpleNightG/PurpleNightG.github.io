@@ -130,6 +130,25 @@ export default function MemberList() {
     '紫夜', '紫夜尖兵', '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师'
   ]
 
+  // 阶段排序权重（数字越小越靠前）
+  const stageOrder: { [key: string]: number } = {
+    '未新训': 1,
+    '新训初期': 2,
+    '新训一期': 3,
+    '新训二期': 4,
+    '新训三期': 5,
+    '新训准考': 6,
+    '紫夜': 7,
+    '紫夜尖兵': 8,
+    '会长': 9,
+    '执行官': 10,
+    '人事': 11,
+    '总教': 12,
+    '尖兵教官': 13,
+    '教官': 14,
+    '工程师': 15
+  }
+
   const statuses = ['正常', '请假中', '已退队', '其他']
   
   // 可用于修改的状态（只包含正常和其他）
@@ -218,6 +237,15 @@ export default function MemberList() {
     // 应用排序
     if (sortConfig) {
       filtered.sort((a, b) => {
+        // 如果按阶段排序，使用自定义顺序
+        if (sortConfig.key === 'stage_role') {
+          const aOrder = stageOrder[a.stage_role] || 999
+          const bOrder = stageOrder[b.stage_role] || 999
+          const comparison = aOrder - bOrder
+          return sortConfig.direction === 'asc' ? comparison : -comparison
+        }
+        
+        // 其他字段使用默认排序
         const aVal = a[sortConfig.key as keyof Member]
         const bVal = b[sortConfig.key as keyof Member]
         
