@@ -4,6 +4,7 @@ import { Plus, Check, X, Trash2, Filter, ChevronUp, ChevronDown, Search, X as XI
 import { formatDate } from '../../utils/dateFormat'
 import { toast } from '../../utils/toast'
 import ConfirmDialog from '../../components/ConfirmDialog'
+import SearchableSelect from '../../components/SearchableSelect'
 
 interface QuitApproval {
   id: number
@@ -670,19 +671,17 @@ export default function QuitApproval() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-1">成员 *</label>
-                <select
+                <SearchableSelect
+                  options={members.map(member => ({
+                    id: member.id,
+                    label: member.nickname,
+                    subLabel: `(${member.qq})`
+                  }))}
                   value={formData.member_id}
-                  onChange={(e) => setFormData({...formData, member_id: e.target.value})}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg pl-3 pr-10 py-2 text-white"
+                  onChange={(value) => setFormData({...formData, member_id: value.toString()})}
+                  placeholder="请选择或搜索成员"
                   required
-                >
-                  <option value="">请选择成员</option>
-                  {members.map(member => (
-                    <option key={member.id} value={member.id}>
-                      {member.nickname} ({member.qq})
-                    </option>
-                  ))}
-                </select>
+                />
               </div>
               
               <div>

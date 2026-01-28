@@ -3,6 +3,7 @@ import { assessmentAPI, memberAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
 import { Plus, Trash2, Edit, CheckCircle, XCircle, ChevronDown, ChevronUp, X, Search, Filter, CheckSquare, Square, Loader2 } from 'lucide-react'
 import ConfirmDialog from '../../components/ConfirmDialog'
+import SearchableSelect from '../../components/SearchableSelect'
 
 interface Assessment {
   id: number
@@ -668,10 +669,15 @@ export default function AssessmentRecords() {
                   <label className="block text-sm font-medium text-gray-300 mb-1">
                     学员 *
                   </label>
-                  <select
+                  <SearchableSelect
+                    options={members.map(member => ({
+                      id: member.id,
+                      label: member.nickname,
+                      subLabel: ''
+                    }))}
                     value={formData.member_id}
-                    onChange={(e) => {
-                      const memberId = parseInt(e.target.value)
+                    onChange={(value) => {
+                      const memberId = typeof value === 'string' ? parseInt(value) : value
                       const member = members.find(m => m.id === memberId)
                       setFormData({
                         ...formData,
@@ -679,16 +685,9 @@ export default function AssessmentRecords() {
                         member_name: member?.nickname || ''
                       })
                     }}
-                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                    placeholder="请选择或搜索学员"
                     required
-                  >
-                    <option value={0}>选择学员</option>
-                    {members.map(member => (
-                      <option key={member.id} value={member.id}>
-                        {member.nickname}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
 
                 <div>
