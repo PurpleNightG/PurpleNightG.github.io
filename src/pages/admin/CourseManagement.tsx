@@ -149,7 +149,9 @@ export default function CourseManagement() {
   const [showFilters, setShowFilters] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [showConfigModal, setShowConfigModal] = useState(false)
+  const [showAddConfigModal, setShowAddConfigModal] = useState(false)
   const [configType, setConfigType] = useState<'category' | 'difficulty'>('category')
+  const [newConfigName, setNewConfigName] = useState('')
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [showBatchModal, setShowBatchModal] = useState(false)
@@ -517,18 +519,32 @@ export default function CourseManagement() {
     setShowConfigModal(true)
   }
 
+  const openAddConfigModal = () => {
+    setNewConfigName('')
+    setShowAddConfigModal(true)
+  }
+
   const addConfig = () => {
-    const name = prompt(`请输入新的${configType === 'category' ? '类别' : '难度'}名称:`)
-    if (name && name.trim()) {
+    if (newConfigName && newConfigName.trim()) {
       if (configType === 'category') {
-        if (!categories.includes(name.trim())) {
-          setCategories([...categories, name.trim()])
+        if (!categories.includes(newConfigName.trim())) {
+          setCategories([...categories, newConfigName.trim()])
+          toast.success(`类别 "${newConfigName.trim()}" 添加成功`)
+        } else {
+          toast.error('该类别已存在')
         }
       } else {
-        if (!difficulties.includes(name.trim())) {
-          setDifficulties([...difficulties, name.trim()])
+        if (!difficulties.includes(newConfigName.trim())) {
+          setDifficulties([...difficulties, newConfigName.trim()])
+          toast.success(`难度 "${newConfigName.trim()}" 添加成功`)
+        } else {
+          toast.error('该难度已存在')
         }
       }
+      setShowAddConfigModal(false)
+      setNewConfigName('')
+    } else {
+      toast.error('请输入名称')
     }
   }
 
@@ -1084,12 +1100,65 @@ export default function CourseManagement() {
             </div>
 
             <button
-              onClick={addConfig}
+              onClick={openAddConfigModal}
               className="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors flex items-center justify-center gap-2"
             >
               <Plus size={18} />
               添加新{configType === 'category' ? '类别' : '难度'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* 添加配置项模态框 */}
+      {showAddConfigModal && (
+        <div 
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          onClick={() => setShowAddConfigModal(false)}
+        >
+          <div 
+            className="bg-gray-800 rounded-xl w-full max-w-md border border-gray-700"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-gray-700">
+              <h2 className="text-xl font-bold text-white">
+                添加新{configType === 'category' ? '类别' : '难度'}
+              </h2>
+            </div>
+
+            <div className="p-6">
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                {configType === 'category' ? '类别' : '难度'}名称 <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="text"
+                value={newConfigName}
+                onChange={(e) => setNewConfigName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    addConfig()
+                  }
+                }}
+                placeholder={`请输入${configType === 'category' ? '类别' : '难度'}名称`}
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-purple-500 transition-colors"
+                autoFocus
+              />
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-700 flex gap-3">
+              <button
+                onClick={() => setShowAddConfigModal(false)}
+                className="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={addConfig}
+                className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors"
+              >
+                添加
+              </button>
+            </div>
           </div>
         </div>
       )}
