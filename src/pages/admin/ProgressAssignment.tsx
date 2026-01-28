@@ -55,11 +55,19 @@ export default function ProgressAssignment() {
   const [selectedMember, setSelectedMember] = useState<Member | null>(null)
   const [memberCourses, setMemberCourses] = useState<Course[]>([])
   const [loadingCourses, setLoadingCourses] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  
+  // 临时存储进度变更，格式：{ courseId: newProgress }
+  const [pendingChanges, setPendingChanges] = useState<Map<number, number>>(new Map())
   
   // 批量修改模态框
   const [showBatchModal, setShowBatchModal] = useState(false)
   const [batchCourses, setBatchCourses] = useState<Course[]>([])
   const [loadingBatchCourses, setLoadingBatchCourses] = useState(false)
+  const [batchSubmitting, setBatchSubmitting] = useState(false)
+  
+  // 批量修改的临时存储，格式：{ courseId: newProgress }
+  const [batchPendingChanges, setBatchPendingChanges] = useState<Map<number, number>>(new Map())
 
   useEffect(() => {
     loadMembers()
@@ -94,6 +102,7 @@ export default function ProgressAssignment() {
   const openProgressModal = async (member: Member) => {
     setSelectedMember(member)
     setShowProgressModal(true)
+    setPendingChanges(new Map()) // 清空待提交的变更
     await loadMemberCourses(member.id)
   }
 
@@ -101,6 +110,7 @@ export default function ProgressAssignment() {
     setShowProgressModal(false)
     setSelectedMember(null)
     setMemberCourses([])
+    setPendingChanges(new Map()) // 清空待提交的变更
   }
 
   const openBatchModal = async () => {
@@ -109,12 +119,14 @@ export default function ProgressAssignment() {
       return
     }
     setShowBatchModal(true)
+    setBatchPendingChanges(new Map()) // 清空待提交的变更
     await loadBatchCourses()
   }
 
   const closeBatchModal = () => {
     setShowBatchModal(false)
     setBatchCourses([])
+    setBatchPendingChanges(new Map()) // 清空待提交的变更
   }
 
   const loadBatchCourses = async () => {
@@ -130,35 +142,85 @@ export default function ProgressAssignment() {
     }
   }
 
-  const batchUpdateCourseProgress = async (courseId: number, progress: number) => {
+  // 更新批量修改的临时进度（不提交）
+  const updateBatchTempProgress = (courseId: number, progress: number) => {
+    setBatchPendingChanges(prev => {
+      const newMap = new Map(prev)
+      newMap.set(courseId, progress)
+      return newMap
+    })
+    
+    // 更新显示的进度
+    setBatchCourses(prev =>
+      prev.map(c => (c.id === courseId ? { ...c, progress } : c))
+    )
+  }
+  
+  // 提交所有批量变更
+  const submitBatchChanges = async () => {
+    if (batchPendingChanges.size === 0) return
+    
+    setBatchSubmitting(true)
     try {
-      await progressAPI.batchUpdateCourse(String(courseId), Array.from(selectedMemberIds).map(String), progress)
-      toast.success(`已为 ${selectedMemberIds.size} 名成员更新课程进度`)
+      // 批量提交所有变更
+      const promises = Array.from(batchPendingChanges.entries()).map(([courseId, progress]) =>
+        progressAPI.batchUpdateCourse(String(courseId), Array.from(selectedMemberIds).map(String), progress)
+      )
+      
+      await Promise.all(promises)
+      
+      toast.success(`已为 ${selectedMemberIds.size} 名成员更新 ${batchPendingChanges.size} 门课程进度`)
+      setBatchPendingChanges(new Map())
+      
+      // 重新加载成员列表
       await loadMembers()
+      closeBatchModal()
     } catch (error: any) {
       console.error('批量更新失败:', error)
       toast.error('批量更新失败')
+    } finally {
+      setBatchSubmitting(false)
     }
   }
 
-  const updateCourseProgress = async (courseId: number, progress: number) => {
-    if (!selectedMember) return
+  // 更新临时进度（不提交）
+  const updateTempProgress = (courseId: number, progress: number) => {
+    setPendingChanges(prev => {
+      const newMap = new Map(prev)
+      newMap.set(courseId, progress)
+      return newMap
+    })
     
+    // 更新显示的进度
+    setMemberCourses(prev =>
+      prev.map(c => (c.id === courseId ? { ...c, progress } : c))
+    )
+  }
+  
+  // 提交所有进度变更
+  const submitAllChanges = async () => {
+    if (!selectedMember || pendingChanges.size === 0) return
+    
+    setSubmitting(true)
     try {
-      await progressAPI.updateProgress(String(selectedMember.id), String(courseId), progress)
-      
-      // 更新本地状态
-      setMemberCourses(prev =>
-        prev.map(c => (c.id === courseId ? { ...c, progress } : c))
+      // 批量提交所有变更
+      const promises = Array.from(pendingChanges.entries()).map(([courseId, progress]) =>
+        progressAPI.updateProgress(String(selectedMember.id), String(courseId), progress)
       )
       
-      toast.success('进度更新成功')
+      await Promise.all(promises)
+      
+      toast.success(`已更新 ${pendingChanges.size} 门课程进度`)
+      setPendingChanges(new Map())
       
       // 重新加载成员列表以更新完成课程数
-      loadMembers()
+      await loadMembers()
+      closeProgressModal()
     } catch (error: any) {
       console.error('更新进度失败:', error)
       toast.error('更新进度失败')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -589,7 +651,7 @@ export default function ProgressAssignment() {
                                 {progressOptions.map((option) => (
                                   <button
                                     key={option}
-                                    onClick={() => updateCourseProgress(course.id, option)}
+                                    onClick={() => updateTempProgress(course.id, option)}
                                     className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
                                       course.progress === option
                                         ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
@@ -608,6 +670,34 @@ export default function ProgressAssignment() {
                   })}
                 </div>
               )}
+            </div>
+
+            {/* 确认按钮区域 */}
+            <div className="sticky bottom-0 bg-gray-800 border-t border-gray-700 px-6 py-4 flex justify-between items-center">
+              <div className="text-sm text-gray-400">
+                {pendingChanges.size > 0 ? (
+                  <span className="text-yellow-400">
+                    已修改 <span className="font-semibold">{pendingChanges.size}</span> 门课程，请点击确认提交
+                  </span>
+                ) : (
+                  <span>未修改</span>
+                )}
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={closeProgressModal}
+                  className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={submitAllChanges}
+                  disabled={submitting || pendingChanges.size === 0}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {submitting ? '提交中...' : `确认提交 (${pendingChanges.size})`}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -679,8 +769,12 @@ export default function ProgressAssignment() {
                                 {progressOptions.map((option) => (
                                   <button
                                     key={option}
-                                    onClick={() => batchUpdateCourseProgress(course.id, option)}
-                                    className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all bg-gray-700/50 text-gray-400 hover:bg-purple-600 hover:text-white"
+                                    onClick={() => updateBatchTempProgress(course.id, option)}
+                                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                                      course.progress === option
+                                        ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
+                                        : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700 hover:text-white'
+                                    }`}
                                   >
                                     {option === 0 ? '未开始' : `${option}%`}
                                   </button>
@@ -694,6 +788,34 @@ export default function ProgressAssignment() {
                   })}
                 </div>
               )}
+            </div>
+
+            {/* 确认按钮区域 */}
+            <div className="sticky bottom-0 bg-gray-800 border-t border-gray-700 px-6 py-4 flex justify-between items-center">
+              <div className="text-sm text-gray-400">
+                {batchPendingChanges.size > 0 ? (
+                  <span className="text-yellow-400">
+                    已修改 <span className="font-semibold">{batchPendingChanges.size}</span> 门课程，将为 <span className="font-semibold">{selectedMemberIds.size}</span> 名成员批量更新
+                  </span>
+                ) : (
+                  <span>未修改</span>
+                )}
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={closeBatchModal}
+                  className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={submitBatchChanges}
+                  disabled={batchSubmitting || batchPendingChanges.size === 0}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {batchSubmitting ? '提交中...' : `确认提交 (${batchPendingChanges.size})`}
+                </button>
+              </div>
             </div>
           </div>
         </div>

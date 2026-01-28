@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { assessmentApplicationAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
-import { CheckCircle, XCircle, Clock, Search, Filter, X, Calendar, Users, Trash2, CheckSquare, Square, Loader2 } from 'lucide-react'
+import { CheckCircle, XCircle, Clock, Search, Filter, X, Calendar, Users, Trash2, CheckSquare, Square, Loader2, ChevronUp, ChevronDown } from 'lucide-react'
 
 interface Application {
   id: number
@@ -44,6 +44,19 @@ export default function AssessmentApproval() {
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [rejectReason, setRejectReason] = useState('')
   const [processing, setProcessing] = useState(false)
+  
+  // 排序状态
+  const [sortConfig, setSortConfig] = useState<{key: keyof Application, direction: 'asc' | 'desc'} | null>(() => {
+    const saved = localStorage.getItem('assessmentApprovalSort')
+    return saved ? JSON.parse(saved) : null
+  })
+
+  // 保存排序到localStorage
+  useEffect(() => {
+    if (sortConfig) {
+      localStorage.setItem('assessmentApprovalSort', JSON.stringify(sortConfig))
+    }
+  }, [sortConfig])
 
   useEffect(() => {
     loadApplications()
@@ -226,6 +239,19 @@ export default function AssessmentApproval() {
     setStatusFilter([])
   }
 
+  // 排序处理
+  const handleSort = (key: keyof Application) => {
+    if (sortConfig?.key === key) {
+      if (sortConfig.direction === 'asc') {
+        setSortConfig({key, direction: 'desc'})
+      } else {
+        setSortConfig(null)
+      }
+    } else {
+      setSortConfig({key, direction: 'asc'})
+    }
+  }
+
   // 筛选和搜索
   let filteredApplications = applications.filter(application => {
     // 搜索过滤
@@ -245,6 +271,22 @@ export default function AssessmentApproval() {
 
     return true
   })
+
+  // 应用排序
+  if (sortConfig) {
+    filteredApplications.sort((a, b) => {
+      const aValue = a[sortConfig.key]
+      const bValue = b[sortConfig.key]
+      
+      if (aValue === null && bValue === null) return 0
+      if (aValue === null) return 1
+      if (bValue === null) return -1
+      
+      if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1
+      if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1
+      return 0
+    })
+  }
 
   const activeFilterCount = statusFilter.length
   const pendingCount = applications.filter(a => a.status === '待审批').length
@@ -367,12 +409,42 @@ export default function AssessmentApproval() {
                         <Square size={18} className="text-gray-400" />}
                     </button>
                   </th>
-                  <th>学员姓名</th>
-                  <th>陪考人员</th>
-                  <th>期望日期</th>
-                  <th>期望时间</th>
-                  <th>申请时间</th>
-                  <th>状态</th>
+                  <th>
+                    <button onClick={() => handleSort('member_name')} className="flex items-center gap-1 hover:text-white transition-colors">
+                      <span>学员姓名</span>
+                      {sortConfig?.key === 'member_name' && (sortConfig.direction === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />)}
+                    </button>
+                  </th>
+                  <th>
+                    <button onClick={() => handleSort('companion')} className="flex items-center gap-1 hover:text-white transition-colors">
+                      <span>陪考人员</span>
+                      {sortConfig?.key === 'companion' && (sortConfig.direction === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />)}
+                    </button>
+                  </th>
+                  <th>
+                    <button onClick={() => handleSort('preferred_date')} className="flex items-center gap-1 hover:text-white transition-colors">
+                      <span>期望日期</span>
+                      {sortConfig?.key === 'preferred_date' && (sortConfig.direction === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />)}
+                    </button>
+                  </th>
+                  <th>
+                    <button onClick={() => handleSort('preferred_time')} className="flex items-center gap-1 hover:text-white transition-colors">
+                      <span>期望时间</span>
+                      {sortConfig?.key === 'preferred_time' && (sortConfig.direction === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />)}
+                    </button>
+                  </th>
+                  <th>
+                    <button onClick={() => handleSort('created_at')} className="flex items-center gap-1 hover:text-white transition-colors">
+                      <span>申请时间</span>
+                      {sortConfig?.key === 'created_at' && (sortConfig.direction === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />)}
+                    </button>
+                  </th>
+                  <th>
+                    <button onClick={() => handleSort('status')} className="flex items-center gap-1 hover:text-white transition-colors">
+                      <span>状态</span>
+                      {sortConfig?.key === 'status' && (sortConfig.direction === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />)}
+                    </button>
+                  </th>
                   <th>准考证号</th>
                   <th>审批人</th>
                   <th>操作</th>

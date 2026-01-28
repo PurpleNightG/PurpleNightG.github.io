@@ -77,15 +77,6 @@ function CourseRow({
         </button>
       </td>
       <td>
-        <button
-          className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-purple-400 transition-colors"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical size={18} />
-        </button>
-      </td>
-      <td>
         <div>
           <div className="font-semibold text-white">{course.code} {course.name}</div>
           {course.description && (
@@ -128,6 +119,15 @@ function CourseRow({
             <Trash2 size={18} />
           </button>
         </div>
+      </td>
+      <td>
+        <button
+          className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-purple-400 transition-colors"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical size={18} />
+        </button>
       </td>
     </tr>
   )
@@ -777,12 +777,12 @@ export default function CourseManagement() {
                         {isAllSelected ? <CheckSquare size={18} className="text-purple-400" /> : <Square size={18} className="text-gray-400" />}
                       </button>
                     </th>
-                    <th className="w-16"></th>
                     <th>课程信息</th>
                     <th>类别</th>
                     <th>难度</th>
                     <th>课时</th>
                     <th className="action-col">操作</th>
+                    <th className="w-16"></th>
                   </tr>
                 </thead>
                 <tbody>

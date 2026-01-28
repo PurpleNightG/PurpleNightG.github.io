@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
 import { memberAPI, progressAPI } from '../utils/api'
-import { Trophy, TrendingUp, CheckCircle, Star, Sparkles, Award, Target, BookOpen, Video, Lock, Clock, AlertTriangle, KeyRound } from 'lucide-react'
+import { Trophy, TrendingUp, CheckCircle, Star, Sparkles, Award, Target, BookOpen, Video, Lock, Clock, AlertTriangle, KeyRound, FileText } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import UserDropdown from '../components/UserDropdown'
 import { toast } from '../utils/toast'
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
 interface Member {
   id: number
@@ -263,7 +265,7 @@ export default function StudentHome() {
       // 调用API检查是否使用默认密码
       const token = localStorage.getItem('studentToken') || sessionStorage.getItem('studentToken')
       
-      const response = await fetch('/api/student/check-default-password', {
+      const response = await fetch(`${API_URL}/student/check-default-password`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -316,7 +318,7 @@ export default function StudentHome() {
       if (!token) return
 
       // 使用强制重置密码API（不需要旧密码）
-      const response = await fetch('/api/student/reset-default-password', {
+      const response = await fetch(`${API_URL}/student/reset-default-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -379,6 +381,94 @@ export default function StudentHome() {
       return 'from-sky-600 to-sky-400'
     }
     return 'from-gray-600 to-gray-400'
+  }
+
+  // 根据当前阶段映射对应的课程部分进度
+  const calculateStageProgress = (currentStage: string, coursesData: Course[]): { progress: number; description: string } => {
+    // 特殊角色没有晋升进度
+    if (SPECIAL_ROLES.includes(currentStage)) {
+      return { progress: 100, description: '特殊角色' }
+    }
+
+    // 获取所有课程编号，按code排序
+    const allCourses = [...coursesData].sort((a, b) => {
+      const aCode = parseFloat(a.code)
+      const bCode = parseFloat(b.code)
+      return aCode - bCode
+    })
+
+    // 根据当前阶段映射对应的课程部分
+    let targetSection: number
+    let nextStageName: string
+    let progressDescription: string
+
+    switch (currentStage) {
+      case '未新训':
+        // 未新训阶段没有课程进度
+        return { progress: 0, description: '等待分配到新训初期开始学习' }
+
+      case '新训初期':
+        // 新训初期对应第1部分课程
+        targetSection = 1
+        nextStageName = '新训一期'
+        progressDescription = `完成第${targetSection}部分所有课程即可晋升${nextStageName}`
+        break
+
+      case '新训一期':
+        // 新训一期对应第2部分课程
+        targetSection = 2
+        nextStageName = '新训二期'
+        progressDescription = `完成第${targetSection}部分所有课程即可晋升${nextStageName}`
+        break
+
+      case '新训二期':
+        // 新训二期对应第3部分课程
+        targetSection = 3
+        nextStageName = '新训三期'
+        progressDescription = `完成第${targetSection}部分所有课程即可晋升${nextStageName}`
+        break
+
+      case '新训三期':
+        // 新训三期对应第4部分课程
+        targetSection = 4
+        nextStageName = '新训准考'
+        progressDescription = `完成第${targetSection}部分所有课程即可晋升${nextStageName}`
+        break
+
+      case '新训准考':
+        // 新训准考没有进度条，通过考核即可晋升
+        return { progress: 0, description: '完成新训考核即可晋升紫夜' }
+
+      case '紫夜':
+        // 紫夜对应第5部分课程
+        targetSection = 5
+        nextStageName = '紫夜尖兵'
+        progressDescription = `完成第${targetSection}部分所有课程即可晋升${nextStageName}`
+        break
+
+      case '紫夜尖兵':
+        // 已经是最高阶段
+        return { progress: 100, description: '已达最高阶段' }
+
+      default:
+        return { progress: 0, description: '未知阶段' }
+    }
+
+    // 获取目标部分的所有课程
+    const sectionCourses = allCourses.filter(c => c.code.startsWith(`${targetSection}.`))
+    if (sectionCourses.length === 0) {
+      return { progress: 0, description: progressDescription }
+    }
+
+    // 计算该部分完成的课程数
+    const completedCount = sectionCourses.filter(c => c.progress === 100).length
+    const totalCount = sectionCourses.length
+    const progress = Math.round((completedCount / totalCount) * 100)
+
+    return {
+      progress,
+      description: `${progressDescription}（${completedCount}/${totalCount}）`
+    }
   }
 
   const handleCongratsAction = () => {
@@ -575,67 +665,79 @@ export default function StudentHome() {
           </div>
 
           {/* 晋升进度条 */}
-          {nextStage && (
-            <div className="pt-6 border-t border-gray-700">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <Target className="text-purple-400" size={20} />
-                  <span className="text-lg font-semibold text-white">晋升进度</span>
+          {nextStage && (() => {
+            const stageProgress = calculateStageProgress(member.stage_role, courses)
+            const showProgressBar = member.stage_role !== '新训准考' && member.stage_role !== '未新训'
+            
+            return (
+              <div className="pt-6 border-t border-gray-700">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <Target className="text-purple-400" size={20} />
+                    <span className="text-lg font-semibold text-white">晋升进度</span>
+                  </div>
+                  {showProgressBar && (
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl font-bold text-purple-400">
+                        {stageProgress.progress}%
+                      </span>
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm text-gray-400">
-                    第 <span className="text-purple-400 font-bold">{STAGE_FLOW.indexOf(member.stage_role) + 1}</span> / {STAGE_FLOW.length} 阶段
-                  </span>
-                  <span className="text-2xl font-bold text-purple-400">
-                    {Math.round(((STAGE_FLOW.indexOf(member.stage_role) + 1) / STAGE_FLOW.length) * 100)}%
-                  </span>
+                
+                {showProgressBar ? (
+                  <>
+                    <div className="relative h-4 bg-gray-700 rounded-full overflow-hidden shadow-inner">
+                      <div 
+                        className={`absolute inset-y-0 left-0 bg-gradient-to-r ${getStageColor(nextStage)} rounded-full transition-all duration-700 shadow-lg`}
+                        style={{ width: `${stageProgress.progress}%` }}
+                      >
+                        <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
+                      </div>
+                    </div>
+                    <div className="flex justify-between mt-2 text-xs text-gray-400">
+                      <span>{member.stage_role}</span>
+                      <span>{nextStage}</span>
+                    </div>
+                  </>
+                ) : null}
+                
+                <div className={`${showProgressBar ? 'mt-3' : ''} text-sm text-gray-400 text-center bg-gray-700/30 rounded-lg p-3`}>
+                  {stageProgress.description}
                 </div>
               </div>
-              <div className="relative h-4 bg-gray-700 rounded-full overflow-hidden shadow-inner">
-                <div 
-                  className={`absolute inset-y-0 left-0 bg-gradient-to-r ${getStageColor(member.stage_role)} rounded-full transition-all duration-700 shadow-lg`}
-                  style={{ width: `${((STAGE_FLOW.indexOf(member.stage_role) + 1) / STAGE_FLOW.length) * 100}%` }}
-                >
-                  <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
-                </div>
-              </div>
-              <div className="flex justify-between mt-2 text-xs text-gray-500">
-                <span>未新训</span>
-                <span>紫夜尖兵</span>
-              </div>
-            </div>
-          )}
+            )
+          })()}
         </div>
 
-        {/* 课程进度板块 */}
+        {/* 课程进度 - 一行横向显示 */}
         <div 
           onClick={() => navigate('/student/progress')}
           className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 p-6 mb-6 cursor-pointer hover:border-purple-500/50 transition-all hover:bg-gray-800/70"
         >
-          <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-            <BookOpen size={20} className="text-purple-400" />
-            课程进度
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+              <BookOpen size={20} className="text-purple-400" />
+              课程进度
+            </h2>
+            <span className="text-2xl font-bold text-purple-400">{totalProgress}%</span>
+          </div>
           
-          {/* 总进度 */}
-          <div className="bg-gray-700/30 rounded-lg p-4 mb-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-gray-400">总课程进度</span>
-              <span className="text-lg font-bold text-purple-400">{totalProgress}%</span>
-            </div>
-            <div className="relative h-2 bg-gray-700 rounded-full overflow-hidden">
-              <div 
-                className="absolute inset-y-0 left-0 bg-gradient-to-r from-purple-600 to-purple-400 rounded-full transition-all duration-500"
-                style={{ width: `${totalProgress}%` }}
-              />
+          {/* 总进度条 */}
+          <div className="relative h-3 bg-gray-700 rounded-full overflow-hidden mb-4">
+            <div 
+              className="absolute inset-y-0 left-0 bg-gradient-to-r from-purple-600 to-purple-400 rounded-full transition-all duration-500 shadow-lg"
+              style={{ width: `${totalProgress}%` }}
+            >
+              <div className="absolute inset-0 bg-white/20 animate-pulse"></div>
             </div>
           </div>
 
-          {/* 类别进度 */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {/* 类别进度 - 横向平铺 */}
+          <div className="flex items-center gap-3">
             {categoryProgress.map((cat) => (
-              <div key={cat.category} className="bg-gray-700/30 rounded-lg p-3">
-                <div className="text-xs text-gray-400 mb-1">{cat.category}</div>
+              <div key={cat.category} className="flex-1 bg-gray-700/30 rounded-lg p-3 min-w-0">
+                <div className="text-xs text-gray-400 mb-1 truncate">{cat.category}</div>
                 <div className="flex items-baseline gap-1">
                   <span className="text-lg font-bold text-white">{cat.completed}</span>
                   <span className="text-sm text-gray-500">/ {cat.total}</span>
@@ -646,69 +748,71 @@ export default function StudentHome() {
           </div>
         </div>
 
-        {/* 我的课程板块 */}
-        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 p-6 mb-6">
-          <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-            <BookOpen size={20} className="text-blue-400" />
-            我的课程
-          </h2>
+        {/* 下方左右结构 */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* 左侧：我的课程 (占2列) */}
+          <div className="lg:col-span-2 bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 p-6">
+            <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+              <BookOpen size={20} className="text-blue-400" />
+              我的课程
+            </h2>
 
-          {/* 最近学习 */}
-          {recentCourse && (
-            <div className="bg-blue-600/10 border border-blue-600/30 rounded-lg p-4 mb-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Clock size={16} className="text-blue-400" />
-                <span className="text-sm text-blue-300 font-medium">最近学习</span>
-              </div>
-              <div className="text-white font-medium">{recentCourse.code} - {recentCourse.name}</div>
-              <div className="mt-2 flex items-center gap-2">
-                <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-gradient-to-r from-blue-600 to-blue-400 transition-all"
-                    style={{ width: `${recentCourse.progress}%` }}
-                  />
+            {/* 最近学习 */}
+            {recentCourse && (
+              <div className="bg-blue-600/10 border border-blue-600/30 rounded-lg p-4 mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Clock size={16} className="text-blue-400" />
+                  <span className="text-sm text-blue-300 font-medium">最近学习</span>
                 </div>
-                <span className="text-sm text-blue-400 font-medium">{recentCourse.progress}%</span>
-              </div>
-            </div>
-          )}
-
-          {/* 待学习课程 */}
-          <div className="space-y-2">
-            <div className="text-sm text-gray-400 mb-3">待学习课程</div>
-            {courses
-              .filter(c => c.progress < 100)
-              .sort((a, b) => a.code.localeCompare(b.code))
-              .slice(0, 3)
-              .map((course) => (
-                <div key={course.id} className="bg-gray-700/30 rounded-lg p-3 flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="text-white font-medium text-sm">{course.code} - {course.name}</div>
-                    <div className="text-xs text-gray-400 mt-1">{course.category} · {course.hours}小时</div>
+                <div className="text-white font-medium">{recentCourse.code} - {recentCourse.name}</div>
+                <div className="mt-2 flex items-center gap-2">
+                  <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-gradient-to-r from-blue-600 to-blue-400 transition-all"
+                      style={{ width: `${recentCourse.progress}%` }}
+                    />
                   </div>
-                  <div className="text-sm text-purple-400 font-medium">{course.progress}%</div>
+                  <span className="text-sm text-blue-400 font-medium">{recentCourse.progress}%</span>
                 </div>
-              ))}
-            {courses.filter(c => c.progress < 100).length === 0 && (
-              <div className="text-center text-gray-500 py-4">
-                🎉 所有课程已完成！
               </div>
             )}
-          </div>
-        </div>
 
-        {/* 考核相关板块 */}
-        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 p-6">
+            {/* 待学习课程 */}
+            <div className="space-y-2">
+              <div className="text-sm text-gray-400 mb-3">待学习课程</div>
+              {courses
+                .filter(c => c.progress < 100)
+                .sort((a, b) => a.code.localeCompare(b.code))
+                .slice(0, 5)
+                .map((course) => (
+                  <div key={course.id} className="bg-gray-700/30 rounded-lg p-3 flex items-center justify-between hover:bg-gray-700/50 transition-colors">
+                    <div className="flex-1">
+                      <div className="text-white font-medium text-sm">{course.code} - {course.name}</div>
+                      <div className="text-xs text-gray-400 mt-1">{course.category} · {course.hours}小时</div>
+                    </div>
+                    <div className="text-sm text-purple-400 font-medium">{course.progress}%</div>
+                  </div>
+                ))}
+              {courses.filter(c => c.progress < 100).length === 0 && (
+                <div className="text-center text-gray-500 py-8">
+                  🎉 所有课程已完成！
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 右侧：考核相关 (占1列) */}
+          <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 p-6">
           <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
             <Trophy size={20} className="text-yellow-400" />
             考核相关
           </h2>
           
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-4">
             {/* 查看公开视频 */}
             <button
               onClick={() => navigate('/student/videos')}
-              className="flex items-center gap-3 p-4 bg-gray-700/50 hover:bg-gray-700 rounded-lg transition-colors text-left"
+              className="w-full flex items-center gap-3 p-4 bg-gray-700/50 hover:bg-gray-700 rounded-lg transition-colors text-left"
             >
               <div className="w-10 h-10 rounded-lg bg-pink-600/20 flex items-center justify-center">
                 <Video className="text-pink-400" size={20} />
@@ -723,7 +827,7 @@ export default function StudentHome() {
             {member.stage_role === '新训准考' ? (
               <button
                 onClick={() => navigate('/student/apply-assessment')}
-                className="flex items-center gap-3 p-4 bg-yellow-600/20 hover:bg-yellow-600/30 rounded-lg transition-colors text-left border border-yellow-600/30"
+                className="w-full flex items-center gap-3 p-4 bg-yellow-600/20 hover:bg-yellow-600/30 rounded-lg transition-colors text-left border border-yellow-600/30"
               >
                 <div className="w-10 h-10 rounded-lg bg-yellow-600/30 flex items-center justify-center">
                   <Trophy className="text-yellow-400" size={20} />
@@ -734,7 +838,7 @@ export default function StudentHome() {
                 </div>
               </button>
             ) : (
-              <div className="flex items-center gap-3 p-4 bg-gray-700/30 rounded-lg text-left opacity-60 cursor-not-allowed">
+              <div className="w-full flex items-center gap-3 p-4 bg-gray-700/30 rounded-lg text-left opacity-60 cursor-not-allowed">
                 <div className="w-10 h-10 rounded-lg bg-gray-700/50 flex items-center justify-center">
                   <Lock className="text-gray-500" size={20} />
                 </div>
@@ -744,8 +848,23 @@ export default function StudentHome() {
                 </div>
               </div>
             )}
+
+            {/* 查看考核报告 */}
+            <button
+              onClick={() => navigate('/student/assessment-report')}
+              className="w-full flex items-center gap-3 p-4 bg-gray-700/50 hover:bg-gray-700 rounded-lg transition-colors text-left"
+            >
+              <div className="w-10 h-10 rounded-lg bg-green-600/20 flex items-center justify-center">
+                <FileText className="text-green-400" size={20} />
+              </div>
+              <div>
+                <div className="text-white font-medium">新训考核报告</div>
+                <div className="text-sm text-gray-400">查看考核详情</div>
+              </div>
+            </button>
           </div>
         </div>
+      </div>
       </div>
 
       {/* 恭喜弹窗 */}

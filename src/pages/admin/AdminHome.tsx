@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Users, UserMinus, AlertCircle, Calendar, Award, Bell, FileText, Settings, BookOpen } from 'lucide-react'
+import { Users, UserMinus, Award, Bell, FileText } from 'lucide-react'
 import { memberAPI, leaveAPI, blackPointAPI, reminderAPI } from '../../utils/api'
 import { useNavigate } from 'react-router-dom'
 import UserDropdown from '../../components/UserDropdown'
+import { formatDate } from '../../utils/dateFormat'
 
 interface Statistics {
   totalMembers: number
@@ -11,6 +12,16 @@ interface Statistics {
   onLeaveMembers: number
   blackPoints: number
   reminders: number
+}
+
+interface ReminderMember {
+  id: number
+  member_name: string
+  nickname: string
+  qq: string
+  stage_role: string
+  last_training_date: string | null
+  days_without_training: number
 }
 
 interface StageDistribution {
@@ -32,6 +43,7 @@ export default function AdminHome() {
     reminders: 0
   })
   const [stageDistribution, setStageDistribution] = useState<StageDistribution[]>([])
+  const [reminderList, setReminderList] = useState<ReminderMember[]>([])
   const [loading, setLoading] = useState(true)
   const [adminName, setAdminName] = useState('管理员')
 
@@ -79,6 +91,9 @@ export default function AdminHome() {
         blackPoints: blackPointsData.filter((b: any) => b.status === '生效中').length,
         reminders: remindersData.length
       })
+
+      // 设置催促名单（只显示前5个）
+      setReminderList(remindersData.slice(0, 5))
 
       // 计算阶段分布
       const stages = [
@@ -162,160 +177,181 @@ export default function AdminHome() {
             <p className="text-gray-400 mt-6 text-lg">加载中...</p>
           </div>
         ) : (
-          <div className="space-y-8">
-            {/* 用户等级分布 */}
-            <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-8 border border-gray-700">
-              <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-                <div className="p-3 rounded-xl bg-gray-600/20">
-                  <Users size={28} className="text-gray-400" />
+          <div className="space-y-6">
+            {/* 成员阶段分布 - 横向一行 */}
+            <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700">
+              <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                <div className="p-2 rounded-lg bg-gray-600/20">
+                  <Users size={22} className="text-gray-400" />
                 </div>
                 成员阶段分布
               </h2>
               
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {/* 总用户数卡片 */}
+              <div className="flex items-center gap-3">
+                {/* 总成员数 */}
                 <div
                   onClick={handleViewAllMembers}
-                  className="group relative bg-gray-700/30 backdrop-blur-sm rounded-xl p-6 cursor-pointer hover:bg-gray-700/50 border border-gray-600/30 hover:border-gray-500/50 transition-all overflow-hidden"
+                  className="group flex-1 bg-gradient-to-br from-gray-700/40 to-gray-800/40 hover:from-gray-700/60 hover:to-gray-800/60 backdrop-blur-sm rounded-lg p-4 cursor-pointer border border-gray-600/30 hover:border-gray-500/50 transition-all min-w-0"
                 >
-                  <div className="relative text-center">
-                    <div className="text-4xl font-bold text-gray-300 mb-2">
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-gray-300 mb-1">
                       {stats.totalMembers}
                     </div>
-                    <div className="text-gray-400 text-sm font-medium">总成员数</div>
+                    <div className="text-gray-400 text-xs font-medium">总成员</div>
                   </div>
                 </div>
                 
-                {/* 各阶段分布卡片 */}
+                {/* 各阶段分布 */}
                 {stageDistribution.map((item, index) => (
                   <div
                     key={index}
                     onClick={() => handleStageClick(item.stage)}
-                    className="group relative bg-gray-700/30 backdrop-blur-sm rounded-xl p-6 cursor-pointer hover:bg-gray-700/50 border border-gray-600/30 hover:border-gray-500/50 transition-all overflow-hidden"
+                    className="group flex-1 bg-gradient-to-br from-gray-700/40 to-gray-800/40 hover:from-gray-700/60 hover:to-gray-800/60 backdrop-blur-sm rounded-lg p-4 cursor-pointer border border-gray-600/30 hover:border-gray-500/50 transition-all min-w-0"
                   >
-                    <div className="relative text-center">
-                      <div className="text-4xl font-bold text-gray-300 mb-2">
+                    <div className="text-center">
+                      <div className={`text-3xl font-bold mb-1 ${item.textColor}`}>
                         {item.count}
                       </div>
-                      <div className="text-gray-400 text-sm font-medium">{item.stage}</div>
+                      <div className="text-gray-400 text-xs font-medium truncate">{item.stage}</div>
                     </div>
                   </div>
                 ))}
               </div>
               
-              <div className="mt-6 text-center">
-                <p className="text-gray-400 text-sm inline-flex items-center gap-2 bg-gray-700/30 px-4 py-2 rounded-full">
-                  <span className="text-gray-500">💡</span>
-                  点击卡片可跳转到成员列表并自动筛选对应阶段
+              <div className="mt-3 text-center">
+                <p className="text-gray-500 text-xs inline-flex items-center gap-1">
+                  💡 点击卡片可跳转到成员列表并自动筛选对应阶段
                 </p>
               </div>
             </div>
 
-            {/* 快捷操作 */}
-            <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-8 border border-gray-700">
-              <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-3">
-                <div className="p-3 rounded-xl bg-gradient-to-r from-yellow-600 to-orange-600 bg-opacity-20">
-                  <Award size={28} className="text-yellow-400" />
+            {/* 下方左右布局 */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* 左侧：催促名单 */}
+              <div className="lg:col-span-2 bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700">
+                <div className="flex items-center justify-between mb-5">
+                  <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                    <div className="p-2 rounded-lg bg-orange-600/20">
+                      <Bell size={22} className="text-orange-400" />
+                    </div>
+                    催促名单
+                    {stats.reminders > 0 && (
+                      <span className="ml-2 px-2.5 py-0.5 bg-orange-600/20 text-orange-400 text-sm font-semibold rounded-full">
+                        {stats.reminders}
+                      </span>
+                    )}
+                  </h2>
+                  <button
+                    onClick={() => navigate('/admin/leave-team/reminders')}
+                    className="text-sm text-purple-400 hover:text-purple-300 transition-colors font-medium"
+                  >
+                    查看全部 →
+                  </button>
                 </div>
-                快捷操作
-              </h2>
-              
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                <button
-                  onClick={() => navigate('/admin/members/list')}
-                  className="group flex flex-col items-center gap-3 p-5 bg-gray-700/30 hover:bg-gray-700/50 rounded-xl transition-all border border-gray-600/30 hover:border-purple-500/50"
-                >
-                  <div className="p-3 bg-purple-600/20 rounded-lg group-hover:bg-purple-600/30 transition-colors">
-                    <Users size={24} className="text-purple-400" />
+
+                {reminderList.length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="inline-block p-4 bg-green-600/10 rounded-full mb-3">
+                      <Users size={32} className="text-green-400" />
+                    </div>
+                    <p className="text-gray-400">暂无需要催促的成员</p>
+                    <p className="text-gray-500 text-sm mt-1">所有成员训练状态正常 ✨</p>
                   </div>
-                  <span className="text-gray-300 group-hover:text-white font-medium transition-colors">成员管理</span>
-                </button>
+                ) : (
+                  <div className="space-y-3">
+                    {reminderList.map((member) => (
+                      <div
+                        key={member.id}
+                        onClick={() => navigate('/admin/leave-team/reminders')}
+                        className="group bg-gray-700/30 hover:bg-gray-700/50 rounded-lg p-4 border border-gray-600/30 hover:border-orange-500/50 transition-all cursor-pointer"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-4">
+                            <div className="flex-shrink-0">
+                              <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-red-500 rounded-full flex items-center justify-center text-white font-bold text-lg">
+                                {member.nickname?.charAt(0) || member.member_name?.charAt(0) || '?'}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-white font-medium">{member.nickname || member.member_name}</span>
+                                <span className="text-gray-500 text-sm">QQ: {member.qq}</span>
+                              </div>
+                              <div className="flex items-center gap-3 mt-1">
+                                <span className="text-xs text-gray-400 bg-gray-700/50 px-2 py-0.5 rounded">
+                                  {member.stage_role}
+                                </span>
+                                <span className="text-xs text-gray-500">
+                                  {member.last_training_date ? `最后新训: ${formatDate(member.last_training_date)}` : '从未新训'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex-shrink-0 text-right">
+                            <div className="text-2xl font-bold text-orange-400">
+                              {member.days_without_training}
+                            </div>
+                            <div className="text-xs text-gray-500">天未训</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 右侧：快捷操作 2x2 */}
+              <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700">
+                <h2 className="text-xl font-bold text-white mb-5 flex items-center gap-2">
+                  <div className="p-2 rounded-lg bg-purple-600/20">
+                    <Award size={22} className="text-purple-400" />
+                  </div>
+                  快捷操作
+                </h2>
                 
-                <button
-                  onClick={() => navigate('/admin/training/courses')}
-                  className="group flex flex-col items-center gap-3 p-5 bg-gray-700/30 hover:bg-gray-700/50 rounded-xl transition-all border border-gray-600/30 hover:border-blue-500/50"
-                >
-                  <div className="p-3 bg-blue-600/20 rounded-lg group-hover:bg-blue-600/30 transition-colors">
-                    <BookOpen size={24} className="text-blue-400" />
-                  </div>
-                  <span className="text-gray-300 group-hover:text-white font-medium transition-colors">课程管理</span>
-                </button>
-                
-                <button
-                  onClick={() => navigate('/admin/training/progress')}
-                  className="group flex flex-col items-center gap-3 p-5 bg-gray-700/30 hover:bg-gray-700/50 rounded-xl transition-all border border-gray-600/30 hover:border-cyan-500/50"
-                >
-                  <div className="p-3 bg-cyan-600/20 rounded-lg group-hover:bg-cyan-600/30 transition-colors">
-                    <FileText size={24} className="text-cyan-400" />
-                  </div>
-                  <span className="text-gray-300 group-hover:text-white font-medium transition-colors">课程分配</span>
-                </button>
-                
-                <button
-                  onClick={() => navigate('/admin/members/leave')}
-                  className="group flex flex-col items-center gap-3 p-5 bg-gray-700/30 hover:bg-gray-700/50 rounded-xl transition-all border border-gray-600/30 hover:border-yellow-500/50"
-                >
-                  <div className="p-3 bg-yellow-600/20 rounded-lg group-hover:bg-yellow-600/30 transition-colors">
-                    <Calendar size={24} className="text-yellow-400" />
-                  </div>
-                  <span className="text-gray-300 group-hover:text-white font-medium transition-colors">请假记录</span>
-                </button>
-                
-                <button
-                  onClick={() => navigate('/admin/leave-team/reminders')}
-                  className="group flex flex-col items-center gap-3 p-5 bg-gray-700/30 hover:bg-gray-700/50 rounded-xl transition-all border border-gray-600/30 hover:border-orange-500/50"
-                >
-                  <div className="p-3 bg-orange-600/20 rounded-lg group-hover:bg-orange-600/30 transition-colors">
-                    <Bell size={24} className="text-orange-400" />
-                  </div>
-                  <span className="text-gray-300 group-hover:text-white font-medium transition-colors">催促名单</span>
-                </button>
-                
-                <button
-                  onClick={() => navigate('/admin/leave-team/approval')}
-                  className="group flex flex-col items-center gap-3 p-5 bg-gray-700/30 hover:bg-gray-700/50 rounded-xl transition-all border border-gray-600/30 hover:border-red-500/50"
-                >
-                  <div className="p-3 bg-red-600/20 rounded-lg group-hover:bg-red-600/30 transition-colors">
-                    <UserMinus size={24} className="text-red-400" />
-                  </div>
-                  <span className="text-gray-300 group-hover:text-white font-medium transition-colors">退队审批</span>
-                </button>
-                
-                <button
-                  onClick={() => navigate('/admin/members/blackpoints')}
-                  className="group flex flex-col items-center gap-3 p-5 bg-gray-700/30 hover:bg-gray-700/50 rounded-xl transition-all border border-gray-600/30 hover:border-red-500/50"
-                >
-                  <div className="p-3 bg-red-600/20 rounded-lg group-hover:bg-red-600/30 transition-colors">
-                    <AlertCircle size={24} className="text-red-500" />
-                  </div>
-                  <span className="text-gray-300 group-hover:text-white font-medium transition-colors">黑点记录</span>
-                </button>
-                
-                <button
-                  onClick={() => navigate('/admin/assessments/manage')}
-                  className="group flex flex-col items-center gap-3 p-5 bg-gray-700/30 hover:bg-gray-700/50 rounded-xl transition-all border border-gray-600/30 hover:border-gray-500/50"
-                >
-                  <div className="p-3 bg-gray-600/20 rounded-lg group-hover:bg-gray-600/30 transition-colors">
-                    <Settings size={24} className="text-gray-400" />
-                  </div>
-                  <span className="text-gray-300 group-hover:text-white font-medium transition-colors">考核管理</span>
-                </button>
+                <div className="grid grid-cols-2 gap-4">
+                  <button
+                    onClick={() => navigate('/admin/training/progress')}
+                    className="group flex flex-col items-center gap-3 p-5 bg-gray-700/30 hover:bg-gray-700/50 rounded-xl transition-all border border-gray-600/30 hover:border-cyan-500/50"
+                  >
+                    <div className="p-3 bg-cyan-600/20 rounded-lg group-hover:bg-cyan-600/30 transition-colors">
+                      <FileText size={28} className="text-cyan-400" />
+                    </div>
+                    <span className="text-gray-300 group-hover:text-white font-medium transition-colors text-sm text-center">课程分配</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => navigate('/admin/assessments/approval')}
+                    className="group flex flex-col items-center gap-3 p-5 bg-gray-700/30 hover:bg-gray-700/50 rounded-xl transition-all border border-gray-600/30 hover:border-green-500/50"
+                  >
+                    <div className="p-3 bg-green-600/20 rounded-lg group-hover:bg-green-600/30 transition-colors">
+                      <Award size={28} className="text-green-400" />
+                    </div>
+                    <span className="text-gray-300 group-hover:text-white font-medium transition-colors text-sm text-center">考核审批</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => navigate('/admin/leave-team/approval')}
+                    className="group flex flex-col items-center gap-3 p-5 bg-gray-700/30 hover:bg-gray-700/50 rounded-xl transition-all border border-gray-600/30 hover:border-red-500/50"
+                  >
+                    <div className="p-3 bg-red-600/20 rounded-lg group-hover:bg-red-600/30 transition-colors">
+                      <UserMinus size={28} className="text-red-400" />
+                    </div>
+                    <span className="text-gray-300 group-hover:text-white font-medium transition-colors text-sm text-center">退队审批</span>
+                  </button>
+                  
+                  <button
+                    onClick={() => navigate('/admin/assessments/manage')}
+                    className="group flex flex-col items-center gap-3 p-5 bg-gray-700/30 hover:bg-gray-700/50 rounded-xl transition-all border border-gray-600/30 hover:border-blue-500/50"
+                  >
+                    <div className="p-3 bg-blue-600/20 rounded-lg group-hover:bg-blue-600/30 transition-colors">
+                      <FileText size={28} className="text-blue-400" />
+                    </div>
+                    <span className="text-gray-300 group-hover:text-white font-medium transition-colors text-sm text-center">考核记录</span>
+                  </button>
+                </div>
               </div>
             </div>
-
-            {/* 提示信息 */}
-            {stats.reminders > 0 && (
-              <div className="bg-orange-900/20 backdrop-blur-sm border border-orange-600/30 rounded-xl p-5">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-orange-600/20 rounded-lg">
-                    <AlertCircle size={24} className="text-orange-400" />
-                  </div>
-                  <span className="text-orange-300 font-medium text-lg">
-                    ⚠️ 提醒：当前有 <span className="font-bold">{stats.reminders}</span> 名成员需要催促训练
-                  </span>
-                </div>
-              </div>
-            )}
           </div>
         )}
       </div>

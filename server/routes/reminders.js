@@ -17,13 +17,16 @@ router.get('/', async (req, res) => {
     
     const [rows] = await pool.query(`
       SELECT 
-        *,
+        r.*,
+        m.qq,
+        m.nickname,
         CASE 
-          WHEN custom_timeout_days IS NOT NULL THEN custom_timeout_days - days_without_training
-          ELSE ? - days_without_training
+          WHEN r.custom_timeout_days IS NOT NULL THEN r.custom_timeout_days - r.days_without_training
+          ELSE ? - r.days_without_training
         END as days_until_timeout
-      FROM reminder_list
-      ORDER BY days_without_training DESC
+      FROM reminder_list r
+      LEFT JOIN members m ON r.member_id = m.id
+      ORDER BY r.days_without_training DESC
     `, [defaultTimeoutDays])
     
     res.json({
