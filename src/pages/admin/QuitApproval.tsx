@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { quitAPI, memberAPI } from '../../utils/api'
-import { Plus, Check, X, Trash2, Filter, ChevronUp, ChevronDown, Search, X as XIcon, CheckSquare, Square } from 'lucide-react'
+import { Plus, Check, X, Trash2, Filter, ChevronUp, ChevronDown, Search, X as XIcon, CheckSquare, Square, Loader2 } from 'lucide-react'
 import { formatDate } from '../../utils/dateFormat'
 import { toast } from '../../utils/toast'
 import ConfirmDialog from '../../components/ConfirmDialog'
@@ -50,6 +50,7 @@ export default function QuitApproval() {
   const [approvals, setApprovals] = useState<QuitApproval[]>([])
   const [members, setMembers] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [approvingId, setApprovingId] = useState<number | null>(null)
   const [confirmDialog, setConfirmDialog] = useState<{show: boolean, type: string, data?: any}>({show: false, type: ''})
@@ -314,19 +315,22 @@ export default function QuitApproval() {
       return
     }
     
+    setSubmitting(true)
     const adminId = localStorage.getItem('userId')
     const adminName = localStorage.getItem('userName') || '管理员'
-    const memberId = parseInt(formData.member_id)
     let approvalCreated = false
     
     try {
       await quitAPI.create({
-        member_id: memberId,
+        member_id: formData.member_id,
         source_admin_id: adminId ? parseInt(adminId) : 1,
         source_admin_name: adminName,
         remarks: formData.remarks
       })
       approvalCreated = true
+      toast.success('退队审批添加成功')
+      
+      const memberId = parseInt(formData.member_id)
       
       try {
         await updateMemberStatus(memberId, '已退队')
@@ -347,6 +351,8 @@ export default function QuitApproval() {
       } else {
         toast.error(error.message || '添加退队审批失败')
       }
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -690,8 +696,13 @@ export default function QuitApproval() {
               </div>
               
               <div className="flex gap-3 pt-4">
-                <button type="submit" className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors">
-                  添加
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {submitting && <Loader2 size={16} className="animate-spin" />}
+                  {submitting ? '添加中...' : '添加'}
                 </button>
                 <button type="button" onClick={() => setShowModal(false)} className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 rounded-lg transition-colors">
                   取消

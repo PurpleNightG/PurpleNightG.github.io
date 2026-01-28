@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Plus, Edit, Trash2, Search, X, Filter, CheckSquare, Square, Settings, GripVertical, Users } from 'lucide-react'
+import { Plus, Edit, Trash2, Search, X, Filter, CheckSquare, Square, Settings, GripVertical, Users, Loader2 } from 'lucide-react'
 import {
   DndContext,
   closestCenter,
@@ -139,6 +139,7 @@ export default function CourseManagement() {
   const [categories, setCategories] = useState<string[]>(['入门课程', '标准技能一阶课程', '标准技能二阶课程', '团队训练', '进阶课程'])
   const [difficulties, setDifficulties] = useState<string[]>(['初级', '中级', '高级'])
   const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
   
   // 从localStorage加载搜索关键词
   const [searchQuery, setSearchQuery] = useState(() => {
@@ -395,6 +396,7 @@ export default function CourseManagement() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setSubmitting(true)
     try {
       if (editingCourse) {
         // 编辑模式：检查是否与其他课程编号重复
@@ -428,6 +430,8 @@ export default function CourseManagement() {
     } catch (error: any) {
       console.error('操作失败:', error)
       toast.error('操作失败: ' + error.message)
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -902,9 +906,11 @@ export default function CourseManagement() {
               <div className="flex gap-3 pt-4">
                 <button
                   type="submit"
-                  className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors"
+                  disabled={submitting}
+                  className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                  {editingCourse ? '保存修改' : '添加课程'}
+                  {submitting && <Loader2 size={16} className="animate-spin" />}
+                  {editingCourse ? (submitting ? '保存中...' : '保存修改') : (submitting ? '添加中...' : '添加课程')}
                 </button>
                 <button
                   type="button"
