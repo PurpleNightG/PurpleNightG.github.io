@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { X, Calendar, AlertCircle, UserMinus, LogOut, Save, Key } from 'lucide-react'
+import { X, Calendar, AlertCircle, UserMinus, LogOut, Save, Key, Loader2 } from 'lucide-react'
 import { memberAPI, blackPointAPI, leaveAPI, quitAPI, retentionAPI } from '../../utils/api'
 import { formatDate, formatDateTime } from '../../utils/dateFormat'
 import { toast } from '../../utils/toast'
@@ -40,6 +40,9 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
   const [leaveRecords, setLeaveRecords] = useState<LeaveRecord[]>([])
   const [retentionRecord, setRetentionRecord] = useState<RetentionRecord | null>(null)
   const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [addingBlackPoint, setAddingBlackPoint] = useState(false)
+  const [addingLeave, setAddingLeave] = useState(false)
   const [remarks, setRemarks] = useState('')
   const [isEditing, setIsEditing] = useState(false)
   const [editedMember, setEditedMember] = useState<any>({})
@@ -90,6 +93,7 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
   }
 
   const handleSave = async () => {
+    setSaving(true)
     try {
       // 格式化日期为 YYYY-MM-DD
       const formatDateForDB = (dateStr: string | null | undefined) => {
@@ -114,6 +118,8 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
     } catch (error: any) {
       console.error('保存失败:', error)
       toast.error(error.message || '保存失败')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -159,6 +165,7 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
 
   const submitBlackPoint = async (e: React.FormEvent) => {
     e.preventDefault()
+    setAddingBlackPoint(true)
     try {
       const adminId = localStorage.getItem('userId')
       const adminName = localStorage.getItem('userName') || '管理员'
@@ -188,6 +195,7 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
 
   const submitLeave = async (e: React.FormEvent) => {
     e.preventDefault()
+    setAddingLeave(true)
     try {
       await leaveAPI.create({
         member_id: memberId,
@@ -626,10 +634,11 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
               </button>
               <button
                 onClick={handleSave}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors flex items-center space-x-2"
+                disabled={saving}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
               >
-                <Save size={16} />
-                <span>保存</span>
+                {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                <span>{saving ? '保存中...' : '保存'}</span>
               </button>
             </>
           )}
@@ -681,9 +690,11 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
               <div className="flex gap-3 pt-4">
                 <button
                   type="submit"
-                  className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg transition-colors"
+                  disabled={addingBlackPoint}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                  添加黑点
+                  {addingBlackPoint && <Loader2 size={16} className="animate-spin" />}
+                  {addingBlackPoint ? '添加中...' : '添加黑点'}
                 </button>
                 <button
                   type="button"
@@ -741,9 +752,11 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
               <div className="flex gap-3 pt-4">
                 <button
                   type="submit"
-                  className="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white py-2 rounded-lg transition-colors"
+                  disabled={addingLeave}
+                  className="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                  登记请假
+                  {addingLeave && <Loader2 size={16} className="animate-spin" />}
+                  {addingLeave ? '登记中...' : '登记请假'}
                 </button>
                 <button
                   type="button"
