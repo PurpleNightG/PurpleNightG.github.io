@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { memberAPI, quitAPI } from '../../utils/api'
-import { Plus, Eye, Filter, ChevronUp, ChevronDown, Search, X, CheckSquare, Square } from 'lucide-react'
+import { Plus, Eye, Filter, ChevronUp, ChevronDown, Search, X, CheckSquare, Square, Loader2 } from 'lucide-react'
 import { formatDate } from '../../utils/dateFormat'
 import { toast } from '../../utils/toast'
 import MemberDetail from './MemberDetail'
@@ -19,6 +19,7 @@ interface Member {
 export default function MemberList() {
   const [members, setMembers] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [viewingMemberId, setViewingMemberId] = useState<number | null>(null)
   const [showFilters, setShowFilters] = useState(false)
@@ -104,12 +105,14 @@ export default function MemberList() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
+    if (!formData.nickname || !formData.qq) {
+      toast.error('昵称和QQ号为必填项')
+      return
+    }
+    
+    setSubmitting(true)
     try {
       // 添加新成员（用户名和密码由系统自动设置）
-      if (!formData.nickname || !formData.qq) {
-        toast.error('昵称和QQ号为必填项')
-        return
-      }
       await memberAPI.create(formData)
       toast.success('成员添加成功')
       
@@ -117,6 +120,8 @@ export default function MemberList() {
       loadMembers()
     } catch (error: any) {
       toast.error(error.message || '操作失败')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -816,9 +821,11 @@ export default function MemberList() {
               <div className="flex gap-3 pt-4">
                 <button
                   type="submit"
-                  className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors"
+                  disabled={submitting}
+                  className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                  添加
+                  {submitting && <Loader2 size={16} className="animate-spin" />}
+                  {submitting ? '添加中...' : '添加'}
                 </button>
                 <button
                   type="button"
