@@ -16,7 +16,8 @@ const pool = mysql.createPool({
   idleTimeout: 60000,  // 空闲连接60秒后释放
   queueLimit: 0,
   enableKeepAlive: true,
-  keepAliveInitialDelay: 0
+  keepAliveInitialDelay: 0,
+  timezone: '+08:00'  // 设置时区为中国标准时间（东八区），确保所有环境时间一致
 })
 
 // 测试数据库连接

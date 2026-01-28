@@ -44,6 +44,22 @@ export const formatDateTime = (dateString: string | null | undefined): string =>
   if (!dateString) return '-'
   
   try {
+    // 如果是 ISO 8601 格式（包含 T），直接解析字符串，避免时区转换
+    if (dateString.includes('T')) {
+      // 例如: "2024-01-28T10:30:45.000Z" 或 "2024-01-28T10:30:45"
+      const parts = dateString.split('T')
+      const datePart = parts[0] // "2024-01-28"
+      const timePart = parts[1].split('.')[0] // "10:30:45" (去掉毫秒和时区)
+      
+      return `${datePart} ${timePart}`
+    }
+    
+    // 如果已经是 YYYY-MM-DD HH:mm:ss 格式，直接返回
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(dateString)) {
+      return dateString
+    }
+    
+    // 其他格式，尝试使用 Date 对象（作为最后手段）
     const date = new Date(dateString)
     
     if (isNaN(date.getTime())) return '-'

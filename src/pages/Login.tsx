@@ -150,6 +150,17 @@ export default function Login() {
               </button>
             </div>
 
+            {/* Student Login Notice */}
+            {userType === 'student' && (
+              <div className="p-4 bg-blue-900/20 border border-blue-700/50 rounded-lg flex items-start space-x-3">
+                <AlertCircle size={20} className="text-blue-400 flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-blue-300">
+                  <p className="font-semibold mb-1">温馨提示</p>
+                  <p>学员至少要参加一次新训才会有账号，如无法登录请联系管理员</p>
+                </div>
+              </div>
+            )}
+
             {/* Username Input */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
