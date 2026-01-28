@@ -610,6 +610,50 @@ export default function CourseManagement() {
     }
   }
 
+  // 批量分配课程
+  const openBatchAssignModal = async () => {
+    if (selectedIds.size === 0) {
+      toast.error('请先选择要分配的课程')
+      return
+    }
+    setShowAssignModal(true)
+    setSelectedMemberIds(new Set())
+    setAssignProgress(0)
+    await loadMembers()
+  }
+
+  const handleBatchAssignProgress = async () => {
+    if (selectedMemberIds.size === 0) {
+      toast.error('请至少选择一个成员')
+      return
+    }
+    if (selectedIds.size === 0) {
+      toast.error('请至少选择一个课程')
+      return
+    }
+
+    try {
+      const courseIds = Array.from(selectedIds)
+      const memberIds = Array.from(selectedMemberIds).map(String)
+      
+      // 批量为每个课程设置进度
+      for (const courseId of courseIds) {
+        await progressAPI.batchUpdateCourse(
+          courseId,
+          memberIds,
+          assignProgress
+        )
+      }
+      
+      toast.success(`已为 ${selectedMemberIds.size} 名成员分配 ${selectedIds.size} 门课程，进度设置为 ${assignProgress}%`)
+      closeAssignModal()
+      setSelectedIds(new Set()) // 清空课程选择
+    } catch (error: any) {
+      console.error('批量设置进度失败:', error)
+      toast.error('批量设置进度失败')
+    }
+  }
+
   const getDifficultyColor = (difficulty: string) => {
     switch (difficulty) {
       case '初级': return 'bg-green-600/20 text-green-300'
@@ -700,6 +744,9 @@ export default function CourseManagement() {
           <div className="flex items-center justify-between">
             <span className="text-white font-semibold">批量操作</span>
             <div className="flex gap-2">
+              <button onClick={openBatchAssignModal} className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm transition-colors">
+                批量分配
+              </button>
               <button onClick={openBatchModal} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm transition-colors">
                 批量修改
               </button>
@@ -1048,7 +1095,7 @@ export default function CourseManagement() {
       )}
 
       {/* 课程进度分配模态框 */}
-      {showAssignModal && assigningCourse && (
+      {showAssignModal && (
         <div 
           className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
           onClick={closeAssignModal}
@@ -1059,7 +1106,10 @@ export default function CourseManagement() {
           >
             <div className="sticky top-0 bg-gray-800 border-b border-gray-700 px-6 py-4 flex justify-between items-center">
               <h2 className="text-xl font-bold text-white">
-                为课程"{assigningCourse.code} {assigningCourse.name}"分配进度
+                {assigningCourse 
+                  ? `为课程"${assigningCourse.code} ${assigningCourse.name}"分配进度`
+                  : `批量分配课程进度（已选 ${selectedIds.size} 门课程）`
+                }
               </h2>
               <button onClick={closeAssignModal} className="text-gray-400 hover:text-white transition-colors">
                 <X size={24} />
@@ -1141,11 +1191,11 @@ export default function CourseManagement() {
                       取消
                     </button>
                     <button
-                      onClick={handleAssignProgress}
+                      onClick={assigningCourse ? handleAssignProgress : handleBatchAssignProgress}
                       className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       disabled={selectedMemberIds.size === 0}
                     >
-                      设置进度
+                      {assigningCourse ? '设置进度' : `为 ${selectedIds.size} 门课程设置进度`}
                     </button>
                   </div>
                 </>

@@ -5,7 +5,7 @@ import { Plus, Trash2, Edit, CheckCircle, XCircle, ChevronDown, ChevronUp, X, Se
 import ConfirmDialog from '../../components/ConfirmDialog'
 import SearchableSelect from '../../components/SearchableSelect'
 import DateInput from '../../components/DateInput'
-import { formatDate, formatDateTime } from '../../utils/dateFormat'
+import { formatDate, formatDateTime, toInputDate } from '../../utils/dateFormat'
 
 interface Assessment {
   id: number
@@ -186,7 +186,7 @@ export default function AssessmentRecords() {
     setFormData({
       member_id: assessment.member_id,
       member_name: assessment.member_name,
-      assessment_date: assessment.assessment_date,
+      assessment_date: toInputDate(assessment.assessment_date),
       status: assessment.status,
       map: assessment.custom_map ? '自定义' : assessment.map,
       custom_map: assessment.custom_map || '',

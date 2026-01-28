@@ -113,7 +113,7 @@ export const formatDateTime = (dateString: string | null | undefined): string =>
 
 /**
  * 将日期转换为用于input[type="date"]的格式 (YYYY-MM-DD)
- * 使用 Date 对象进行时区转换，确保与显示一致
+ * 与 formatDate 保持一致的逻辑，避免时区问题
  * @param dateString - ISO日期字符串或Date对象
  * @returns YYYY-MM-DD 格式的字符串
  */
@@ -121,12 +121,41 @@ export const toInputDate = (dateString: string | Date | null | undefined): strin
   if (!dateString) return ''
   
   try {
-    // 统一使用 Date 对象来处理，确保时区转换正确
+    // 如果是字符串，使用 formatDate 逻辑
+    if (typeof dateString === 'string') {
+      // 如果是 YYYY-MM-DD 格式，直接返回
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+        return dateString
+      }
+      
+      // 对于带时间的ISO字符串
+      if (dateString.includes('T')) {
+        const datePart = dateString.split('T')[0]
+        
+        // 如果是 UTC 时间（带 Z），需要检查是否跨日
+        if (dateString.endsWith('Z') || dateString.includes('+00:00')) {
+          const date = new Date(dateString)
+          if (isNaN(date.getTime())) return ''
+          
+          // 手动添加 8 小时转换为北京时间
+          const beijingTime = new Date(date.getTime() + 8 * 60 * 60 * 1000)
+          
+          const year = beijingTime.getUTCFullYear()
+          const month = String(beijingTime.getUTCMonth() + 1).padStart(2, '0')
+          const day = String(beijingTime.getUTCDate()).padStart(2, '0')
+          
+          return `${year}-${month}-${day}`
+        }
+        
+        return datePart
+      }
+    }
+    
+    // 如果是 Date 对象
     const date = typeof dateString === 'string' ? new Date(dateString) : dateString
     
     if (isNaN(date.getTime())) return ''
     
-    // 使用本地时区的日期
     const year = date.getFullYear()
     const month = String(date.getMonth() + 1).padStart(2, '0')
     const day = String(date.getDate()).padStart(2, '0')

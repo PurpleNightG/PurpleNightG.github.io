@@ -864,6 +864,66 @@ export default function StudentHome() {
             </button>
           </div>
         </div>
+
+        {/* 文档快捷方式 */}
+        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 mt-6">
+          <h2 className="text-xl font-bold text-white mb-5 flex items-center gap-2">
+            <div className="p-2 rounded-lg bg-blue-600/20">
+              <BookOpen size={22} className="text-blue-400" />
+            </div>
+            文档中心
+          </h2>
+          
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <a
+              href="/docs/PNG.md"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group flex flex-col items-center gap-3 p-5 bg-gray-700/30 hover:bg-gray-700/50 rounded-xl transition-all border border-gray-600/30 hover:border-purple-500/50"
+            >
+              <div className="p-3 bg-purple-600/20 rounded-lg group-hover:bg-purple-600/30 transition-colors">
+                <FileText size={28} className="text-purple-400" />
+              </div>
+              <span className="text-gray-300 group-hover:text-white font-medium transition-colors text-sm text-center">PNG简介</span>
+            </a>
+            
+            <a
+              href="/docs/PNGrule.md"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group flex flex-col items-center gap-3 p-5 bg-gray-700/30 hover:bg-gray-700/50 rounded-xl transition-all border border-gray-600/30 hover:border-blue-500/50"
+            >
+              <div className="p-3 bg-blue-600/20 rounded-lg group-hover:bg-blue-600/30 transition-colors">
+                <FileText size={28} className="text-blue-400" />
+              </div>
+              <span className="text-gray-300 group-hover:text-white font-medium transition-colors text-sm text-center">PNG规章制度</span>
+            </a>
+            
+            <a
+              href="/docs/HTJ.md"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group flex flex-col items-center gap-3 p-5 bg-gray-700/30 hover:bg-gray-700/50 rounded-xl transition-all border border-gray-600/30 hover:border-green-500/50"
+            >
+              <div className="p-3 bg-green-600/20 rounded-lg group-hover:bg-green-600/30 transition-colors">
+                <FileText size={28} className="text-green-400" />
+              </div>
+              <span className="text-gray-300 group-hover:text-white font-medium transition-colors text-sm text-center">洪潭巨头教程</span>
+            </a>
+            
+            <a
+              href="/docs/mod-explan.md"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group flex flex-col items-center gap-3 p-5 bg-gray-700/30 hover:bg-gray-700/50 rounded-xl transition-all border border-gray-600/30 hover:border-orange-500/50"
+            >
+              <div className="p-3 bg-orange-600/20 rounded-lg group-hover:bg-orange-600/30 transition-colors">
+                <FileText size={28} className="text-orange-400" />
+              </div>
+              <span className="text-gray-300 group-hover:text-white font-medium transition-colors text-sm text-center">MOD说明</span>
+            </a>
+          </div>
+        </div>
       </div>
       </div>
 
