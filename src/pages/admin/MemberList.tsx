@@ -658,7 +658,12 @@ export default function MemberList() {
                       {sortConfig?.key === 'join_date' && (sortConfig.direction === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />)}
                     </button>
                   </th>
-                  <th>阶段&角色</th>
+                  <th>
+                    <button onClick={() => handleSort('stage_role')} className="flex items-center gap-1 hover:text-white transition-colors">
+                      <span>阶段&角色</span>
+                      {sortConfig?.key === 'stage_role' && (sortConfig.direction === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />)}
+                    </button>
+                  </th>
                   <th>状态</th>
                   <th>
                     <button onClick={() => handleSort('last_training_date')} className="flex items-center gap-1 hover:text-white transition-colors">

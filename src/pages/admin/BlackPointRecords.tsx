@@ -220,13 +220,17 @@ export default function BlackPointRecords() {
         toast.error('请填写完整信息')
         return
       }
-      const adminId = localStorage.getItem('userId')
-      const adminName = localStorage.getItem('userName') || '管理员'
+      // 从 localStorage 获取管理员信息
+      const userStr = localStorage.getItem('user') || sessionStorage.getItem('user')
+      const user = userStr ? JSON.parse(userStr) : null
+      const adminId = user?.id
+      const adminName = user?.name || user?.username || '管理员'
+      
       await blackPointAPI.create({
         member_id: parseInt(formData.member_id),
         reason: formData.reason,
         register_date: formData.register_date,
-        recorder_id: adminId ? parseInt(adminId) : 1,
+        recorder_id: adminId || 1,
         recorder_name: adminName
       })
       toast.success('黑点记录添加成功')

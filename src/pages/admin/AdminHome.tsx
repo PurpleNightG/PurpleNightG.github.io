@@ -311,7 +311,7 @@ export default function AdminHome() {
                 
                 <div className="grid grid-cols-2 gap-4">
                   <button
-                    onClick={() => navigate('/admin/training/progress')}
+                    onClick={() => navigate('/admin/courses/progress')}
                     className="group flex flex-col items-center gap-3 p-5 bg-gray-700/30 hover:bg-gray-700/50 rounded-xl transition-all border border-gray-600/30 hover:border-cyan-500/50"
                   >
                     <div className="p-3 bg-cyan-600/20 rounded-lg group-hover:bg-cyan-600/30 transition-colors">
