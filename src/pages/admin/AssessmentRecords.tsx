@@ -5,6 +5,7 @@ import { Plus, Trash2, Edit, CheckCircle, XCircle, ChevronDown, ChevronUp, X, Se
 import ConfirmDialog from '../../components/ConfirmDialog'
 import SearchableSelect from '../../components/SearchableSelect'
 import DateInput from '../../components/DateInput'
+import { formatDate, formatDateTime } from '../../utils/dateFormat'
 
 interface Assessment {
   id: number
@@ -526,7 +527,6 @@ export default function AssessmentRecords() {
                   </button>
                 </th>
                 <th>地图</th>
-                <th>评价</th>
                 <th>考核记录</th>
                 <th>考核视频</th>
                 <th>
@@ -558,7 +558,7 @@ export default function AssessmentRecords() {
                       </button>
                     </td>
                     <td className="font-medium">{assessment.member_name}</td>
-                    <td>{new Date(assessment.assessment_date).toLocaleDateString('zh-CN')}</td>
+                    <td>{formatDate(assessment.assessment_date)}</td>
                     <td>
                       <span className={`status-badge ${getStatusBadge(assessment.status)}`}>
                         {assessment.status}
@@ -570,19 +570,6 @@ export default function AssessmentRecords() {
                         <span className="text-green-400 flex items-center gap-1">
                           <CheckCircle size={16} />
                           已填写
-                        </span>
-                      ) : (
-                        <span className="text-gray-500 flex items-center gap-1">
-                          <XCircle size={16} />
-                          未填写
-                        </span>
-                      )}
-                    </td>
-                    <td>
-                      {assessment.has_deduction_records ? (
-                        <span className="text-green-400 flex items-center gap-1">
-                          <CheckCircle size={16} />
-                          已填写 ({assessment.deduction_records?.length || 0}条)
                         </span>
                       ) : (
                         <span className="text-gray-500 flex items-center gap-1">
@@ -616,7 +603,7 @@ export default function AssessmentRecords() {
                       </div>
                     </td>
                     <td className="text-gray-400 text-sm">
-                      {new Date(assessment.created_at).toLocaleString('zh-CN')}
+                      {formatDateTime(assessment.created_at)}
                     </td>
                     <td>
                       <div className="flex gap-2">

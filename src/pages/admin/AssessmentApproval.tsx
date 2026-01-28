@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { assessmentApplicationAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
 import { CheckCircle, XCircle, Clock, Search, Filter, X, Calendar, Users, Trash2, CheckSquare, Square, Loader2, ChevronUp, ChevronDown } from 'lucide-react'
+import { formatDate, formatDateTime } from '../../utils/dateFormat'
 
 interface Application {
   id: number
@@ -468,12 +469,12 @@ export default function AssessmentApproval() {
                     <td>
                       <div className="flex items-center gap-1">
                         <Calendar size={16} className="text-gray-400" />
-                        {new Date(application.preferred_date).toLocaleDateString('zh-CN')}
+                        {formatDate(application.preferred_date)}
                       </div>
                     </td>
                     <td>{application.preferred_time}</td>
                     <td className="text-gray-400 text-sm">
-                      {new Date(application.created_at).toLocaleString('zh-CN')}
+                      {formatDateTime(application.created_at)}
                     </td>
                     <td>
                       <div className="flex items-center gap-2">
@@ -563,7 +564,7 @@ export default function AssessmentApproval() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Calendar size={16} className="text-gray-400" />
-                    日期：{new Date(selectedApplication.preferred_date).toLocaleDateString('zh-CN')} {selectedApplication.preferred_time}
+                    日期：{formatDate(selectedApplication.preferred_date)} {selectedApplication.preferred_time}
                   </div>
                 </div>
               </div>
@@ -632,7 +633,7 @@ export default function AssessmentApproval() {
                   <div className="flex items-center gap-2">
                     <Calendar size={16} className="text-gray-400" />
                     <span className="text-gray-400">日期：</span>
-                    <span>{new Date(selectedApplication.preferred_date).toLocaleDateString('zh-CN')} {selectedApplication.preferred_time}</span>
+                    <span>{formatDate(selectedApplication.preferred_date)} {selectedApplication.preferred_time}</span>
                   </div>
                 </div>
               </div>
@@ -691,7 +692,7 @@ export default function AssessmentApproval() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Calendar size={16} className="text-gray-400" />
-                    日期：{new Date(selectedApplication.preferred_date).toLocaleDateString('zh-CN')} {selectedApplication.preferred_time}
+                    日期：{formatDate(selectedApplication.preferred_date)} {selectedApplication.preferred_time}
                   </div>
                 </div>
               </div>
@@ -712,7 +713,7 @@ export default function AssessmentApproval() {
                 <div className="mt-4 text-gray-400 text-sm">
                   审批人：{selectedApplication.approved_by}
                   {selectedApplication.approved_at && (
-                    <> · {new Date(selectedApplication.approved_at).toLocaleString('zh-CN')}</>
+                    <> · {formatDateTime(selectedApplication.approved_at)}</>
                   )}
                 </div>
               )}
@@ -753,7 +754,7 @@ export default function AssessmentApproval() {
                   <div className="flex items-center gap-2">
                     <Calendar size={16} className="text-gray-400" />
                     <span className="text-gray-400">日期：</span>
-                    <span>{new Date(selectedApplication.preferred_date).toLocaleDateString('zh-CN')} {selectedApplication.preferred_time}</span>
+                    <span>{formatDate(selectedApplication.preferred_date)} {selectedApplication.preferred_time}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     {getStatusIcon(selectedApplication.status)}
@@ -833,7 +834,7 @@ export default function AssessmentApproval() {
                         <Users size={14} className="text-gray-400" />
                         <span>{app.member_name}</span>
                         <span className="text-gray-500">·</span>
-                        <span className="text-gray-400">{new Date(app.preferred_date).toLocaleDateString('zh-CN')}</span>
+                        <span className="text-gray-400">{formatDate(app.preferred_date)}</span>
                         <span className={`ml-auto status-badge ${getStatusBadge(app.status)}`}>
                           {app.status}
                         </span>
