@@ -3,6 +3,7 @@ import { publicVideoAPI } from '../../utils/api'
 import { toast } from 'react-hot-toast'
 import { Plus, Trash2, Edit, Search, X, CheckSquare, Square, ChevronUp, ChevronDown, Video, Play } from 'lucide-react'
 import ConfirmDialog from '../../components/ConfirmDialog'
+import { toInputDate } from '../../utils/dateFormat'
 
 interface PublicVideo {
   id: number
@@ -64,13 +65,13 @@ export default function PublicVideosManagement() {
     setEditingVideo(null)
   }
 
-  const handleEdit = (video: PublicVideo) => {
+  const openEditModal = (video: PublicVideo) => {
     setEditingVideo(video)
     setFormData({
       title: video.title,
       participant_a: video.participant_a,
       participant_b: video.participant_b,
-      assessment_date: video.assessment_date.split('T')[0],
+      assessment_date: toInputDate(video.assessment_date),
       video_url: video.video_url,
       description: video.description || ''
     })
@@ -364,7 +365,7 @@ export default function PublicVideosManagement() {
                           <Play size={18} />
                         </button>
                         <button
-                          onClick={() => handleEdit(video)}
+                          onClick={() => openEditModal(video)}
                           className="text-blue-400 hover:text-blue-300 transition-colors"
                           title="编辑"
                         >

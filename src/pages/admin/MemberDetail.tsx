@@ -4,6 +4,7 @@ import { memberAPI, blackPointAPI, leaveAPI, quitAPI, retentionAPI } from '../..
 import { formatDate, formatDateTime } from '../../utils/dateFormat'
 import { toast } from '../../utils/toast'
 import ConfirmDialog from '../../components/ConfirmDialog'
+import DateInput from '../../components/DateInput'
 
 interface MemberDetailProps {
   memberId: number
@@ -676,16 +677,12 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
                 />
               </div>
               
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">登记日期 *</label>
-                <input
-                  type="date"
-                  value={blackPointForm.register_date}
-                  onChange={(e) => setBlackPointForm({...blackPointForm, register_date: e.target.value})}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
-                  required
-                />
-              </div>
+              <DateInput
+                label="登记日期"
+                value={blackPointForm.register_date}
+                onChange={(value) => setBlackPointForm({...blackPointForm, register_date: value})}
+                required
+              />
               
               <div className="flex gap-3 pt-4">
                 <button
@@ -726,27 +723,20 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
                 />
               </div>
               
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">开始日期 *</label>
-                  <input
-                    type="date"
-                    value={leaveForm.start_date}
-                    onChange={(e) => setLeaveForm({...leaveForm, start_date: e.target.value})}
-                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">结束日期 *</label>
-                  <input
-                    type="date"
-                    value={leaveForm.end_date}
-                    onChange={(e) => setLeaveForm({...leaveForm, end_date: e.target.value})}
-                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
-                    required
-                  />
-                </div>
+              <div className="grid grid-cols-2 gap-3">
+                <DateInput
+                  label="开始日期"
+                  value={leaveForm.start_date}
+                  onChange={(value) => setLeaveForm({...leaveForm, start_date: value})}
+                  required
+                />
+                <DateInput
+                  label="结束日期"
+                  value={leaveForm.end_date}
+                  onChange={(value) => setLeaveForm({...leaveForm, end_date: value})}
+                  min={leaveForm.start_date}
+                  required
+                />
               </div>
               
               <div className="flex gap-3 pt-4">

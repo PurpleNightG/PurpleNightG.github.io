@@ -4,6 +4,7 @@ import { toast } from '../../utils/toast'
 import { Plus, Trash2, Edit, CheckCircle, XCircle, ChevronDown, ChevronUp, X, Search, Filter, CheckSquare, Square, Loader2 } from 'lucide-react'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import SearchableSelect from '../../components/SearchableSelect'
+import DateInput from '../../components/DateInput'
 
 interface Assessment {
   id: number
@@ -690,18 +691,12 @@ export default function AssessmentRecords() {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">
-                    考核日期 *
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.assessment_date}
-                    onChange={(e) => setFormData({ ...formData, assessment_date: e.target.value })}
-                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
-                    required
-                  />
-                </div>
+                <DateInput
+                  label="考核日期"
+                  value={formData.assessment_date}
+                  onChange={(value) => setFormData({ ...formData, assessment_date: value })}
+                  required
+                />
 
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-1">

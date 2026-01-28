@@ -5,6 +5,7 @@ import { formatDate } from '../../utils/dateFormat'
 import { toast } from '../../utils/toast'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import SearchableSelect from '../../components/SearchableSelect'
+import DateInput from '../../components/DateInput'
 
 interface BlackPointRecord {
   id: number
@@ -479,16 +480,12 @@ export default function BlackPointRecords() {
                   required
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">登记日期 *</label>
-                <input
-                  type="date"
-                  value={formData.register_date}
-                  onChange={(e) => setFormData({...formData, register_date: e.target.value})}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
-                  required
-                />
-              </div>
+              <DateInput
+                label="登记日期"
+                value={formData.register_date}
+                onChange={(value) => setFormData({...formData, register_date: value})}
+                required
+              />
               <div className="flex gap-3 pt-4">
                 <button type="submit" className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors">
                   添加

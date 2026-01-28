@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { leaveAPI, memberAPI } from '../../utils/api'
 import { Plus, Edit, Trash2, Filter, ChevronUp, ChevronDown, Search, X, CheckSquare, Square } from 'lucide-react'
-import { formatDate } from '../../utils/dateFormat'
+import { formatDate, toInputDate } from '../../utils/dateFormat'
 import { toast } from '../../utils/toast'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import SearchableSelect from '../../components/SearchableSelect'
+import DateInput from '../../components/DateInput'
 
 interface LeaveRecord {
   id: number
@@ -80,6 +81,9 @@ export default function LeaveRecords() {
   const loadRecords = async () => {
     setLoading(true)
     try {
+      // 先自动更新过期的请假记录
+      await leaveAPI.autoUpdate()
+      // 再获取所有记录
       const response = await leaveAPI.getAll()
       setRecords(response.data || [])
     } catch (error: any) {
@@ -243,15 +247,11 @@ export default function LeaveRecords() {
 
   const openEditModal = (record: LeaveRecord) => {
     setEditingRecord(record)
-    const formatDateForInput = (dateStr: string) => {
-      if (!dateStr) return ''
-      return dateStr.split('T')[0]
-    }
     setFormData({
       member_id: record.member_id.toString(),
       reason: record.reason || '',
-      start_date: formatDateForInput(record.start_date),
-      end_date: formatDateForInput(record.end_date),
+      start_date: toInputDate(record.start_date),
+      end_date: toInputDate(record.end_date),
       status: record.status
     })
     setShowModal(true)
@@ -570,26 +570,19 @@ export default function LeaveRecords() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">开始日期 *</label>
-                  <input
-                    type="date"
-                    value={formData.start_date}
-                    onChange={(event) => setFormData({ ...formData, start_date: event.target.value })}
-                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">结束日期 *</label>
-                  <input
-                    type="date"
-                    value={formData.end_date}
-                    onChange={(event) => setFormData({ ...formData, end_date: event.target.value })}
-                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
-                    required
-                  />
-                </div>
+                <DateInput
+                  label="开始日期"
+                  value={formData.start_date}
+                  onChange={(value) => setFormData({ ...formData, start_date: value })}
+                  required
+                />
+                <DateInput
+                  label="结束日期"
+                  value={formData.end_date}
+                  onChange={(value) => setFormData({ ...formData, end_date: value })}
+                  min={formData.start_date}
+                  required
+                />
               </div>
 
               {editingRecord && editingRecord.status === '请假中' && (
