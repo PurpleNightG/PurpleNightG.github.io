@@ -11,7 +11,7 @@ interface Assessment {
   member_id: number
   member_name: string
   assessment_date: string
-  status: '待处理' | '已通过' | '未通过' | '未完成'
+  status: '待处理' | '已通过' | '未通过' | '未完成' | '模拟考'
   map: string
   custom_map: string | null
   evaluation: string | null
@@ -325,7 +325,8 @@ export default function AssessmentRecords() {
       '待处理': 'bg-gray-600/20 text-gray-300',
       '已通过': 'bg-green-600/20 text-green-300',
       '未通过': 'bg-red-600/20 text-red-300',
-      '未完成': 'bg-yellow-600/20 text-yellow-300'
+      '未完成': 'bg-yellow-600/20 text-yellow-300',
+      '模拟考': 'bg-blue-600/20 text-blue-300'
     }
     return badges[status] || badges['待处理']
   }
@@ -464,7 +465,7 @@ export default function AssessmentRecords() {
           <div>
             <label className="text-sm text-gray-400 mb-2 block">状态</label>
             <div className="flex flex-wrap gap-2">
-              {['待处理', '已通过', '未通过', '未完成'].map(status => (
+              {['待处理', '已通过', '未通过', '未完成', '模拟考'].map(status => (
                 <button
                   key={status}
                   onClick={() => toggleStatusFilter(status)}
@@ -712,6 +713,7 @@ export default function AssessmentRecords() {
                     <option value="已通过">已通过</option>
                     <option value="未通过">未通过</option>
                     <option value="未完成">未完成</option>
+                    <option value="模拟考">模拟考</option>
                   </select>
                 </div>
 
