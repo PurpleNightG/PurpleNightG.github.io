@@ -38,34 +38,33 @@ export const formatDateTime = (dateString: string | null | undefined): string =>
   if (!dateString) return '-'
   
   try {
-    let date = new Date(dateString)
+    // 如果已经是标准格式（YYYY-MM-DD HH:mm:ss），直接返回
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(dateString)) {
+      return dateString
+    }
     
-    if (isNaN(date.getTime())) return '-'
+    // 手动解析时间字符串，强制当作本地时间（北京时间）
+    // 支持格式：YYYY-MM-DDTHH:mm:ss 或 YYYY-MM-DD HH:mm:ss
+    const normalizedStr = dateString.replace('T', ' ').replace('Z', '').split('.')[0]
+    const match = normalizedStr.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})/)
     
-    // 如果字符串包含Z或明确的时区信息，说明是UTC时间，需要转换为北京时间
-    if (dateString.includes('Z') || dateString.match(/[+-]\d{2}:\d{2}$/)) {
-      // UTC时间，加8小时转为北京时间
-      date = new Date(date.getTime() + 8 * 60 * 60 * 1000)
-      
-      const year = date.getUTCFullYear()
-      const month = String(date.getUTCMonth() + 1).padStart(2, '0')
-      const day = String(date.getUTCDate()).padStart(2, '0')
-      const hours = String(date.getUTCHours()).padStart(2, '0')
-      const minutes = String(date.getUTCMinutes()).padStart(2, '0')
-      const seconds = String(date.getUTCSeconds()).padStart(2, '0')
-      
-      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
-    } else {
-      // 没有时区信息，直接使用本地时间方法
-      const year = date.getFullYear()
-      const month = String(date.getMonth() + 1).padStart(2, '0')
-      const day = String(date.getDate()).padStart(2, '0')
-      const hours = String(date.getHours()).padStart(2, '0')
-      const minutes = String(date.getMinutes()).padStart(2, '0')
-      const seconds = String(date.getSeconds()).padStart(2, '0')
-      
+    if (match) {
+      const [, year, month, day, hours, minutes, seconds] = match
       return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
     }
+    
+    // 如果匹配失败，尝试用Date对象
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) return '-'
+    
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    const seconds = String(date.getSeconds()).padStart(2, '0')
+    
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
   } catch (error) {
     return '-'
   }
