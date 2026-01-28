@@ -14,9 +14,13 @@ export const formatDate = (dateString: string | null | undefined): string => {
     // 检查日期是否有效
     if (isNaN(date.getTime())) return '-'
     
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
+    // 转换为北京时间（UTC+8）
+    const utcTime = date.getTime()
+    const beijingTime = new Date(utcTime + 8 * 60 * 60 * 1000)
+    
+    const year = beijingTime.getUTCFullYear()
+    const month = String(beijingTime.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(beijingTime.getUTCDate()).padStart(2, '0')
     
     return `${year}-${month}-${day}`
   } catch (error) {
@@ -37,12 +41,16 @@ export const formatDateTime = (dateString: string | null | undefined): string =>
     
     if (isNaN(date.getTime())) return '-'
     
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-    const hours = String(date.getHours()).padStart(2, '0')
-    const minutes = String(date.getMinutes()).padStart(2, '0')
-    const seconds = String(date.getSeconds()).padStart(2, '0')
+    // 转换为北京时间（UTC+8）
+    const utcTime = date.getTime()
+    const beijingTime = new Date(utcTime + 8 * 60 * 60 * 1000)
+    
+    const year = beijingTime.getUTCFullYear()
+    const month = String(beijingTime.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(beijingTime.getUTCDate()).padStart(2, '0')
+    const hours = String(beijingTime.getUTCHours()).padStart(2, '0')
+    const minutes = String(beijingTime.getUTCMinutes()).padStart(2, '0')
+    const seconds = String(beijingTime.getUTCSeconds()).padStart(2, '0')
     
     return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
   } catch (error) {
@@ -65,10 +73,13 @@ export const toInputDate = (dateString: string | Date | null | undefined): strin
     
     if (isNaN(date.getTime())) return ''
     
-    // 使用本地时区的日期
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
+    // 转换为北京时间（UTC+8）
+    const utcTime = date.getTime()
+    const beijingTime = new Date(utcTime + 8 * 60 * 60 * 1000)
+    
+    const year = beijingTime.getUTCFullYear()
+    const month = String(beijingTime.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(beijingTime.getUTCDate()).padStart(2, '0')
     
     return `${year}-${month}-${day}`
   } catch (error) {
