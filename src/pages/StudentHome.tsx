@@ -875,7 +875,7 @@ export default function StudentHome() {
             文档中心
           </h2>
           
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <a
               href="#/docs/PNG"
               className="group flex flex-col items-center gap-3 p-5 bg-gray-700/30 hover:bg-gray-700/50 rounded-xl transition-all border border-gray-600/30 hover:border-purple-500/50"
@@ -917,7 +917,6 @@ export default function StudentHome() {
             </a>
           </div>
         </div>
-      </div>
       </div>
 
       {/* 恭喜弹窗 */}
