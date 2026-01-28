@@ -3,7 +3,7 @@ import { publicVideoAPI } from '../../utils/api'
 import { toast } from 'react-hot-toast'
 import { Plus, Trash2, Edit, Search, X, CheckSquare, Square, ChevronUp, ChevronDown, Video, Play } from 'lucide-react'
 import ConfirmDialog from '../../components/ConfirmDialog'
-import { toInputDate } from '../../utils/dateFormat'
+import { formatDate, toInputDate } from '../../utils/dateFormat'
 
 interface PublicVideo {
   id: number
@@ -348,10 +348,10 @@ export default function PublicVideosManagement() {
                         <div className="text-white">{video.participant_b}</div>
                       </div>
                     </td>
-                    <td>{new Date(video.assessment_date).toLocaleDateString('zh-CN')}</td>
+                    <td>{formatDate(video.assessment_date)}</td>
                     <td>
                       <div className="text-sm">
-                        <div className="text-white">{new Date(video.created_at).toLocaleDateString('zh-CN')}</div>
+                        <div className="text-white">{formatDate(video.created_at)}</div>
                         <div className="text-gray-400 text-xs">{video.creator_name}</div>
                       </div>
                     </td>
@@ -540,7 +540,7 @@ export default function PublicVideosManagement() {
                 <span className="flex items-center gap-1">
                   {viewingVideo.participant_a} vs {viewingVideo.participant_b}
                 </span>
-                <span>考核日期: {new Date(viewingVideo.assessment_date).toLocaleDateString('zh-CN')}</span>
+                <span>考核日期: {formatDate(viewingVideo.assessment_date)}</span>
               </div>
               
               {viewingVideo.description && (

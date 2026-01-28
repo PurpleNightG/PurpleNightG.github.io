@@ -9,11 +9,17 @@ export const formatDate = (dateString: string | null | undefined): string => {
   if (!dateString) return '-'
   
   try {
-    // 如果是纯日期格式（YYYY-MM-DD），直接返回
+    // 如果是 YYYY-MM-DD 格式，直接返回
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
       return dateString
     }
     
+    // 对于带时间的ISO字符串，提取日期部分（避免时区转换问题）
+    if (dateString.includes('T')) {
+      return dateString.split('T')[0]
+    }
+    
+    // 其他格式，使用 Date 对象处理
     const date = new Date(dateString)
     
     // 检查日期是否有效
@@ -30,7 +36,7 @@ export const formatDate = (dateString: string | null | undefined): string => {
 }
 
 /**
- * 格式化日期时间为 YYYY-MM-DD HH:mm:ss 格式（北京时间）
+ * 格式化日期时间为 YYYY-MM-DD HH:mm:ss 格式
  * @param dateString - ISO日期时间字符串或null
  * @returns 格式化后的日期时间字符串
  */
@@ -38,23 +44,8 @@ export const formatDateTime = (dateString: string | null | undefined): string =>
   if (!dateString) return '-'
   
   try {
-    // 如果已经是标准格式（YYYY-MM-DD HH:mm:ss），直接返回
-    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(dateString)) {
-      return dateString
-    }
-    
-    // 手动解析时间字符串，强制当作本地时间（北京时间）
-    // 支持格式：YYYY-MM-DDTHH:mm:ss 或 YYYY-MM-DD HH:mm:ss
-    const normalizedStr = dateString.replace('T', ' ').replace('Z', '').split('.')[0]
-    const match = normalizedStr.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})/)
-    
-    if (match) {
-      const [, year, month, day, hours, minutes, seconds] = match
-      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
-    }
-    
-    // 如果匹配失败，尝试用Date对象
     const date = new Date(dateString)
+    
     if (isNaN(date.getTime())) return '-'
     
     const year = date.getFullYear()
@@ -80,14 +71,7 @@ export const toInputDate = (dateString: string | Date | null | undefined): strin
   if (!dateString) return ''
   
   try {
-    const dateStr = typeof dateString === 'string' ? dateString : dateString.toISOString()
-    
-    // 如果是纯日期格式（YYYY-MM-DD），直接返回
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-      return dateStr
-    }
-    
-    // 统一使用 Date 对象来处理
+    // 统一使用 Date 对象来处理，确保时区转换正确
     const date = typeof dateString === 'string' ? new Date(dateString) : dateString
     
     if (isNaN(date.getTime())) return ''

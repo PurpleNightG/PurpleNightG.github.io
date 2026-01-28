@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { assessmentGuidelinesAPI } from '../../utils/api'
 import { toast } from 'react-hot-toast'
+import { formatDateTime } from '../../utils/dateFormat'
 import { FileText, Save, Eye, EyeOff } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 
@@ -163,7 +164,7 @@ export default function AssessmentGuidelines() {
       {/* 更新信息 */}
       {guidelines?.updated_at && (
         <div className="mt-6 bg-gray-800/30 rounded-lg p-4 text-sm text-gray-400">
-          最后更新：{new Date(guidelines.updated_at).toLocaleString('zh-CN')}
+          最后更新：{formatDateTime(guidelines.updated_at)}
           {guidelines.updated_by && ` by ${guidelines.updated_by}`}
         </div>
       )}
