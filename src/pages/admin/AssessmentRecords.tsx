@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { assessmentAPI, memberAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
-import { Plus, Trash2, Edit, CheckCircle, XCircle, ChevronDown, ChevronUp, X, Search, Filter, CheckSquare, Square } from 'lucide-react'
+import { Plus, Trash2, Edit, CheckCircle, XCircle, ChevronDown, ChevronUp, X, Search, Filter, CheckSquare, Square, Loader2 } from 'lucide-react'
 import ConfirmDialog from '../../components/ConfirmDialog'
 
 interface Assessment {
@@ -62,6 +62,7 @@ export default function AssessmentRecords() {
   const [assessments, setAssessments] = useState<Assessment[]>([])
   const [members, setMembers] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [editingAssessment, setEditingAssessment] = useState<Assessment | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
@@ -141,12 +142,13 @@ export default function AssessmentRecords() {
   }
 
   const handleSubmit = async () => {
-    try {
-      if (!formData.member_id || !formData.map) {
-        toast.error('请填写必填字段')
-        return
-      }
+    if (!formData.member_id || !formData.map) {
+      toast.error('请填写必填字段')
+      return
+    }
 
+    setSubmitting(true)
+    try {
       // 过滤掉空的扣分记录（没有code或score为0的）
       const validDeductionRecords = formData.deduction_records.filter(
         record => record.code && record.code.trim() !== ''
@@ -171,6 +173,8 @@ export default function AssessmentRecords() {
       await loadData()
     } catch (error: any) {
       toast.error('操作失败: ' + error.message)
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -926,9 +930,11 @@ export default function AssessmentRecords() {
               </button>
               <button
                 onClick={handleSubmit}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+                disabled={submitting}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
-                {editingAssessment ? '保存' : '创建'}
+                {submitting && <Loader2 size={16} className="animate-spin" />}
+                {editingAssessment ? (submitting ? '保存中...' : '保存') : (submitting ? '创建中...' : '创建')}
               </button>
             </div>
           </div>

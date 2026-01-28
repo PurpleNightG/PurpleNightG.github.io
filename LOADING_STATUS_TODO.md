@@ -12,53 +12,25 @@
 - ✅ 添加黑点按钮loading状态  
 - ✅ 登记请假按钮loading状态
 
+### 3. CourseManagement.tsx ✅
+- ✅ 添加/编辑课程提交按钮loading状态
+- ✅ 按钮动态文字：添加中.../保存中...
+
+### 4. QuitApproval.tsx ✅
+- ✅ 添加退队审批按钮loading状态
+- ✅ 修复member_id类型错误
+
 ## 🔄 待完成 (Todo)
-
-### 3. CourseManagement.tsx 🔄
-**需要修改：**
-- handleSubmit函数（约396行）
-- 提交按钮（约904行）
-
-**修改方法：**
-```typescript
-// 1. 在handleSubmit中添加setSubmitting(true)和finally块
-const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault()
-  setSubmitting(true)
-  try {
-    // 现有代码...
-  } catch (error) {
-    // 错误处理...
-  } finally {
-    setSubmitting(false)
-  }
-}
-
-// 2. 更新按钮
-<button
-  type="submit"
-  disabled={submitting}
-  className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
->
-  {submitting && <Loader2 size={16} className="animate-spin" />}
-  {editingCourse ? (submitting ? '保存中...' : '保存修改') : (submitting ? '添加中...' : '添加课程')}
-</button>
-```
-
-### 4. QuitApproval.tsx 🔄
-**需要修改：**
-- handleSubmit函数（手动添加）
-- 提交按钮
 
 ### 5. AssessmentApproval.tsx 🔄
 **需要修改：**
-- 审批按钮的handleApprove函数
-- 审批按钮UI
+- 审批通过/拒绝按钮的handleApprove/handleReject函数
+- 审批确认对话框按钮
 
 ### 6. AssessmentRecords.tsx 🔄  
 **需要修改：**
-- 添加考核记录按钮
-- 提交按钮
+- 添加考核记录表单提交按钮
+- handleSubmit函数
 
 ### 7. RetentionManagement.tsx 🔄
 **需要修改：**

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { assessmentApplicationAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
-import { CheckCircle, XCircle, Clock, Search, Filter, X, Calendar, Users, Trash2, CheckSquare, Square } from 'lucide-react'
+import { CheckCircle, XCircle, Clock, Search, Filter, X, Calendar, Users, Trash2, CheckSquare, Square, Loader2 } from 'lucide-react'
 
 interface Application {
   id: number
@@ -525,8 +525,9 @@ export default function AssessmentApproval() {
               <button
                 onClick={handleRejectConfirm}
                 disabled={processing || !rejectReason.trim()}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
+                {processing && <Loader2 size={16} className="animate-spin" />}
                 {processing ? '处理中...' : '确认驳回'}
               </button>
             </div>
@@ -589,10 +590,11 @@ export default function AssessmentApproval() {
               </button>
               <button
                 onClick={handleApproveConfirm}
-                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                disabled={processing}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
-                <CheckCircle size={18} />
-                确认通过
+                {processing ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle size={18} />}
+                {processing ? '处理中...' : '确认通过'}
               </button>
             </div>
           </div>

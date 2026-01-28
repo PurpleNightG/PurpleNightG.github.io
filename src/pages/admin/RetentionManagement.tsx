@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { retentionAPI, memberAPI } from '../../utils/api'
-import { Plus, Trash2, Filter, ChevronUp, ChevronDown, Search, X, CheckSquare, Square } from 'lucide-react'
+import { Plus, Trash2, Filter, ChevronUp, ChevronDown, Search, X, CheckSquare, Square, Loader2 } from 'lucide-react'
 import { toast } from '../../utils/toast'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { formatDate } from '../../utils/dateFormat'
@@ -30,6 +30,7 @@ export default function RetentionManagement() {
   const [records, setRecords] = useState<RetentionRecord[]>([])
   const [members, setMembers] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [formData, setFormData] = useState({
     member_id: '',
@@ -201,13 +202,17 @@ export default function RetentionManagement() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    if (!formData.member_id || !formData.retention_reason) {
+      toast.error('请填写必填字段')
+      return
+    }
+    
+    setSubmitting(true)
     try {
-      if (!formData.member_id || !formData.retention_reason) {
-        toast.error('请填写完整信息')
-        return
-      }
       const adminId = localStorage.getItem('userId')
       const adminName = localStorage.getItem('userName') || '管理员'
+      
       await retentionAPI.create({
         member_id: parseInt(formData.member_id),
         retention_reason: formData.retention_reason,
@@ -220,7 +225,9 @@ export default function RetentionManagement() {
       await loadRecords()
       await loadMembers()
     } catch (error: any) {
-      toast.error(error.message || '操作失败')
+      toast.error(error.message || '添加失败')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -453,8 +460,13 @@ export default function RetentionManagement() {
                 />
               </div>
               <div className="flex gap-3 pt-4">
-                <button type="submit" className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors">
-                  添加
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {submitting && <Loader2 size={16} className="animate-spin" />}
+                  {submitting ? '添加中...' : '添加'}
                 </button>
                 <button type="button" onClick={() => setShowModal(false)} className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 rounded-lg transition-colors">
                   取消
