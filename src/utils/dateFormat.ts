@@ -14,9 +14,26 @@ export const formatDate = (dateString: string | null | undefined): string => {
       return dateString
     }
     
-    // 对于带时间的ISO字符串，提取日期部分（避免时区转换问题）
+    // 对于带时间的ISO字符串，提取日期部分
     if (dateString.includes('T')) {
-      return dateString.split('T')[0]
+      const datePart = dateString.split('T')[0]
+      
+      // 如果是 UTC 时间（带 Z），需要检查是否跨日
+      if (dateString.endsWith('Z') || dateString.includes('+00:00')) {
+        const date = new Date(dateString)
+        if (isNaN(date.getTime())) return '-'
+        
+        // 手动添加 8 小时转换为北京时间
+        const beijingTime = new Date(date.getTime() + 8 * 60 * 60 * 1000)
+        
+        const year = beijingTime.getUTCFullYear()
+        const month = String(beijingTime.getUTCMonth() + 1).padStart(2, '0')
+        const day = String(beijingTime.getUTCDate()).padStart(2, '0')
+        
+        return `${year}-${month}-${day}`
+      }
+      
+      return datePart
     }
     
     // 其他格式，使用 Date 对象处理
@@ -44,22 +61,39 @@ export const formatDateTime = (dateString: string | null | undefined): string =>
   if (!dateString) return '-'
   
   try {
-    // 如果是 ISO 8601 格式（包含 T），直接解析字符串，避免时区转换
-    if (dateString.includes('T')) {
-      // 例如: "2024-01-28T10:30:45.000Z" 或 "2024-01-28T10:30:45"
-      const parts = dateString.split('T')
-      const datePart = parts[0] // "2024-01-28"
-      const timePart = parts[1].split('.')[0] // "10:30:45" (去掉毫秒和时区)
-      
-      return `${datePart} ${timePart}`
-    }
-    
     // 如果已经是 YYYY-MM-DD HH:mm:ss 格式，直接返回
     if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(dateString)) {
       return dateString
     }
     
-    // 其他格式，尝试使用 Date 对象（作为最后手段）
+    // 检查是否为 UTC 时间（以 Z 结尾）
+    // 如果是 UTC 时间，需要手动转换为北京时间（UTC+8）
+    if (dateString.endsWith('Z') || dateString.includes('+00:00')) {
+      const date = new Date(dateString)
+      if (isNaN(date.getTime())) return '-'
+      
+      // 手动添加 8 小时转换为北京时间
+      const beijingTime = new Date(date.getTime() + 8 * 60 * 60 * 1000)
+      
+      const year = beijingTime.getUTCFullYear()
+      const month = String(beijingTime.getUTCMonth() + 1).padStart(2, '0')
+      const day = String(beijingTime.getUTCDate()).padStart(2, '0')
+      const hours = String(beijingTime.getUTCHours()).padStart(2, '0')
+      const minutes = String(beijingTime.getUTCMinutes()).padStart(2, '0')
+      const seconds = String(beijingTime.getUTCSeconds()).padStart(2, '0')
+      
+      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
+    }
+    
+    // 对于其他 ISO 格式（已经是本地时间），直接提取
+    if (dateString.includes('T')) {
+      const parts = dateString.split('T')
+      const datePart = parts[0]
+      const timePart = parts[1].split('.')[0]
+      return `${datePart} ${timePart}`
+    }
+    
+    // 其他格式，使用 Date 对象处理
     const date = new Date(dateString)
     
     if (isNaN(date.getTime())) return '-'
