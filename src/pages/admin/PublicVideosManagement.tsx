@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { publicVideoAPI } from '../../utils/api'
 import { toast } from 'react-hot-toast'
-import { Plus, Trash2, Edit, Search, X, CheckSquare, Square, ChevronUp, ChevronDown, Video, Play } from 'lucide-react'
+import { Plus, Trash2, Edit, Search, X, CheckSquare, Square, ChevronUp, ChevronDown, Video, Play, Loader2 } from 'lucide-react'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { formatDate, toInputDate } from '../../utils/dateFormat'
 
@@ -21,6 +21,7 @@ interface PublicVideo {
 export default function PublicVideosManagement() {
   const [videos, setVideos] = useState<PublicVideo[]>([])
   const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [editingVideo, setEditingVideo] = useState<PublicVideo | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
@@ -78,27 +79,26 @@ export default function PublicVideosManagement() {
     setShowModal(true)
   }
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    const userStr = localStorage.getItem('user') || sessionStorage.getItem('user')
+    
+    if (!userStr) {
+      toast.error('无法获取用户信息，请重新登录')
+      return
+    }
+    
+    const user = JSON.parse(userStr)
+    const userId = user.id
+    
+    if (!userId) {
+      toast.error('用户ID无效，请重新登录')
+      return
+    }
+    
+    setSubmitting(true)
     try {
-      if (!formData.title || !formData.participant_a || !formData.participant_b || !formData.video_url) {
-        toast.error('请填写所有必填字段')
-        return
-      }
-
-      const userStr = localStorage.getItem('user') || sessionStorage.getItem('user')
-      if (!userStr) {
-        toast.error('无法获取用户信息，请重新登录')
-        return
-      }
-      
-      const user = JSON.parse(userStr)
-      const userId = user.id
-      
-      if (!userId) {
-        toast.error('用户ID无效，请重新登录')
-        return
-      }
-
       if (editingVideo) {
         await publicVideoAPI.update(editingVideo.id, formData)
         toast.success('视频更新成功')
@@ -112,6 +112,8 @@ export default function PublicVideosManagement() {
       await loadVideos()
     } catch (error: any) {
       toast.error('操作失败: ' + error.message)
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -493,9 +495,14 @@ export default function PublicVideosManagement() {
               </button>
               <button
                 onClick={handleSubmit}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+                disabled={submitting}
+                className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                创建
+                {submitting && <Loader2 size={16} className="animate-spin" />}
+                {editingVideo 
+                  ? (submitting ? '保存中...' : '保存修改')
+                  : (submitting ? '添加中...' : '添加视频')
+                }
               </button>
             </div>
           </div>
