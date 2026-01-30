@@ -336,7 +336,7 @@ router.post('/sync-stage', async (req, res) => {
     const { memberIds } = req.body
     
     // 定义不需要自动调整阶段的特殊职位
-    const specialRoles = ['紫夜尖兵', '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师']
+    const specialRoles = ['紫夜', '紫夜尖兵', '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师']
     
     let updatedCount = 0
     let skippedCount = 0
