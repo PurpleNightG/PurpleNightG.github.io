@@ -33,6 +33,9 @@ export default function MemberList() {
   // 高亮的成员ID列表（同步阶段后被更新的成员）
   const [highlightedMemberIds, setHighlightedMemberIds] = useState<Set<number>>(new Set())
   
+  // 警告成员模态框
+  const [warningModal, setWarningModal] = useState<{show: boolean, members: any[]}>({show: false, members: []})
+  
   // 设置新训日期
   const [trainingDate, setTrainingDate] = useState<string>(new Date().toISOString().split('T')[0])
   
@@ -72,6 +75,33 @@ export default function MemberList() {
     }
     load()
   }, [])
+
+  // 检查是否有从其他页面跳转过来的警告成员
+  useEffect(() => {
+    const warningIdsStr = localStorage.getItem('warningMemberIds')
+    if (warningIdsStr) {
+      try {
+        const warningIds = JSON.parse(warningIdsStr)
+        if (warningIds && warningIds.length > 0) {
+          // 高亮并选中这些成员
+          setHighlightedMemberIds(new Set(warningIds))
+          setSelectedIds(new Set(warningIds))
+          
+          // 5秒后清除高亮
+          setTimeout(() => {
+            setHighlightedMemberIds(new Set())
+          }, 5000)
+          
+          // 清除localStorage
+          localStorage.removeItem('warningMemberIds')
+          
+          toast.info(`已高亮 ${warningIds.length} 个新训准考但课程进度不足的成员`)
+        }
+      } catch (error) {
+        console.error('解析警告成员ID失败:', error)
+      }
+    }
+  }, [members])
 
   const loadMembers = async () => {
     try {
@@ -296,6 +326,8 @@ export default function MemberList() {
 
   // 批量修改状态
   const batchUpdateStatus = async (newStatus: string) => {
+    if (submitting) return
+    setSubmitting(true)
     try {
       const memberIds = Array.from(selectedIds)
       for (const id of memberIds) {
@@ -321,11 +353,15 @@ export default function MemberList() {
       loadMembers()
     } catch (error: any) {
       toast.error(error.response?.data?.error || error.message || '批量修改状态失败')
+    } finally {
+      setSubmitting(false)
     }
   }
 
   // 批量修改角色
   const batchUpdateRole = async (newRole: string) => {
+    if (submitting) return
+    setSubmitting(true)
     try {
       const memberIds = Array.from(selectedIds)
       for (const id of memberIds) {
@@ -351,11 +387,15 @@ export default function MemberList() {
       loadMembers()
     } catch (error: any) {
       toast.error(error.response?.data?.error || error.message || '批量修改角色失败')
+    } finally {
+      setSubmitting(false)
     }
   }
 
   // 同步阶段
   const handleSyncStage = async () => {
+    if (submitting) return
+    setSubmitting(true)
     try {
       const memberIds = selectedIds.size > 0 ? Array.from(selectedIds) : undefined
       const result = await memberAPI.syncStage(memberIds)
@@ -375,13 +415,37 @@ export default function MemberList() {
           setHighlightedMemberIds(new Set())
         }, 3000)
       }
+      
+      // 检查是否有新训准考但课程进度不足的成员
+      if (result.data?.warningMembers && result.data.warningMembers.length > 0) {
+        setWarningModal({show: true, members: result.data.warningMembers})
+      }
     } catch (error: any) {
       toast.error(error.response?.data?.message || error.message || '同步阶段失败')
+    } finally {
+      setSubmitting(false)
     }
+  }
+
+  // 确认高亮警告成员
+  const confirmHighlightWarningMembers = () => {
+    const warningIds = warningModal.members.map((m: any) => m.id)
+    setHighlightedMemberIds(new Set(warningIds))
+    setSelectedIds(new Set(warningIds))
+    
+    // 5秒后清除高亮
+    setTimeout(() => {
+      setHighlightedMemberIds(new Set())
+    }, 5000)
+    
+    setWarningModal({show: false, members: []})
+    toast.info(`已选中 ${warningIds.length} 个需要注意的成员`)
   }
 
   // 批量重置密码
   const confirmBatchResetPassword = async () => {
+    if (submitting) return
+    setSubmitting(true)
     setBatchActionModal({show: false, type: ''})
     try {
       const ids = Array.from(selectedIds)
@@ -390,11 +454,15 @@ export default function MemberList() {
       clearSelection()
     } catch (error: any) {
       toast.error(error.message || '批量重置密码失败')
+    } finally {
+      setSubmitting(false)
     }
   }
 
   // 批量设置新训日期
   const batchSetTrainingDate = async (date: string) => {
+    if (submitting) return
+    setSubmitting(true)
     try {
       const memberIds = Array.from(selectedIds)
       for (const id of memberIds) {
@@ -420,11 +488,15 @@ export default function MemberList() {
       loadMembers()
     } catch (error: any) {
       toast.error(error.response?.data?.error || error.message || '批量设置新训日期失败')
+    } finally {
+      setSubmitting(false)
     }
   }
 
   // 批量退队（添加到退队审批）
   const batchQuit = async () => {
+    if (submitting) return
+    setSubmitting(true)
     const adminId = localStorage.getItem('userId')
     const adminName = localStorage.getItem('userName') || '管理员'
     const memberIds = Array.from(selectedIds)
@@ -479,6 +551,7 @@ export default function MemberList() {
     setBatchActionModal({show: false, type: ''})
     clearSelection()
     loadMembers()
+    setSubmitting(false)
   }
 
   // 根据阶段角色返回对应的颜色类
@@ -937,9 +1010,11 @@ export default function MemberList() {
             <div className="flex gap-3">
               <button
                 onClick={batchQuit}
-                className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg transition-colors"
+                disabled={submitting}
+                className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white py-2 rounded-lg transition-colors flex items-center justify-center gap-2"
               >
-                确认退队
+                {submitting && <Loader2 size={16} className="animate-spin" />}
+                {submitting ? '处理中...' : '确认退队'}
               </button>
               <button
                 onClick={() => setBatchActionModal({show: false, type: ''})}
@@ -970,8 +1045,10 @@ export default function MemberList() {
                     <button
                       key={status}
                       onClick={() => batchUpdateStatus(status)}
-                      className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded transition-colors"
+                      disabled={submitting}
+                      className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:cursor-not-allowed text-white rounded transition-colors flex items-center justify-center gap-1"
                     >
+                      {submitting && <Loader2 size={14} className="animate-spin" />}
                       {status}
                     </button>
                   ))}
@@ -1004,8 +1081,10 @@ export default function MemberList() {
                     <button
                       key={role}
                       onClick={() => batchUpdateRole(role)}
-                      className={`px-3 py-2 rounded text-sm transition-colors ${getRoleColor(role)} hover:opacity-80`}
+                      disabled={submitting}
+                      className={`px-3 py-2 rounded text-sm transition-colors ${getRoleColor(role)} hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1`}
                     >
+                      {submitting && <Loader2 size={12} className="animate-spin" />}
                       {role}
                     </button>
                   ))}
@@ -1047,9 +1126,11 @@ export default function MemberList() {
               <div className="flex gap-3">
                 <button
                   onClick={() => batchSetTrainingDate(trainingDate)}
-                  className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors"
+                  disabled={submitting}
+                  className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white py-2 rounded-lg transition-colors flex items-center justify-center gap-2"
                 >
-                  确认设置
+                  {submitting && <Loader2 size={16} className="animate-spin" />}
+                  {submitting ? '设置中...' : '确认设置'}
                 </button>
                 <button
                   onClick={() => setBatchActionModal({show: false, type: ''})}
@@ -1083,16 +1164,19 @@ export default function MemberList() {
                 • 第二部分(2.X)全部完成 → 新训二期<br/>
                 • 第三部分(3.X)全部完成 → 新训三期<br/>
                 • 按最前面未完成的部分判断阶段<br/>
-                • 特殊职位(紫夜及以上)不会被调整
+                • 特殊职位(新训准考、紫夜及以上)不会被调整<br/>
+                • 新训准考但未完成前四部分的会提示降级
               </p>
             </div>
             
             <div className="flex gap-3">
               <button
                 onClick={handleSyncStage}
-                className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white py-2 rounded-lg transition-colors"
+                disabled={submitting}
+                className="flex-1 bg-cyan-600 hover:bg-cyan-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white py-2 rounded-lg transition-colors flex items-center justify-center gap-2"
               >
-                确认同步
+                {submitting && <Loader2 size={16} className="animate-spin" />}
+                {submitting ? '同步中...' : '确认同步'}
               </button>
               <button
                 onClick={() => setBatchActionModal({show: false, type: ''})}
@@ -1120,12 +1204,51 @@ export default function MemberList() {
             <div className="flex gap-3">
               <button
                 onClick={confirmBatchResetPassword}
-                className="flex-1 bg-orange-600 hover:bg-orange-700 text-white py-2 rounded-lg transition-colors"
+                disabled={submitting}
+                className="flex-1 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white py-2 rounded-lg transition-colors flex items-center justify-center gap-2"
               >
-                确认重置
+                {submitting && <Loader2 size={16} className="animate-spin" />}
+                {submitting ? '重置中...' : '确认重置'}
               </button>
               <button
                 onClick={() => setBatchActionModal({show: false, type: ''})}
+                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 rounded-lg transition-colors"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 警告成员确认对话框 */}
+      {warningModal.show && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700">
+            <h2 className="text-xl font-bold text-white mb-4">⚠️ 新训准考成员课程进度不足</h2>
+            <p className="text-gray-400 text-sm mb-3">
+              检测到以下成员阶段为"新训准考"，但未完成前四部分的所有课程：
+            </p>
+            <div className="bg-gray-700/50 rounded-lg p-3 mb-4 max-h-40 overflow-y-auto">
+              {warningModal.members.map((m: any) => (
+                <div key={m.id} className="text-yellow-300 text-sm py-1">
+                  • {m.nickname}
+                </div>
+              ))}
+            </div>
+            <p className="text-orange-400 text-xs mb-4">
+              💡 这些成员可能需要降级调整。是否在成员列表中高亮标出这些人？
+            </p>
+            
+            <div className="flex gap-3">
+              <button
+                onClick={confirmHighlightWarningMembers}
+                className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white py-2 rounded-lg transition-colors"
+              >
+                确认
+              </button>
+              <button
+                onClick={() => setWarningModal({show: false, members: []})}
                 className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 rounded-lg transition-colors"
               >
                 取消

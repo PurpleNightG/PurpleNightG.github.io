@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Plus, Edit, Trash2, Search, X, Filter, CheckSquare, Square, Settings, GripVertical, Users, Loader2 } from 'lucide-react'
 import {
   DndContext,
@@ -134,6 +135,7 @@ function CourseRow({
 }
 
 export default function CourseManagement() {
+  const navigate = useNavigate()
   const [courses, setCourses] = useState<Course[]>([])
   const [filteredCourses, setFilteredCourses] = useState<Course[]>([])
   const [categories, setCategories] = useState<string[]>(['入门课程', '标准技能一阶课程', '标准技能二阶课程', '团队训练', '进阶课程'])
@@ -192,6 +194,9 @@ export default function CourseManagement() {
   // 删除确认对话框
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<{type: 'single' | 'batch', course?: Course}>(null as any)
+  
+  // 警告成员模态框
+  const [warningModal, setWarningModal] = useState<{show: boolean, members: any[]}>({show: false, members: []})
 
   useEffect(() => {
     loadCourses()
@@ -588,6 +593,18 @@ export default function CourseManagement() {
     }
   }
 
+  // 处理新训准考但课程进度不足的成员警告
+  const handleWarningMembers = (warningMembers: any[]) => {
+    setWarningModal({show: true, members: warningMembers})
+  }
+  
+  // 确认跳转到成员列表
+  const confirmJumpToMemberList = () => {
+    const warningIds = warningModal.members.map((m: any) => m.id)
+    localStorage.setItem('warningMemberIds', JSON.stringify(warningIds))
+    navigate('/admin/members/list')
+  }
+
   const toggleMemberSelect = (memberId: number) => {
     setSelectedMemberIds(prev => {
       const newSet = new Set(prev)
@@ -634,10 +651,15 @@ export default function CourseManagement() {
       
       // 自动同步这些成员的阶段
       const memberIds = Array.from(selectedMemberIds)
-      await memberAPI.syncStage(memberIds)
+      const syncResult = await memberAPI.syncStage(memberIds)
       
       toast.success(`已为 ${selectedMemberIds.size} 名成员设置课程进度为 ${assignProgress}%，并同步阶段`)
       closeAssignModal()
+      
+      // 检查是否有新训准考但课程进度不足的成员
+      if (syncResult.data?.warningMembers && syncResult.data.warningMembers.length > 0) {
+        handleWarningMembers(syncResult.data.warningMembers)
+      }
     } catch (error: any) {
       console.error('设置进度失败:', error)
       toast.error('设置进度失败')
@@ -681,10 +703,15 @@ export default function CourseManagement() {
       
       // 自动同步这些成员的阶段
       const memberIdsNum = Array.from(selectedMemberIds)
-      await memberAPI.syncStage(memberIdsNum)
+      const syncResult = await memberAPI.syncStage(memberIdsNum)
       
       toast.success(`已为 ${selectedMemberIds.size} 名成员分配 ${selectedIds.size} 门课程，进度设置为 ${assignProgress}%，并同步阶段`)
       closeAssignModal()
+      
+      // 检查是否有新训准考但课程进度不足的成员
+      if (syncResult.data?.warningMembers && syncResult.data.warningMembers.length > 0) {
+        handleWarningMembers(syncResult.data.warningMembers)
+      }
       setSelectedIds(new Set()) // 清空课程选择
     } catch (error: any) {
       console.error('批量设置进度失败:', error)
@@ -1360,6 +1387,43 @@ export default function CourseManagement() {
                   确认删除
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 警告成员确认对话框 */}
+      {warningModal.show && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700">
+            <h2 className="text-xl font-bold text-white mb-4">⚠️ 新训准考成员课程进度不足</h2>
+            <p className="text-gray-400 text-sm mb-3">
+              检测到以下成员阶段为"新训准考"，但未完成前四部分的所有课程：
+            </p>
+            <div className="bg-gray-700/50 rounded-lg p-3 mb-4 max-h-40 overflow-y-auto">
+              {warningModal.members.map((m: any) => (
+                <div key={m.id} className="text-yellow-300 text-sm py-1">
+                  • {m.nickname}
+                </div>
+              ))}
+            </div>
+            <p className="text-orange-400 text-xs mb-4">
+              💡 这些成员可能需要降级调整。是否跳转到成员列表并高亮标出这些人？
+            </p>
+            
+            <div className="flex gap-3">
+              <button
+                onClick={confirmJumpToMemberList}
+                className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white py-2 rounded-lg transition-colors"
+              >
+                确认
+              </button>
+              <button
+                onClick={() => setWarningModal({show: false, members: []})}
+                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 rounded-lg transition-colors"
+              >
+                取消
+              </button>
             </div>
           </div>
         </div>

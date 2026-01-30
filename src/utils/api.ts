@@ -109,6 +109,9 @@ export const memberAPI = {
     clearCache('/members')
     return result
   },
+  getExamCandidates: () => {
+    return request('/members/exam-candidates')
+  }
 }
 
 // 学员端 API

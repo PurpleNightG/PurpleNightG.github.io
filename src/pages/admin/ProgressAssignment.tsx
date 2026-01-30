@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { progressAPI, memberAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
 import { CheckSquare, Square, User, X, Search, Filter, ChevronUp, ChevronDown } from 'lucide-react'
@@ -26,6 +27,7 @@ interface Course {
 const progressOptions = [0, 10, 20, 50, 75, 100]
 
 export default function ProgressAssignment() {
+  const navigate = useNavigate()
   const [members, setMembers] = useState<Member[]>([])
   const [selectedMemberIds, setSelectedMemberIds] = useState<Set<number>>(new Set())
   const [loading, setLoading] = useState(false)
@@ -68,6 +70,9 @@ export default function ProgressAssignment() {
   
   // 批量修改的临时存储，格式：{ courseId: newProgress }
   const [batchPendingChanges, setBatchPendingChanges] = useState<Map<number, number>>(new Map())
+  
+  // 警告成员模态框
+  const [warningModal, setWarningModal] = useState<{show: boolean, members: any[]}>({show: false, members: []})
 
   useEffect(() => {
     loadMembers()
@@ -84,6 +89,18 @@ export default function ProgressAssignment() {
     } finally {
       setLoading(false)
     }
+  }
+
+  // 处理新训准考但课程进度不足的成员警告
+  const handleWarningMembers = (warningMembers: any[]) => {
+    setWarningModal({show: true, members: warningMembers})
+  }
+  
+  // 确认跳转到成员列表
+  const confirmJumpToMemberList = () => {
+    const warningIds = warningModal.members.map((m: any) => m.id)
+    localStorage.setItem('warningMemberIds', JSON.stringify(warningIds))
+    navigate('/admin/members/list')
   }
 
   const loadMemberCourses = async (memberId: number) => {
@@ -170,7 +187,7 @@ export default function ProgressAssignment() {
       await Promise.all(promises)
       
       // 自动同步这些成员的阶段
-      await memberAPI.syncStage(Array.from(selectedMemberIds))
+      const syncResult = await memberAPI.syncStage(Array.from(selectedMemberIds))
       
       toast.success(`已为 ${selectedMemberIds.size} 名成员更新 ${batchPendingChanges.size} 门课程进度并同步阶段`)
       setBatchPendingChanges(new Map())
@@ -178,6 +195,11 @@ export default function ProgressAssignment() {
       // 重新加载成员列表
       await loadMembers()
       closeBatchModal()
+      
+      // 检查是否有新训准考但课程进度不足的成员
+      if (syncResult.data?.warningMembers && syncResult.data.warningMembers.length > 0) {
+        handleWarningMembers(syncResult.data.warningMembers)
+      }
     } catch (error: any) {
       console.error('批量更新失败:', error)
       toast.error('批量更新失败')
@@ -214,7 +236,7 @@ export default function ProgressAssignment() {
       await Promise.all(promises)
       
       // 自动同步该成员的阶段
-      await memberAPI.syncStage([selectedMember.id])
+      const syncResult = await memberAPI.syncStage([selectedMember.id])
       
       toast.success(`已更新 ${pendingChanges.size} 门课程进度并同步阶段`)
       setPendingChanges(new Map())
@@ -222,6 +244,11 @@ export default function ProgressAssignment() {
       // 重新加载成员列表以更新完成课程数
       await loadMembers()
       closeProgressModal()
+      
+      // 检查是否有新训准考但课程进度不足的成员
+      if (syncResult.data?.warningMembers && syncResult.data.warningMembers.length > 0) {
+        handleWarningMembers(syncResult.data.warningMembers)
+      }
     } catch (error: any) {
       console.error('更新进度失败:', error)
       toast.error('更新进度失败')
@@ -822,6 +849,43 @@ export default function ProgressAssignment() {
                   {batchSubmitting ? '提交中...' : `确认提交 (${batchPendingChanges.size})`}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 警告成员确认对话框 */}
+      {warningModal.show && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700">
+            <h2 className="text-xl font-bold text-white mb-4">⚠️ 新训准考成员课程进度不足</h2>
+            <p className="text-gray-400 text-sm mb-3">
+              检测到以下成员阶段为"新训准考"，但未完成前四部分的所有课程：
+            </p>
+            <div className="bg-gray-700/50 rounded-lg p-3 mb-4 max-h-40 overflow-y-auto">
+              {warningModal.members.map((m: any) => (
+                <div key={m.id} className="text-yellow-300 text-sm py-1">
+                  • {m.nickname}
+                </div>
+              ))}
+            </div>
+            <p className="text-orange-400 text-xs mb-4">
+              💡 这些成员可能需要降级调整。是否跳转到成员列表并高亮标出这些人？
+            </p>
+            
+            <div className="flex gap-3">
+              <button
+                onClick={confirmJumpToMemberList}
+                className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white py-2 rounded-lg transition-colors"
+              >
+                确认
+              </button>
+              <button
+                onClick={() => setWarningModal({show: false, members: []})}
+                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 rounded-lg transition-colors"
+              >
+                取消
+              </button>
             </div>
           </div>
         </div>

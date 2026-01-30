@@ -336,22 +336,24 @@ router.post('/sync-stage', async (req, res) => {
     const { memberIds } = req.body
     
     // 定义不需要自动调整阶段的特殊职位
-    const specialRoles = ['紫夜', '紫夜尖兵', '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师']
+    const specialRoles = ['新训准考', '紫夜', '紫夜尖兵', '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师']
     
     let updatedCount = 0
     let skippedCount = 0
     const updatedMemberIds = []  // 记录被更新的成员ID
+    const warningMembers = []  // 记录新训准考但课程进度不足的成员
     
     // 获取所有课程，按code排序
     const [courses] = await pool.query(`
       SELECT id, code FROM courses ORDER BY code
     `)
     
-    // 按课程部分分组（1.X, 2.X, 3.X等）
+    // 按课程部分分组（1.X, 2.X, 3.X, 4.X等）
     const courseParts = {
       '1': courses.filter(c => c.code.startsWith('1.')),
       '2': courses.filter(c => c.code.startsWith('2.')),
-      '3': courses.filter(c => c.code.startsWith('3.'))
+      '3': courses.filter(c => c.code.startsWith('3.')),
+      '4': courses.filter(c => c.code.startsWith('4.'))
     }
     
     // 如果没有提供memberIds，则处理所有非特殊职位的成员
@@ -445,13 +447,68 @@ router.post('/sync-stage', async (req, res) => {
       }
     }
     
+    // 检查所有"新训准考"成员的课程完成情况
+    let examCandidateMembers = []
+    if (memberIds && memberIds.length > 0) {
+      const placeholders = memberIds.map(() => '?').join(',')
+      const [members] = await pool.query(
+        `SELECT id, nickname FROM members WHERE id IN (${placeholders}) AND stage_role = '新训准考'`,
+        memberIds
+      )
+      examCandidateMembers = members
+    } else {
+      const [members] = await pool.query(
+        `SELECT id, nickname FROM members WHERE stage_role = '新训准考' AND status != '已退队'`
+      )
+      examCandidateMembers = members
+    }
+    
+    // 检查每个新训准考成员的课程完成情况
+    for (const member of examCandidateMembers) {
+      const [progress] = await pool.query(`
+        SELECT course_id, progress
+        FROM student_course_progress
+        WHERE member_id = ?
+      `, [member.id])
+      
+      // 检查前四部分是否全部完成
+      const part1Completed = courseParts['1'].every(course => {
+        const courseProgress = progress.find(p => p.course_id === course.id)
+        return courseProgress && courseProgress.progress === 100
+      })
+      
+      const part2Completed = courseParts['2'].every(course => {
+        const courseProgress = progress.find(p => p.course_id === course.id)
+        return courseProgress && courseProgress.progress === 100
+      })
+      
+      const part3Completed = courseParts['3'].every(course => {
+        const courseProgress = progress.find(p => p.course_id === course.id)
+        return courseProgress && courseProgress.progress === 100
+      })
+      
+      const part4Completed = courseParts['4'].every(course => {
+        const courseProgress = progress.find(p => p.course_id === course.id)
+        return courseProgress && courseProgress.progress === 100
+      })
+      
+      // 如果前四部分没有全部完成，记录警告
+      if (!part1Completed || !part2Completed || !part3Completed || !part4Completed) {
+        warningMembers.push({
+          id: member.id,
+          nickname: member.nickname
+        })
+      }
+    }
+    
     res.json({
       success: true,
       message: `同步完成：更新 ${updatedCount} 人，跳过 ${skippedCount} 人`,
       data: {
         updated: updatedCount,
         skipped: skippedCount,
-        updatedMemberIds: updatedMemberIds  // 返回被更新的成员ID列表
+        updatedMemberIds: updatedMemberIds,  // 返回被更新的成员ID列表
+        warningMembers: warningMembers  // 返回新训准考但课程进度不足的成员
       }
     })
   } catch (error) {
@@ -459,6 +516,86 @@ router.post('/sync-stage', async (req, res) => {
     res.status(500).json({
       success: false,
       message: '同步阶段失败: ' + error.message
+    })
+  }
+})
+
+// 检测达到准考标准的成员（完成前四部分）
+router.get('/exam-candidates', async (req, res) => {
+  try {
+    // 获取所有课程，按code排序
+    const [courses] = await pool.query(`
+      SELECT id, code FROM courses ORDER BY code
+    `)
+    
+    // 按课程部分分组（1.X, 2.X, 3.X, 4.X）
+    const courseParts = {
+      '1': courses.filter(c => c.code.startsWith('1.')),
+      '2': courses.filter(c => c.code.startsWith('2.')),
+      '3': courses.filter(c => c.code.startsWith('3.')),
+      '4': courses.filter(c => c.code.startsWith('4.'))
+    }
+    
+    // 获取所有新训三期的成员（不包括新训准考和特殊职位）
+    const [members] = await pool.query(`
+      SELECT id, nickname, qq, stage_role, join_date 
+      FROM members 
+      WHERE stage_role = '新训三期' AND status != '已退队'
+      ORDER BY join_date DESC
+    `)
+    
+    const qualifiedMembers = []
+    
+    // 检查每个成员的课程完成情况
+    for (const member of members) {
+      const [progress] = await pool.query(`
+        SELECT course_id, progress
+        FROM student_course_progress
+        WHERE member_id = ?
+      `, [member.id])
+      
+      // 检查前四部分是否全部完成
+      const part1Completed = courseParts['1'].every(course => {
+        const courseProgress = progress.find(p => p.course_id === course.id)
+        return courseProgress && courseProgress.progress === 100
+      })
+      
+      const part2Completed = courseParts['2'].every(course => {
+        const courseProgress = progress.find(p => p.course_id === course.id)
+        return courseProgress && courseProgress.progress === 100
+      })
+      
+      const part3Completed = courseParts['3'].every(course => {
+        const courseProgress = progress.find(p => p.course_id === course.id)
+        return courseProgress && courseProgress.progress === 100
+      })
+      
+      const part4Completed = courseParts['4'].every(course => {
+        const courseProgress = progress.find(p => p.course_id === course.id)
+        return courseProgress && courseProgress.progress === 100
+      })
+      
+      // 如果前四部分全部完成，添加到合格列表
+      if (part1Completed && part2Completed && part3Completed && part4Completed) {
+        qualifiedMembers.push({
+          id: member.id,
+          nickname: member.nickname,
+          qq: member.qq,
+          stage_role: member.stage_role,
+          join_date: member.join_date
+        })
+      }
+    }
+    
+    res.json({
+      success: true,
+      data: qualifiedMembers
+    })
+  } catch (error) {
+    console.error('检测准考标准成员失败:', error)
+    res.status(500).json({
+      success: false,
+      message: '检测准考标准成员失败: ' + error.message
     })
   }
 })

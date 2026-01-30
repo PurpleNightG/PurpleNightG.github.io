@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Users, UserMinus, Award, Bell, FileText, BookOpen } from 'lucide-react'
+import { Users, UserMinus, Award, Bell, FileText, BookOpen, GraduationCap } from 'lucide-react'
 import { memberAPI, leaveAPI, blackPointAPI, reminderAPI } from '../../utils/api'
 import { useNavigate } from 'react-router-dom'
 import UserDropdown from '../../components/UserDropdown'
@@ -44,6 +44,7 @@ export default function AdminHome() {
   })
   const [stageDistribution, setStageDistribution] = useState<StageDistribution[]>([])
   const [reminderList, setReminderList] = useState<ReminderMember[]>([])
+  const [examCandidates, setExamCandidates] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [adminName, setAdminName] = useState('管理员')
 
@@ -71,17 +72,19 @@ export default function AdminHome() {
 
   const loadStatistics = async () => {
     try {
-      const [members, leaves, blackPoints, reminders] = await Promise.all([
+      const [members, leaves, blackPoints, reminders, examCandidatesRes] = await Promise.all([
         memberAPI.getAll(),
         leaveAPI.getAll(),
         blackPointAPI.getAll(),
-        reminderAPI.getAll()
+        reminderAPI.getAll(),
+        memberAPI.getExamCandidates()
       ])
 
       const membersData = members.data || []
       const leavesData = leaves.data || []
       const blackPointsData = blackPoints.data || []
       const remindersData = reminders.data || []
+      const examCandidatesData = examCandidatesRes.data || []
 
       setStats({
         totalMembers: membersData.length,
@@ -94,6 +97,9 @@ export default function AdminHome() {
 
       // 设置催促名单（只显示前5个）
       setReminderList(remindersData.slice(0, 5))
+      
+      // 设置准考候选成员
+      setExamCandidates(examCandidatesData)
 
       // 计算阶段分布
       const stages = [
@@ -224,6 +230,62 @@ export default function AdminHome() {
                 </p>
               </div>
             </div>
+
+            {/* 准考候选成员提示 */}
+            {examCandidates.length > 0 && (
+              <div className="bg-gradient-to-r from-yellow-900/30 to-orange-900/30 backdrop-blur-sm rounded-xl p-6 border border-yellow-700/50">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                    <div className="p-2 rounded-lg bg-yellow-600/20">
+                      <GraduationCap size={22} className="text-yellow-400" />
+                    </div>
+                    新训准考候选成员
+                    <span className="ml-2 px-2.5 py-0.5 bg-yellow-600/20 text-yellow-400 text-sm font-semibold rounded-full">
+                      {examCandidates.length}
+                    </span>
+                  </h2>
+                </div>
+                
+                <p className="text-yellow-300 text-sm mb-4">
+                  🎓 以下成员已完成前四部分的所有课程，达到新训准考标准。请管理员审核后手动调整阶段。
+                </p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {examCandidates.map((member) => (
+                    <div
+                      key={member.id}
+                      onClick={() => {
+                        // 将成员ID保存到localStorage并跳转
+                        localStorage.setItem('warningMemberIds', JSON.stringify([member.id]))
+                        navigate('/admin/members/list')
+                      }}
+                      className="group bg-yellow-900/20 hover:bg-yellow-900/30 rounded-lg p-4 border border-yellow-700/30 hover:border-yellow-500/50 transition-all cursor-pointer"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex-shrink-0 w-10 h-10 rounded-full bg-yellow-600/20 flex items-center justify-center">
+                          <span className="text-yellow-400 font-bold">
+                            {member.nickname.charAt(0)}
+                          </span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-white truncate">{member.nickname}</div>
+                          <div className="text-xs text-gray-400 truncate">QQ: {member.qq}</div>
+                        </div>
+                      </div>
+                      <div className="mt-2 text-xs text-yellow-400">
+                        当前阶段: {member.stage_role}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                
+                <div className="mt-4 text-center">
+                  <p className="text-yellow-500/70 text-xs">
+                    💡 点击成员卡片可跳转到成员列表并自动选中该成员
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* 下方左右布局 */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
