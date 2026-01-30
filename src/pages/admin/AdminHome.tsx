@@ -77,14 +77,21 @@ export default function AdminHome() {
         leaveAPI.getAll(),
         blackPointAPI.getAll(),
         reminderAPI.getAll(),
-        memberAPI.getExamCandidates()
+        memberAPI.getExamCandidates().catch(err => {
+          console.error('获取准考候选成员失败:', err)
+          return { data: [] }
+        })
       ])
 
       const membersData = members.data || []
       const leavesData = leaves.data || []
       const blackPointsData = blackPoints.data || []
       const remindersData = reminders.data || []
-      const examCandidatesData = examCandidatesRes.data || []
+      const examCandidatesData = examCandidatesRes?.data || []
+      
+      console.log('成员数据:', membersData.length)
+      console.log('催促名单:', remindersData.length)
+      console.log('准考候选成员:', examCandidatesData.length)
 
       setStats({
         totalMembers: membersData.length,
@@ -128,6 +135,7 @@ export default function AdminHome() {
         }
       })
       
+      console.log('阶段分布:', distribution)
       setStageDistribution(distribution)
     } catch (error) {
       console.error('加载统计信息失败:', error)
@@ -208,20 +216,24 @@ export default function AdminHome() {
                 </div>
                 
                 {/* 各阶段分布 */}
-                {stageDistribution.map((item, index) => (
-                  <div
-                    key={index}
-                    onClick={() => handleStageClick(item.stage)}
-                    className="group flex-1 bg-gradient-to-br from-gray-700/40 to-gray-800/40 hover:from-gray-700/60 hover:to-gray-800/60 backdrop-blur-sm rounded-lg p-4 cursor-pointer border border-gray-600/30 hover:border-gray-500/50 transition-all min-w-0"
-                  >
-                    <div className="text-center">
-                      <div className={`text-3xl font-bold mb-1 ${item.textColor}`}>
-                        {item.count}
+                {stageDistribution.length === 0 ? (
+                  <div className="text-gray-400 text-sm">加载阶段分布中...</div>
+                ) : (
+                  stageDistribution.map((item, index) => (
+                    <div
+                      key={index}
+                      onClick={() => handleStageClick(item.stage)}
+                      className="group flex-1 bg-gradient-to-br from-gray-700/40 to-gray-800/40 hover:from-gray-700/60 hover:to-gray-800/60 backdrop-blur-sm rounded-lg p-4 cursor-pointer border border-gray-600/30 hover:border-gray-500/50 transition-all min-w-0"
+                    >
+                      <div className="text-center">
+                        <div className={`text-3xl font-bold mb-1 ${item.textColor}`}>
+                          {item.count}
+                        </div>
+                        <div className="text-gray-400 text-xs font-medium truncate">{item.stage}</div>
                       </div>
-                      <div className="text-gray-400 text-xs font-medium truncate">{item.stage}</div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
               
               <div className="mt-3 text-center">
