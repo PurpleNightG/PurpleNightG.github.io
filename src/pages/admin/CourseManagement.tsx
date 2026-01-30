@@ -17,7 +17,7 @@ import {
   verticalListSortingStrategy
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { courseAPI, progressAPI } from '../../utils/api'
+import { courseAPI, progressAPI, memberAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
 
 interface Course {
@@ -184,6 +184,7 @@ export default function CourseManagement() {
   const [showAssignModal, setShowAssignModal] = useState(false)
   const [assigningCourse, setAssigningCourse] = useState<Course | null>(null)
   const [members, setMembers] = useState<any[]>([])
+  const [memberSearchQuery, setMemberSearchQuery] = useState('')
   const [selectedMemberIds, setSelectedMemberIds] = useState<Set<number>>(new Set())
   const [assignProgress, setAssignProgress] = useState(0)
   const [loadingMembers, setLoadingMembers] = useState(false)
@@ -569,7 +570,9 @@ export default function CourseManagement() {
     setShowAssignModal(false)
     setAssigningCourse(null)
     setSelectedMemberIds(new Set())
+    setAssignProgress(0)
     setMembers([])
+    setMemberSearchQuery('')
   }
 
   const loadMembers = async () => {
@@ -598,11 +601,21 @@ export default function CourseManagement() {
   }
 
   const toggleSelectAllMembers = () => {
-    if (selectedMemberIds.size === members.length) {
+    const filteredMembers = getFilteredMembers()
+    if (selectedMemberIds.size === filteredMembers.length && filteredMembers.length > 0) {
       setSelectedMemberIds(new Set())
     } else {
-      setSelectedMemberIds(new Set(members.map(m => m.id)))
+      setSelectedMemberIds(new Set(filteredMembers.map(m => m.id)))
     }
+  }
+
+  const getFilteredMembers = () => {
+    if (!memberSearchQuery.trim()) return members
+    const query = memberSearchQuery.toLowerCase()
+    return members.filter(m => 
+      m.name.toLowerCase().includes(query) ||
+      m.id.toString().includes(query)
+    )
   }
 
   const handleAssignProgress = async () => {
@@ -618,7 +631,12 @@ export default function CourseManagement() {
         Array.from(selectedMemberIds).map(String),
         assignProgress
       )
-      toast.success(`已为 ${selectedMemberIds.size} 名成员设置课程进度为 ${assignProgress}%`)
+      
+      // 自动同步这些成员的阶段
+      const memberIds = Array.from(selectedMemberIds)
+      await memberAPI.syncStage(memberIds)
+      
+      toast.success(`已为 ${selectedMemberIds.size} 名成员设置课程进度为 ${assignProgress}%，并同步阶段`)
       closeAssignModal()
     } catch (error: any) {
       console.error('设置进度失败:', error)
@@ -661,7 +679,11 @@ export default function CourseManagement() {
         )
       }
       
-      toast.success(`已为 ${selectedMemberIds.size} 名成员分配 ${selectedIds.size} 门课程，进度设置为 ${assignProgress}%`)
+      // 自动同步这些成员的阶段
+      const memberIdsNum = Array.from(selectedMemberIds)
+      await memberAPI.syncStage(memberIdsNum)
+      
+      toast.success(`已为 ${selectedMemberIds.size} 名成员分配 ${selectedIds.size} 门课程，进度设置为 ${assignProgress}%，并同步阶段`)
       closeAssignModal()
       setSelectedIds(new Set()) // 清空课程选择
     } catch (error: any) {
@@ -1224,12 +1246,32 @@ export default function CourseManagement() {
                       onClick={toggleSelectAllMembers}
                       className="text-sm text-purple-400 hover:text-purple-300 transition-colors"
                     >
-                      {selectedMemberIds.size === members.length ? '取消全选' : '全选'}
+                      {selectedMemberIds.size === getFilteredMembers().length && getFilteredMembers().length > 0 ? '取消全选' : '全选'}
                     </button>
                   </div>
 
+                  {/* 成员搜索框 */}
+                  <div className="relative mb-4">
+                    <input
+                      type="text"
+                      value={memberSearchQuery}
+                      onChange={(e) => setMemberSearchQuery(e.target.value)}
+                      placeholder="搜索成员ID或昵称..."
+                      className="w-full bg-gray-700 border border-gray-600 rounded-lg pl-10 pr-10 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-purple-500 transition-colors"
+                    />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                    {memberSearchQuery && (
+                      <button
+                        onClick={() => setMemberSearchQuery('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+                      >
+                        <X size={18} />
+                      </button>
+                    )}
+                  </div>
+
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-6 max-h-[400px] overflow-y-auto modal-scrollbar">
-                    {members.map((member) => (
+                    {getFilteredMembers().map((member) => (
                       <button
                         key={member.id}
                         onClick={() => toggleMemberSelect(member.id)}

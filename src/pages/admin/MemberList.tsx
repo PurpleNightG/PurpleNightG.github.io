@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { memberAPI, quitAPI } from '../../utils/api'
-import { Plus, Eye, Filter, ChevronUp, ChevronDown, Search, X, CheckSquare, Square, Loader2 } from 'lucide-react'
+import { Plus, Eye, Filter, ChevronUp, ChevronDown, Search, X, CheckSquare, Square, Loader2, RefreshCw } from 'lucide-react'
 import { formatDate } from '../../utils/dateFormat'
 import { toast } from '../../utils/toast'
 import MemberDetail from './MemberDetail'
@@ -30,8 +30,11 @@ export default function MemberList() {
   // 批量操作模态框
   const [batchActionModal, setBatchActionModal] = useState<{show: boolean, type: string}>({show: false, type: ''})
   
+  // 高亮的成员ID列表（同步阶段后被更新的成员）
+  const [highlightedMemberIds, setHighlightedMemberIds] = useState<Set<number>>(new Set())
+  
   // 设置新训日期
-  const [trainingDate, setTrainingDate] = useState(new Date().toISOString().split('T')[0])
+  const [trainingDate, setTrainingDate] = useState<string>(new Date().toISOString().split('T')[0])
   
   // 搜索关键词
   const [searchQuery, setSearchQuery] = useState(() => {
@@ -334,7 +337,7 @@ export default function MemberList() {
           qq: m.qq,
           game_id: m.game_id || '',
           join_date: m.join_date ? m.join_date.split('T')[0] : new Date().toISOString().split('T')[0],
-          stage_role: newRole,  // 更新角色
+          stage_role: newRole,
           status: m.status,
           last_training_date: m.last_training_date ? m.last_training_date.split('T')[0] : null,
           remarks: m.remarks || ''
@@ -348,6 +351,32 @@ export default function MemberList() {
       loadMembers()
     } catch (error: any) {
       toast.error(error.response?.data?.error || error.message || '批量修改角色失败')
+    }
+  }
+
+  // 同步阶段
+  const handleSyncStage = async () => {
+    try {
+      const memberIds = selectedIds.size > 0 ? Array.from(selectedIds) : undefined
+      const result = await memberAPI.syncStage(memberIds)
+      toast.success(result.message)
+      setBatchActionModal({show: false, type: ''})
+      if (selectedIds.size > 0) {
+        clearSelection()
+      }
+      await loadMembers()
+      
+      // 高亮被更新的成员
+      if (result.data?.updatedMemberIds && result.data.updatedMemberIds.length > 0) {
+        setHighlightedMemberIds(new Set(result.data.updatedMemberIds))
+        
+        // 3秒后清除高亮
+        setTimeout(() => {
+          setHighlightedMemberIds(new Set())
+        }, 3000)
+      }
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || error.message || '同步阶段失败')
     }
   }
 
@@ -541,6 +570,17 @@ export default function MemberList() {
             )}
           </button>
           <button
+            onClick={() => {
+              clearSelection()
+              setBatchActionModal({show: true, type: 'syncStage'})
+            }}
+            className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+            title="同步所有成员阶段"
+          >
+            <RefreshCw size={20} />
+            同步阶段
+          </button>
+          <button
             onClick={handleAdd}
             className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
           >
@@ -582,6 +622,12 @@ export default function MemberList() {
                 className="px-3 py-1.5 bg-yellow-600 hover:bg-yellow-700 text-white rounded text-sm transition-colors"
               >
                 设置新训日期
+              </button>
+              <button
+                onClick={() => setBatchActionModal({show: true, type: 'syncStage'})}
+                className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded text-sm transition-colors"
+              >
+                同步阶段
               </button>
               <button
                 onClick={() => setBatchActionModal({show: true, type: 'resetPassword'})}
@@ -704,7 +750,10 @@ export default function MemberList() {
               </thead>
               <tbody>
                 {filteredMembers.map((member) => (
-                  <tr key={member.id}>
+                  <tr 
+                    key={member.id}
+                    className={highlightedMemberIds.has(member.id) ? 'highlighted-row' : ''}
+                  >
                     <td>
                       <button
                         onClick={() => toggleSelectOne(member.id)}
@@ -1009,6 +1058,48 @@ export default function MemberList() {
                   取消
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 同步阶段确认对话框 */}
+      {batchActionModal.show && batchActionModal.type === 'syncStage' && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700">
+            <h2 className="text-xl font-bold text-white mb-4">同步阶段</h2>
+            <p className="text-gray-400 text-sm mb-4">
+              {selectedIds.size > 0 ? (
+                <>即将为 <span className="text-cyan-400 font-bold">{selectedIds.size}</span> 个成员同步阶段</>
+              ) : (
+                <>即将为所有成员同步阶段</>
+              )}
+            </p>
+            <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-3 mb-4">
+              <p className="text-blue-300 text-xs leading-relaxed">
+                💡 <strong>同步规则：</strong><br/>
+                • 至少上过一节课 → 新训初期<br/>
+                • 第一部分(1.X)全部完成 → 新训一期<br/>
+                • 第二部分(2.X)全部完成 → 新训二期<br/>
+                • 第三部分(3.X)全部完成 → 新训三期<br/>
+                • 按最前面未完成的部分判断阶段<br/>
+                • 特殊职位(紫夜尖兵及以上)不会被调整
+              </p>
+            </div>
+            
+            <div className="flex gap-3">
+              <button
+                onClick={handleSyncStage}
+                className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white py-2 rounded-lg transition-colors"
+              >
+                确认同步
+              </button>
+              <button
+                onClick={() => setBatchActionModal({show: false, type: ''})}
+                className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 rounded-lg transition-colors"
+              >
+                取消
+              </button>
             </div>
           </div>
         </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { progressAPI } from '../../utils/api'
+import { progressAPI, memberAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
 import { CheckSquare, Square, User, X, Search, Filter, ChevronUp, ChevronDown } from 'lucide-react'
 import { formatDate } from '../../utils/dateFormat'
@@ -169,7 +169,10 @@ export default function ProgressAssignment() {
       
       await Promise.all(promises)
       
-      toast.success(`已为 ${selectedMemberIds.size} 名成员更新 ${batchPendingChanges.size} 门课程进度`)
+      // 自动同步这些成员的阶段
+      await memberAPI.syncStage(Array.from(selectedMemberIds))
+      
+      toast.success(`已为 ${selectedMemberIds.size} 名成员更新 ${batchPendingChanges.size} 门课程进度并同步阶段`)
       setBatchPendingChanges(new Map())
       
       // 重新加载成员列表
@@ -210,7 +213,10 @@ export default function ProgressAssignment() {
       
       await Promise.all(promises)
       
-      toast.success(`已更新 ${pendingChanges.size} 门课程进度`)
+      // 自动同步该成员的阶段
+      await memberAPI.syncStage([selectedMember.id])
+      
+      toast.success(`已更新 ${pendingChanges.size} 门课程进度并同步阶段`)
       setPendingChanges(new Map())
       
       // 重新加载成员列表以更新完成课程数

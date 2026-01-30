@@ -101,6 +101,14 @@ export const memberAPI = {
     })
     return result
   },
+  syncStage: async (memberIds?: number[]) => {
+    const result = await request('/members/sync-stage', {
+      method: 'POST',
+      body: JSON.stringify({ memberIds }),
+    })
+    clearCache('/members')
+    return result
+  },
 }
 
 // 学员端 API

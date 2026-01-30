@@ -330,4 +330,137 @@ router.put('/batch/reset-password', async (req, res) => {
   }
 })
 
+// 自动同步成员阶段
+router.post('/sync-stage', async (req, res) => {
+  try {
+    const { memberIds } = req.body
+    
+    // 定义不需要自动调整阶段的特殊职位
+    const specialRoles = ['紫夜尖兵', '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师']
+    
+    let updatedCount = 0
+    let skippedCount = 0
+    const updatedMemberIds = []  // 记录被更新的成员ID
+    
+    // 获取所有课程，按code排序
+    const [courses] = await pool.query(`
+      SELECT id, code FROM courses ORDER BY code
+    `)
+    
+    // 按课程部分分组（1.X, 2.X, 3.X等）
+    const courseParts = {
+      '1': courses.filter(c => c.code.startsWith('1.')),
+      '2': courses.filter(c => c.code.startsWith('2.')),
+      '3': courses.filter(c => c.code.startsWith('3.'))
+    }
+    
+    // 如果没有提供memberIds，则处理所有非特殊职位的成员
+    let membersToProcess
+    if (memberIds && memberIds.length > 0) {
+      const placeholders = memberIds.map(() => '?').join(',')
+      const [members] = await pool.query(
+        `SELECT id, nickname, stage_role FROM members WHERE id IN (${placeholders}) AND stage_role NOT IN (${specialRoles.map(() => '?').join(',')})`,
+        [...memberIds, ...specialRoles]
+      )
+      membersToProcess = members
+    } else {
+      const [members] = await pool.query(
+        `SELECT id, nickname, stage_role FROM members WHERE stage_role NOT IN (${specialRoles.map(() => '?').join(',')}) AND status != '已退队'`,
+        specialRoles
+      )
+      membersToProcess = members
+    }
+    
+    for (const member of membersToProcess) {
+      // 获取该成员的所有课程进度
+      const [progress] = await pool.query(`
+        SELECT course_id, progress
+        FROM student_course_progress
+        WHERE member_id = ? AND progress > 0
+      `, [member.id])
+      
+      // 如果一节课都没上过，跳过
+      if (progress.length === 0) {
+        skippedCount++
+        continue
+      }
+      
+      // 计算各部分完成情况
+      let newStage = '未新训'
+      let hasAnyProgress = false
+      
+      // 检查是否有任何课程进度
+      for (const p of progress) {
+        if (p.progress > 0) {
+          hasAnyProgress = true
+          break
+        }
+      }
+      
+      if (hasAnyProgress) {
+        // 至少上过一节课，最低为新训初期
+        newStage = '新训初期'
+        
+        // 检查第一部分是否全部完成
+        const part1Completed = courseParts['1'].every(course => {
+          const courseProgress = progress.find(p => p.course_id === course.id)
+          return courseProgress && courseProgress.progress === 100
+        })
+        
+        if (part1Completed && courseParts['1'].length > 0) {
+          newStage = '新训一期'
+          
+          // 检查第二部分是否全部完成
+          const part2Completed = courseParts['2'].every(course => {
+            const courseProgress = progress.find(p => p.course_id === course.id)
+            return courseProgress && courseProgress.progress === 100
+          })
+          
+          if (part2Completed && courseParts['2'].length > 0) {
+            newStage = '新训二期'
+            
+            // 检查第三部分是否全部完成
+            const part3Completed = courseParts['3'].every(course => {
+              const courseProgress = progress.find(p => p.course_id === course.id)
+              return courseProgress && courseProgress.progress === 100
+            })
+            
+            if (part3Completed && courseParts['3'].length > 0) {
+              newStage = '新训三期'
+            }
+          }
+        }
+      }
+      
+      // 如果阶段发生变化，则更新
+      if (member.stage_role !== newStage) {
+        await pool.query(
+          'UPDATE members SET stage_role = ? WHERE id = ?',
+          [newStage, member.id]
+        )
+        updatedCount++
+        updatedMemberIds.push(member.id)  // 记录被更新的成员ID
+      } else {
+        skippedCount++
+      }
+    }
+    
+    res.json({
+      success: true,
+      message: `同步完成：更新 ${updatedCount} 人，跳过 ${skippedCount} 人`,
+      data: {
+        updated: updatedCount,
+        skipped: skippedCount,
+        updatedMemberIds: updatedMemberIds  // 返回被更新的成员ID列表
+      }
+    })
+  } catch (error) {
+    console.error('同步阶段失败:', error)
+    res.status(500).json({
+      success: false,
+      message: '同步阶段失败: ' + error.message
+    })
+  }
+})
+
 export default router
