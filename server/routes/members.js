@@ -52,12 +52,6 @@ router.get('/exam-candidates', async (req, res) => {
       '4': courses.filter(c => c.code.startsWith('4.'))
     }
     
-    console.log('课程部分统计:')
-    console.log('第1部分课程数:', courseParts['1'].length)
-    console.log('第2部分课程数:', courseParts['2'].length)
-    console.log('第3部分课程数:', courseParts['3'].length)
-    console.log('第4部分课程数:', courseParts['4'].length)
-    
     // 获取所有新训三期的成员（不包括新训准考和特殊职位）
     const [members] = await pool.query(`
       SELECT id, nickname, qq, stage_role, join_date 
@@ -65,8 +59,6 @@ router.get('/exam-candidates', async (req, res) => {
       WHERE stage_role = '新训三期' AND status != '已退队'
       ORDER BY join_date DESC
     `)
-    
-    console.log('新训三期成员数:', members.length)
     
     const qualifiedMembers = []
     
@@ -77,9 +69,6 @@ router.get('/exam-candidates', async (req, res) => {
         FROM student_course_progress
         WHERE member_id = ?
       `, [member.id])
-      
-      console.log(`\n检查成员: ${member.nickname} (ID: ${member.id})`)
-      console.log(`  已完成课程数: ${progress.length}`)
       
       // 检查前四部分是否全部完成
       const part1Completed = courseParts['1'].length > 0 && courseParts['1'].every(course => {
@@ -102,14 +91,8 @@ router.get('/exam-candidates', async (req, res) => {
         return courseProgress && courseProgress.progress === 100
       })
       
-      console.log(`  第1部分完成: ${part1Completed}`)
-      console.log(`  第2部分完成: ${part2Completed}`)
-      console.log(`  第3部分完成: ${part3Completed}`)
-      console.log(`  第4部分完成: ${part4Completed}`)
-      
       // 如果前四部分全部完成，添加到合格列表
       if (part1Completed && part2Completed && part3Completed && part4Completed) {
-        console.log(`  ✅ ${member.nickname} 达到准考标准！`)
         qualifiedMembers.push({
           id: member.id,
           nickname: member.nickname,
@@ -117,12 +100,8 @@ router.get('/exam-candidates', async (req, res) => {
           stage_role: member.stage_role,
           join_date: member.join_date
         })
-      } else {
-        console.log(`  ❌ ${member.nickname} 未达到准考标准`)
       }
     }
-    
-    console.log(`\n总共找到 ${qualifiedMembers.length} 个符合准考标准的成员`)
     
     res.json({
       success: true,

@@ -88,10 +88,6 @@ export default function AdminHome() {
       const blackPointsData = blackPoints.data || []
       const remindersData = reminders.data || []
       const examCandidatesData = examCandidatesRes?.data || []
-      
-      console.log('成员数据:', membersData.length)
-      console.log('催促名单:', remindersData.length)
-      console.log('准考候选成员:', examCandidatesData.length)
 
       setStats({
         totalMembers: membersData.length,
@@ -135,7 +131,6 @@ export default function AdminHome() {
         }
       })
       
-      console.log('阶段分布:', distribution)
       setStageDistribution(distribution)
     } catch (error) {
       console.error('加载统计信息失败:', error)
