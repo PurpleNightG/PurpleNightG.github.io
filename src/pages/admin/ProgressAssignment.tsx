@@ -10,6 +10,7 @@ interface Member {
   name: string
   status: string
   join_date: string
+  last_training_date: string
   completed_courses: number
   total_courses: number
 }
@@ -538,9 +539,9 @@ export default function ProgressAssignment() {
                   </button>
                 </th>
                 <th>
-                  <button onClick={() => handleSort('join_date')} className="flex items-center gap-1 hover:text-white transition-colors">
+                  <button onClick={() => handleSort('last_training_date')} className="flex items-center gap-1 hover:text-white transition-colors">
                     新训日期
-                    {sortConfig?.key === 'join_date' && (sortConfig.direction === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />)}
+                    {sortConfig?.key === 'last_training_date' && (sortConfig.direction === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />)}
                   </button>
                 </th>
                 <th>
@@ -598,7 +599,7 @@ export default function ProgressAssignment() {
                       </span>
                     </td>
                     <td className="text-gray-300">
-                      {formatDate(member.join_date)}
+                      {formatDate(member.last_training_date)}
                     </td>
                     <td>
                       <div className="flex items-center gap-2">

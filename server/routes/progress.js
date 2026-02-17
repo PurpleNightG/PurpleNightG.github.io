@@ -12,6 +12,7 @@ router.get('/members', async (req, res) => {
         m.nickname as name,
         m.stage_role as status,
         m.join_date,
+        m.last_training_date,
         COUNT(DISTINCT scp.course_id) as completed_courses,
         (SELECT COUNT(*) FROM courses) as total_courses
       FROM members m

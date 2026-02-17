@@ -5,7 +5,8 @@ import {
   FileCheck, 
   FileText,
   Video,
-  Smartphone
+  Smartphone,
+  Users
 } from 'lucide-react'
 import { Link, useLocation, Routes, Route } from 'react-router-dom'
 import ProtectedRoute from '../components/ProtectedRoute'
@@ -14,6 +15,7 @@ import PublicVideos from './PublicVideos'
 import StudentApplyAssessment from './StudentApplyAssessment'
 import StudentAssessmentReport from './StudentAssessmentReport'
 import StudentHome from './StudentHome'
+import StudentClassmates from './StudentClassmates'
 
 interface MenuItem {
   name: string
@@ -73,6 +75,7 @@ function StudentDashboardContent() {
   const menuItems: MenuItem[] = [
     { name: '首页', path: '/student', icon: <Home size={20} /> },
     { name: '课程进度', path: '/student/progress', icon: <BookOpen size={20} /> },
+    { name: '同期学员', path: '/student/classmates', icon: <Users size={20} /> },
     { name: '申请考核', path: '/student/apply-assessment', icon: <FileCheck size={20} /> },
     { name: '新训考核报告', path: '/student/assessment-report', icon: <FileText size={20} /> },
     { name: '公开视频查看', path: '/student/videos', icon: <Video size={20} /> }
@@ -150,6 +153,7 @@ function StudentDashboardContent() {
         <Routes>
           <Route index element={<StudentHome />} />
           <Route path="progress" element={<StudentProgress />} />
+          <Route path="classmates" element={<StudentClassmates />} />
           <Route path="apply-assessment" element={<StudentApplyAssessment />} />
           <Route path="assessment-report" element={<StudentAssessmentReport />} />
           <Route path="videos" element={<PublicVideos />} />

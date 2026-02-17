@@ -7,8 +7,12 @@ const router = express.Router()
 router.get('/', async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT * FROM quit_approvals
-      ORDER BY apply_date DESC
+      SELECT 
+        qa.*,
+        COALESCE(a.name, qa.source_admin_name) as source_admin_name
+      FROM quit_approvals qa
+      LEFT JOIN admins a ON qa.source_admin_id = a.id
+      ORDER BY qa.apply_date DESC
     `)
     
     res.json({

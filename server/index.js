@@ -18,6 +18,7 @@ import assessmentApplicationsRoutes from './routes/assessmentApplications.js'
 import assessmentGuidelinesRoutes from './routes/assessmentGuidelines.js'
 import publicVideosRoutes from './routes/publicVideos.js'
 import videoUploadRoutes from './routes/videoUpload.js'
+import classmatesRoutes from './routes/classmates.js'
 
 dotenv.config()
 
@@ -79,6 +80,7 @@ app.use('/api/assessment-applications', assessmentApplicationsRoutes)
 app.use('/api/assessment-guidelines', assessmentGuidelinesRoutes)
 app.use('/api/public-videos', publicVideosRoutes)
 app.use('/api/video-upload', videoUploadRoutes)
+app.use('/api/classmates', classmatesRoutes)
 
 // 健康检查
 app.get('/api/health', (req, res) => {
