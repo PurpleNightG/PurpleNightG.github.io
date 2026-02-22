@@ -1,6 +1,7 @@
 import { HashRouter as Router, Routes, Route } from 'react-router-dom'
 import Layout from './components/Layout'
 import Home from './pages/Home'
+import Downloads from './pages/Downloads'
 import DocsLayout from './pages/DocsLayout'
 import AdminDashboard from './pages/AdminDashboard'
 import StudentDashboard from './pages/StudentDashboard'
@@ -31,6 +32,7 @@ function App() {
           <Layout>
             <Routes>
               <Route path="/" element={<Home />} />
+              <Route path="/downloads" element={<Downloads />} />
               <Route path="/docs" element={<DocsLayout />} />
               <Route path="/docs/:docName" element={<DocsLayout />} />
             </Routes>
