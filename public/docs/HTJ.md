@@ -20,7 +20,7 @@
 - **QQ群号：** **887368156**
 - 扫描以下二维码加入我们：
 
-<img src="https://vip.helloimg.com/i/2024/08/01/66ab5d38e9d3a.jpg" alt="紫夜公开交流群" width="350px">
+<img src="/QRcode.jpg" alt="紫夜公开交流群" width="350px">
 
 ---
 
@@ -184,60 +184,6 @@
 <div class="note info">
 <b>郑重声明：</b>我们所讲述的所有教程以及理论已根据本游戏做了调整及更改，请勿带入现实或其他游戏去评价与衡量此套教程的合理性。
 </div>
-
----
-
-## 一些关于本游戏的小问题
-
-### 我该使用什么加速器？
-
-你可以去各知名加速器官网下载安装包，加速Steam，确保Steam稳定在线。
-
-**推荐加速器：**
-
-<a href="https://www.leigod.com/" target="_blank" rel="noopener noreferrer" class="doc-card">
-  <div class="doc-card-title">雷神加速器</div>
-  <div class="doc-card-desc">专业游戏加速器，支持直接加速游戏</div>
-</a>
-
-<a href="https://www.xunyou.com/" target="_blank" rel="noopener noreferrer" class="doc-card">
-  <div class="doc-card-title">迅游加速器</div>
-  <div class="doc-card-desc">老牌游戏加速器，稳定可靠</div>
-</a>
-
-<a href="https://uu.163.com/" target="_blank" rel="noopener noreferrer" class="doc-card">
-  <div class="doc-card-title">网易UU加速器</div>
-  <div class="doc-card-desc">网易出品，性能优秀</div>
-</a>
-
-或者你可以尝试使用你自己的加速器加速Steam，若无法进入房间，可尝试将节点更换为**登录失败/异常专用**。除了雷神加速器可以直接加速游戏之外，其他加速器我们都建议只加速Steam。
-
-### 我安装了模组但不生效
-
-请确认你将模组安装在了Paks文件夹内，且是后缀为.pak的白块文件，而并非压缩包。  
-若是模组冲突导致不生效的问题，那就请你一个一个删除试着吧。  
-若是模组过旧，也会产生这种问题，尝试去官网寻找它的最新版本！
-
-### 我无法创建房间！
-
-这个问题是由于 **pakchunk99-Mod_PlayerLimitEditor.pak** 模组造成的，在之前的版本中出现过此类问题，现在作者已经修复了此类Bug。你可以去NexusMods下载最新版本的模组。
-
-此外，如果你还是无法创建房间，那么可能是由于运营商拦截，请尝试以下方法：
-> 开始之前，请确保加速器正在加速Steam，保证Steam稳定在线。
-
-1. 退出Steam，使Steam处于关闭状态。
-2. 找到游戏根目录（方法同上），进入 `ReadyOrNot\Binaries\Win64` 文件夹内。
-3. 找到游戏主进程 **ReadyOrNotSteam-Win64-Shipping.exe** ，打开它。
-<img src="https://s41.ax1x.com/2026/01/25/pZ2sSv8.png" alt="游戏根目录">
-
-4. 待游戏进入主界面后，会提示 **无法连接至EPIC服务。请稍后重试**。点击 **好** 即可。
-<img src="https://s41.ax1x.com/2026/01/25/pZ2s9KS.png" alt="无法连接至EPIC服务">
-
-5. 打开Steam，等待Steam进入主页。
-6. 在游戏中的多人游戏选项，选择 **重新连接EPIC SERVERS**。
-<img src="https://s41.ax1x.com/2026/01/25/pZ2sPbQ.png" alt="重新连接EPIC SERVERS">
-
-现在你应该可以创建房间了。
 
 ---
 
