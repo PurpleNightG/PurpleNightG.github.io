@@ -93,16 +93,13 @@ export default function DocsLayout() {
   const handleRefresh = () => {
     // 更新本地版本号
     localStorage.setItem('docVersion', currentVersion)
-    // 清除Service Worker缓存并强制刷新
-    if ('caches' in window) {
-      caches.keys().then(names => {
-        names.forEach(name => caches.delete(name))
-      })
+    // 关闭提示
+    setShowUpdateNotification(false)
+    // 重新拉取文档列表和当前文档（无需刷新页面）
+    fetchDocs()
+    if (docName) {
+      loadDocument(docName)
     }
-    // 使用硬刷新：Ctrl+F5 效果
-    setTimeout(() => {
-      window.location.reload()
-    }, 100)
   }
 
   const handleDismiss = () => {
@@ -111,7 +108,7 @@ export default function DocsLayout() {
 
   const fetchDocs = async () => {
     try {
-      const response = await fetch('/docs/index.json')
+      const response = await fetch('/docs/index.json?t=' + Date.now())
       const data = await response.json()
       setDocs(data)
     } catch (error) {
