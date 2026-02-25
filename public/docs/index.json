@@ -18,5 +18,9 @@
   {
     "name": "一些关于本游戏的小问题",
     "path": "Q&A.md"
+  },
+  {
+    "name": "模组管理器介绍",
+    "path": "Modmanager.md"
   }
 ]
