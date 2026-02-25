@@ -77,13 +77,14 @@ export default function DocsLayout() {
         // 首次访问，保存当前版本
         setCurrentVersion(data.version)
         localStorage.setItem('docVersion', data.version)
-      } else if (data.version !== savedVersion) {
-        // 版本不一致，显示更新提示
+      } else if (data.version !== savedVersion && data.version !== currentVersion) {
+        // 版本不一致且不是当前已知版本，显示更新提示
         setCurrentVersion(data.version)
         setShowUpdateNotification(true)
-      } else {
-        // 版本一致，更新state
+      } else if (data.version === savedVersion) {
+        // 版本一致，更新state并隐藏提示
         setCurrentVersion(data.version)
+        setShowUpdateNotification(false)
       }
     } catch (error) {
       console.log('版本检查失败，跳过更新提示')
