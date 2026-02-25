@@ -93,8 +93,16 @@ export default function DocsLayout() {
   const handleRefresh = () => {
     // 更新本地版本号
     localStorage.setItem('docVersion', currentVersion)
-    // 强制刷新页面，跳过缓存
-    window.location.href = window.location.href.split('?')[0] + '?_t=' + Date.now()
+    // 清除Service Worker缓存并强制刷新
+    if ('caches' in window) {
+      caches.keys().then(names => {
+        names.forEach(name => caches.delete(name))
+      })
+    }
+    // 使用硬刷新：Ctrl+F5 效果
+    setTimeout(() => {
+      window.location.reload()
+    }, 100)
   }
 
   const handleDismiss = () => {
