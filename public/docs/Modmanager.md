@@ -4,7 +4,8 @@
 接下来我将详细介绍模组管理器的主要功能
 
 > 由于安装包变更，安装时可能不会自动读取原路径，因此您无法进行覆盖安装，否则将会导致卸载不完全。请先卸载原有版本，如须保留配置文件，请打开软件安装根目录，备份根目录下的config文件夹，在安装完新版本后重新覆盖新目录下的config文件夹即可。
-<img src="/img/ModManagerIntroduce/目录结构.png" alt="目录结构" width="500px">
+
+<img src="/img/ModManagerIntroduce/目录结构.png" alt="目录结构" width="800px">
 
 ---
 
