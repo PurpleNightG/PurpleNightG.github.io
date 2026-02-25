@@ -1,4 +1,4 @@
-import { useState, useEffect, memo } from 'react'
+import { useState, useEffect, useRef, memo } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -47,6 +47,7 @@ export default function DocsLayout() {
   const [activeHeading, setActiveHeading] = useState('')
   const [showUpdateNotification, setShowUpdateNotification] = useState(false)
   const [currentVersion, setCurrentVersion] = useState<string>('')
+  const isFirstCheck = useRef(true)
 
   useEffect(() => {
     fetchDocs()
@@ -71,20 +72,16 @@ export default function DocsLayout() {
       const response = await fetch('/version.json?t=' + Date.now())
       const data = await response.json()
       
-      const savedVersion = localStorage.getItem('docVersion')
-      
-      if (!savedVersion) {
-        // 首次访问，保存当前版本
+      if (isFirstCheck.current) {
+        // 页面刚加载，保存当前版本，不显示提示
+        // 因为刚加载的页面内容已经是最新的
+        isFirstCheck.current = false
         setCurrentVersion(data.version)
         localStorage.setItem('docVersion', data.version)
-      } else if (data.version !== savedVersion && data.version !== currentVersion) {
-        // 版本不一致且不是当前已知版本，显示更新提示
+      } else if (data.version !== currentVersion && currentVersion !== '') {
+        // 用户停留期间检测到版本变化，显示更新提示
         setCurrentVersion(data.version)
         setShowUpdateNotification(true)
-      } else if (data.version === savedVersion) {
-        // 版本一致，更新state并隐藏提示
-        setCurrentVersion(data.version)
-        setShowUpdateNotification(false)
       }
     } catch (error) {
       console.log('版本检查失败，跳过更新提示')
