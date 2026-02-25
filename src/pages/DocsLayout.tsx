@@ -228,15 +228,12 @@ export default function DocsLayout() {
 
   return (
     <>
-      {/* Update Notification */}
       {showUpdateNotification && (
         <UpdateNotification
           onRefresh={handleRefresh}
           onDismiss={handleDismiss}
         />
       )}
-
-      {/* Image Lightbox */
       {lightboxOpen && (
         <div 
           className="fixed inset-0 z-50 bg-black bg-opacity-90 flex items-center justify-center"
