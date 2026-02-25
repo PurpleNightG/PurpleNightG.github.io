@@ -26,5 +26,9 @@
   {
     "name": "测试",
     "path": "test.md"
+  },
+  {
+    "name": "2他",
+    "path": "test2.md"
   }
 ]
