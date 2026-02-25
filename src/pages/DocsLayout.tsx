@@ -71,13 +71,19 @@ export default function DocsLayout() {
       const response = await fetch('/version.json?t=' + Date.now())
       const data = await response.json()
       
-      if (!currentVersion) {
-        // 首次加载，保存当前版本
+      const savedVersion = localStorage.getItem('docVersion')
+      
+      if (!savedVersion) {
+        // 首次访问，保存当前版本
         setCurrentVersion(data.version)
         localStorage.setItem('docVersion', data.version)
-      } else if (data.version !== currentVersion) {
+      } else if (data.version !== savedVersion) {
         // 版本不一致，显示更新提示
+        setCurrentVersion(data.version)
         setShowUpdateNotification(true)
+      } else {
+        // 版本一致，更新state
+        setCurrentVersion(data.version)
       }
     } catch (error) {
       console.log('版本检查失败，跳过更新提示')
