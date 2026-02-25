@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
 import { FileText, Search, FolderOpen } from 'lucide-react'
+import UpdateNotification from '../components/UpdateNotification'
 
 interface DocItem {
   name: string
@@ -44,9 +45,15 @@ export default function DocsLayout() {
   const [images, setImages] = useState<string[]>([])
   const [headings, setHeadings] = useState<{ id: string; text: string; level: number }[]>([])
   const [activeHeading, setActiveHeading] = useState('')
+  const [showUpdateNotification, setShowUpdateNotification] = useState(false)
+  const [currentVersion, setCurrentVersion] = useState<string>('')
 
   useEffect(() => {
     fetchDocs()
+    checkVersion()
+    // 每30秒检查一次版本更新
+    const versionCheckInterval = setInterval(checkVersion, 30000)
+    return () => clearInterval(versionCheckInterval)
   }, [])
 
   useEffect(() => {
@@ -58,6 +65,35 @@ export default function DocsLayout() {
       navigate(`/docs/${encodeURIComponent(firstDoc)}`, { replace: true })
     }
   }, [docName, docs])
+
+  const checkVersion = async () => {
+    try {
+      const response = await fetch('/version.json?t=' + Date.now())
+      const data = await response.json()
+      
+      if (!currentVersion) {
+        // 首次加载，保存当前版本
+        setCurrentVersion(data.version)
+        localStorage.setItem('docVersion', data.version)
+      } else if (data.version !== currentVersion) {
+        // 版本不一致，显示更新提示
+        setShowUpdateNotification(true)
+      }
+    } catch (error) {
+      console.log('版本检查失败，跳过更新提示')
+    }
+  }
+
+  const handleRefresh = () => {
+    // 更新本地版本号
+    localStorage.setItem('docVersion', currentVersion)
+    // 刷新页面
+    window.location.reload()
+  }
+
+  const handleDismiss = () => {
+    setShowUpdateNotification(false)
+  }
 
   const fetchDocs = async () => {
     try {
@@ -192,7 +228,15 @@ export default function DocsLayout() {
 
   return (
     <>
-      {/* Image Lightbox */}
+      {/* Update Notification */}
+      {showUpdateNotification && (
+        <UpdateNotification
+          onRefresh={handleRefresh}
+          onDismiss={handleDismiss}
+        />
+      )}
+
+      {/* Image Lightbox */
       {lightboxOpen && (
         <div 
           className="fixed inset-0 z-50 bg-black bg-opacity-90 flex items-center justify-center"
