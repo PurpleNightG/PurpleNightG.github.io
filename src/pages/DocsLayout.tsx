@@ -93,8 +93,8 @@ export default function DocsLayout() {
   const handleRefresh = () => {
     // 更新本地版本号
     localStorage.setItem('docVersion', currentVersion)
-    // 刷新页面
-    window.location.reload()
+    // 强制刷新页面，跳过缓存
+    window.location.href = window.location.href.split('?')[0] + '?_t=' + Date.now()
   }
 
   const handleDismiss = () => {
@@ -118,7 +118,8 @@ export default function DocsLayout() {
   const loadDocument = async (name: string) => {
     setLoading(true)
     try {
-      const response = await fetch(`/docs/${name}.md`)
+      // 添加时间戳参数绕过缓存
+      const response = await fetch(`/docs/${name}.md?t=${Date.now()}`)
       if (!response.ok) {
         throw new Error('文档未找到')
       }
