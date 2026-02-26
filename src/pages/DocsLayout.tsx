@@ -48,6 +48,7 @@ export default function DocsLayout() {
   const [showUpdateNotification, setShowUpdateNotification] = useState(false)
   const [currentVersion, setCurrentVersion] = useState<string>('')
   const isFirstCheck = useRef(true)
+  const tocRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     fetchDocs()
@@ -193,6 +194,26 @@ export default function DocsLayout() {
       return () => window.removeEventListener('scroll', handleScroll, true)
     }
   }, [headings])
+
+  // TOC自动滚动：当前高亮章节滚动到视窗内
+  useEffect(() => {
+    if (!activeHeading || !tocRef.current) return
+    const tocItem = tocRef.current.querySelector(`[data-toc-id="${activeHeading}"]`) as HTMLElement
+    if (tocItem) {
+      const container = tocRef.current
+      const itemTop = tocItem.offsetTop
+      const itemHeight = tocItem.offsetHeight
+      const containerHeight = container.clientHeight
+      const scrollTop = container.scrollTop
+      // 如果当前项在可视区域外，平滑滚动到居中位置
+      if (itemTop < scrollTop + 40 || itemTop + itemHeight > scrollTop + containerHeight - 40) {
+        container.scrollTo({
+          top: itemTop - containerHeight / 2 + itemHeight / 2,
+          behavior: 'smooth'
+        })
+      }
+    }
+  }, [activeHeading])
 
   // 添加图片点击lightbox功能
   useEffect(() => {
@@ -370,38 +391,61 @@ export default function DocsLayout() {
 
         {/* Table of Contents */}
         {!loading && headings.length > 0 && (
-          <aside className="w-64 flex-shrink-0 border-l border-gray-800 animate-slide-in-right">
-            <div className="sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto p-6 toc-scrollbar-hidden">
-              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4 animate-fade-in animate-delay-300">
-                本页目录
-              </h3>
-              <nav className="space-y-1 border-l-2 border-gray-700 pl-4 relative animate-fade-in animate-delay-400">
-                {headings.map((heading) => (
-                  <a
-                    key={heading.id}
-                    href={`#${heading.id}`}
-                    onClick={(e) => {
-                      e.preventDefault()
-                      const element = document.getElementById(heading.id)
-                      if (element) {
-                        element.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                      }
-                    }}
-                    className={`block text-sm transition-all duration-200 py-1.5 relative ${
-                      activeHeading === heading.id
-                        ? 'text-purple-400 font-medium'
-                        : 'text-gray-500 hover:text-gray-300'
-                    }`}
-                    style={{
-                      paddingLeft: `${(heading.level - 1) * 0.75}rem`
-                    }}
-                  >
-                    {activeHeading === heading.id && (
-                      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-2 h-2 bg-purple-400 rounded-full -ml-[1.3rem] ring-4 ring-gray-900"></span>
-                    )}
-                    {heading.text}
-                  </a>
-                ))}
+          <aside className="w-64 flex-shrink-0 border-l border-gray-800/60 animate-slide-in-right">
+            <div ref={tocRef} className="sticky top-16 h-[calc(100vh-4rem)] overflow-y-auto p-6 toc-scrollbar-hidden">
+              <div className="flex items-center gap-2 mb-5 animate-fade-in animate-delay-300">
+                <div className="w-1 h-5 bg-gradient-to-b from-purple-500 to-purple-700 rounded-full"></div>
+                <h3 className="text-base font-bold text-gray-300 tracking-wide">
+                  本页目录
+                </h3>
+              </div>
+              <nav className="animate-fade-in animate-delay-400 border-l-2 border-gray-800">
+                {headings.map((heading) => {
+                  const isActive = activeHeading === heading.id
+                  const isH1 = heading.level === 1
+                  const isH2 = heading.level === 2
+                  const isH3 = heading.level === 3
+                  // 缩进：h1顶格，h2=1rem，h3=1.8rem，h4=2.6rem
+                  const indent = isH1 ? 0.75 : isH2 ? 1.25 : isH3 ? 1.9 : 2.6
+                  // 字号：h1=16px, h2=14.5px, h3=13px, h4=12.5px
+                  const fontSize = isH1 ? '16px' : isH2 ? '14.5px' : isH3 ? '13px' : '12.5px'
+                  // 非激活颜色：h1浅, h2中, h3/h4深
+                  const inactiveColor = isH1
+                    ? 'text-gray-300 hover:text-white'
+                    : isH2
+                      ? 'text-gray-400 hover:text-gray-200'
+                      : 'text-gray-600 hover:text-gray-400'
+                  // 字重：h1粗，h2中，h3/h4细
+                  const weight = isH1
+                    ? isActive ? 'font-semibold' : 'font-medium'
+                    : isH2
+                      ? isActive ? 'font-medium' : 'font-normal'
+                      : 'font-normal'
+                  // h1前加额外上间距，增强视觉分组
+                  const topPad = isH1 ? 'pt-3 pb-1.5' : isH2 ? 'py-1.5' : 'py-1'
+                  return (
+                    <a
+                      key={heading.id}
+                      data-toc-id={heading.id}
+                      href={`#${heading.id}`}
+                      onClick={(e) => {
+                        e.preventDefault()
+                        const element = document.getElementById(heading.id)
+                        if (element) {
+                          element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                        }
+                      }}
+                      className={`block pr-2 border-l-2 -ml-[2px] transition-all duration-200 ${topPad} ${
+                        isActive
+                          ? 'border-purple-500 text-purple-300'
+                          : `border-transparent ${inactiveColor} hover:border-gray-700`
+                      } ${weight}`}
+                      style={{ paddingLeft: `${indent}rem`, fontSize }}
+                    >
+                      {heading.text}
+                    </a>
+                  )
+                })}
               </nav>
             </div>
           </aside>

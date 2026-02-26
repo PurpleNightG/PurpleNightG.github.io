@@ -24,6 +24,22 @@ function generateRoomCode(): string {
   return code
 }
 
+function getCurrentUsername(): string {
+  try {
+    const adminUser = localStorage.getItem('user') || sessionStorage.getItem('user')
+    if (adminUser) {
+      const parsed = JSON.parse(adminUser)
+      return parsed.username || parsed.name || '未知用户'
+    }
+    const studentUser = localStorage.getItem('studentUser') || sessionStorage.getItem('studentUser')
+    if (studentUser) {
+      const parsed = JSON.parse(studentUser)
+      return parsed.username || parsed.name || parsed.game_id || '未知用户'
+    }
+  } catch {}
+  return '未知用户'
+}
+
 export default function ScreenShare() {
   const [mode, setMode] = useState<Mode>('select')
   const [status, setStatus] = useState<Status>('idle')
@@ -31,8 +47,11 @@ export default function ScreenShare() {
   const [inputCode, setInputCode] = useState('')
   const [copied, setCopied] = useState(false)
   const [viewerCount, setViewerCount] = useState(0)
+  const [viewerNames, setViewerNames] = useState<string[]>([])
+  const [hostName, setHostName] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const myName = useRef(getCurrentUsername())
 
   const peerRef = useRef<Peer | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -91,6 +110,7 @@ export default function ScreenShare() {
       videoRef.current.srcObject = null
     }
     setViewerCount(0)
+    setViewerNames([])
   }, [])
 
   const handleStartHost = async () => {
@@ -139,6 +159,17 @@ export default function ScreenShare() {
 
       // When a viewer connects via data connection, call them back with the stream
       peer.on('connection', (dataConn) => {
+        let viewerName = ''
+        dataConn.on('open', () => {
+          // Send host name to viewer
+          dataConn.send({ type: 'host-info', name: myName.current })
+        })
+        dataConn.on('data', (data: any) => {
+          if (data?.type === 'viewer-info' && data.name) {
+            viewerName = data.name
+            setViewerNames(prev => [...prev, viewerName])
+          }
+        })
         dataConn.on('open', () => {
           const viewerPeerId = dataConn.peer
           // Host calls the viewer with the screen stream
@@ -149,11 +180,13 @@ export default function ScreenShare() {
           call.on('close', () => {
             connectionsRef.current = connectionsRef.current.filter(c => c !== call)
             setViewerCount(prev => Math.max(0, prev - 1))
+            if (viewerName) setViewerNames(prev => { const i = prev.indexOf(viewerName); return i >= 0 ? [...prev.slice(0, i), ...prev.slice(i + 1)] : prev })
           })
 
           call.on('error', () => {
             connectionsRef.current = connectionsRef.current.filter(c => c !== call)
             setViewerCount(prev => Math.max(0, prev - 1))
+            if (viewerName) setViewerNames(prev => { const i = prev.indexOf(viewerName); return i >= 0 ? [...prev.slice(0, i), ...prev.slice(i + 1)] : prev })
           })
         })
       })
@@ -201,6 +234,17 @@ export default function ScreenShare() {
       const hostPeerId = PEER_PREFIX + code
       // Connect to host via data connection to announce ourselves
       const dataConn = peer.connect(hostPeerId)
+
+      dataConn.on('open', () => {
+        // Send viewer name to host
+        dataConn.send({ type: 'viewer-info', name: myName.current })
+      })
+
+      dataConn.on('data', (data: any) => {
+        if (data?.type === 'host-info' && data.name) {
+          setHostName(data.name)
+        }
+      })
 
       dataConn.on('error', (err) => {
         console.error('Data connection error:', err)
@@ -367,9 +411,9 @@ export default function ScreenShare() {
 
   // Streaming / Watching screen
   return (
-    <div className="min-h-[calc(100vh-8rem)] flex flex-col px-6 py-4 max-w-[1600px] mx-auto w-full" ref={containerRef}>
+    <div className={`flex flex-col ${isFullscreen ? 'h-screen bg-black' : 'min-h-[calc(100vh-8rem)] px-6 py-4 max-w-[1600px] mx-auto w-full'}`} ref={containerRef}>
       {/* Top bar */}
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+      <div className={`flex items-center justify-between flex-wrap gap-3 ${isFullscreen ? 'absolute top-0 left-0 right-0 z-10 p-3 bg-gradient-to-b from-black/80 to-transparent opacity-0 hover:opacity-100 transition-opacity duration-300' : 'mb-4'}`}>
         <div className="flex items-center gap-4 flex-wrap">
           {mode === 'host' && status === 'streaming' && (
             <>
@@ -384,17 +428,38 @@ export default function ScreenShare() {
                   {copied ? <Check size={16} className="text-green-400" /> : <Copy size={16} />}
                 </button>
               </div>
-              <div className="flex items-center gap-1.5 text-gray-400 text-sm">
+              <div className="relative group flex items-center gap-1.5 text-gray-400 text-sm cursor-default">
                 <Users size={16} />
                 <span>{viewerCount} 人观看</span>
+                {viewerNames.length > 0 && (
+                  <div className="absolute top-full left-0 mt-2 hidden group-hover:block z-20">
+                    <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-xl py-2 px-1 min-w-[140px]">
+                      <p className="text-gray-500 text-xs px-3 pb-1.5 border-b border-gray-700 mb-1">观看成员</p>
+                      {viewerNames.map((name, i) => (
+                        <div key={i} className="flex items-center gap-2 px-3 py-1.5">
+                          <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                          <span className="text-gray-300 text-sm whitespace-nowrap">{name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </>
           )}
           {mode === 'viewer' && status === 'watching' && (
-            <div className="flex items-center gap-2 bg-green-600/20 border border-green-500/30 rounded-lg px-3 py-1.5">
-              <div className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse"></div>
-              <span className="text-green-400 text-sm font-medium">正在观看</span>
-            </div>
+            <>
+              <div className="flex items-center gap-2 bg-green-600/20 border border-green-500/30 rounded-lg px-3 py-1.5">
+                <div className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse"></div>
+                <span className="text-green-400 text-sm font-medium">正在观看</span>
+              </div>
+              {hostName && (
+                <div className="flex items-center gap-2 bg-gray-800/60 border border-gray-700/50 rounded-lg px-3 py-1.5">
+                  <span className="text-gray-400 text-sm">分享者:</span>
+                  <span className="text-white text-sm font-medium">{hostName}</span>
+                </div>
+              )}
+            </>
           )}
           {status === 'connecting' && (
             <div className="flex items-center gap-3">
@@ -424,7 +489,7 @@ export default function ScreenShare() {
       </div>
 
       {/* Video area */}
-      <div className="flex-1 bg-gray-900/80 rounded-2xl border border-gray-700/50 overflow-hidden flex items-center justify-center relative min-h-[60vh]">
+      <div className={`flex-1 overflow-hidden flex items-center justify-center relative ${isFullscreen ? 'w-full h-full' : 'bg-gray-900/80 rounded-2xl border border-gray-700/50 min-h-[60vh]'}`}>
         {status === 'error' ? (
           <div className="text-center p-8">
             <div className="w-16 h-16 rounded-full bg-red-600/20 flex items-center justify-center mx-auto mb-4">
@@ -451,7 +516,7 @@ export default function ScreenShare() {
             autoPlay
             playsInline
             className="w-full h-full object-contain"
-            style={{ maxHeight: 'calc(100vh - 12rem)' }}
+            style={isFullscreen ? { width: '100vw', height: '100vh' } : { maxHeight: 'calc(100vh - 12rem)' }}
           />
         )}
       </div>

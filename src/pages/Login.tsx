@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { Shield, User, LogIn, AlertCircle } from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
 export default function Login() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const from = (location.state as any)?.from?.pathname
   const [userType, setUserType] = useState<'admin' | 'student'>('student')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -70,12 +72,12 @@ export default function Login() {
         if (userType === 'admin') {
           storage.setItem('token', data.data.token)
           storage.setItem('user', JSON.stringify(data.data.user))
-          navigate('/admin')
+          navigate(from || '/admin')
         } else {
           // 学员登录
           storage.setItem('studentToken', data.data.token)
           storage.setItem('studentUser', JSON.stringify(data.data.member))
-          navigate('/student')
+          navigate(from || '/student')
         }
       } else {
         console.warn('登录失败:', data.message)
