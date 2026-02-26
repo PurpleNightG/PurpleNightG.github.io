@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { BookOpen, Home, LogIn, Smartphone, Download } from 'lucide-react'
+import { BookOpen, Home, LogIn, Smartphone, Download, Monitor } from 'lucide-react'
 import { useState, useEffect } from 'react'
 
 interface LayoutProps {
@@ -26,6 +26,7 @@ export default function Layout({ children }: LayoutProps) {
   }
 
   const isDocsPage = location.pathname.startsWith('/docs')
+  const isFullWidthPage = isDocsPage || location.pathname.startsWith('/screen-share')
 
   // Mobile warning screen
   if (isMobile) {
@@ -116,6 +117,17 @@ export default function Layout({ children }: LayoutProps) {
                 <span>下载</span>
               </Link>
               <Link
+                to="/screen-share"
+                className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+                  isActive('/screen-share')
+                    ? 'bg-purple-600 text-white'
+                    : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                }`}
+              >
+                <Monitor size={18} />
+                <span>屏幕共享</span>
+              </Link>
+              <Link
                 to="/login"
                 className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
                   isActive('/login')
@@ -132,7 +144,7 @@ export default function Layout({ children }: LayoutProps) {
       </nav>
 
       {/* Main Content */}
-      {isDocsPage ? (
+      {isFullWidthPage ? (
         <>
           <main className="flex-1">
             {children}

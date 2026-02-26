@@ -3,10 +3,12 @@ import Layout from './components/Layout'
 import Home from './pages/Home'
 import Downloads from './pages/Downloads'
 import DocsLayout from './pages/DocsLayout'
+import ScreenShare from './pages/ScreenShare'
 import AdminDashboard from './pages/AdminDashboard'
 import StudentDashboard from './pages/StudentDashboard'
 import Login from './pages/Login'
 import ToastContainer from './components/ToastContainer'
+import ProtectedRoute from './components/ProtectedRoute'
 
 function App() {
   return (
@@ -35,6 +37,7 @@ function App() {
               <Route path="/downloads" element={<Downloads />} />
               <Route path="/docs" element={<DocsLayout />} />
               <Route path="/docs/:docName" element={<DocsLayout />} />
+              <Route path="/screen-share" element={<ProtectedRoute><ScreenShare /></ProtectedRoute>} />
             </Routes>
           </Layout>
         } />
