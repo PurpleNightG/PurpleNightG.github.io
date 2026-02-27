@@ -8,7 +8,7 @@ type Status = 'idle' | 'connecting' | 'streaming' | 'watching' | 'error'
 const PEER_PREFIX = 'ziye-share-'
 
 const ICE_SERVERS = [
-  { urls: 'stun:stun.qq.com:3478' },
+  // { urls: 'stun:stun.qq.com:3478' },
   { urls: 'stun:stun.miwifi.com:3478' },
   { urls: 'stun:stun.syncthing.net:3478' },
   { urls: 'stun:stun.l.google.com:19302' },
