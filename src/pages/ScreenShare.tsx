@@ -181,29 +181,40 @@ export default function ScreenShare() {
     setActiveStreamMode('peerjs')
   }, [])
 
+  // Returns null → SDK uses Basic auth (works when project has token auth disabled)
+  // Returns a token string → SDK uses Bearer auth
+  const fetchVolcToken = async (roomId: string, userId: string): Promise<string | null> => {
+    try {
+      const res = await fetch(`${API_URL}/volc/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId, userId }),
+      })
+      const data = await res.json()
+      return data.success ? (data.token ?? null) : null
+    } catch {
+      return null
+    }
+  }
+
   const handleStartHostVolc = async () => {
     setMode('host')
     setStatus('connecting')
     setErrorMsg('')
-    setConnectStep('获取连接凭证...')
+    setConnectStep('初始化火山引擎 SDK...')
     try {
       const code = generateRoomCode()
       setRoomCode(code)
-      const tokenRes = await fetch(`${API_URL}/volc/token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomId: code, userId: 'host' })
-      })
-      const tokenData = await tokenRes.json()
-      if (!tokenData.success) throw new Error(tokenData.error || '获取火山引泼 Token 失败，请检查后端配置')
 
-      setConnectStep('初始化火山引泼 SDK...')
       const { default: VERTC, MediaType } = await import('@volcengine/rtc')
       const engine = VERTC.createEngine(VOLC_APP_ID)
       volcEngineRef.current = engine
 
-      setConnectStep('连接火山引泼服务器...')
-      await engine.joinRoom(tokenData.token, code, { userId: 'host' }, {
+      setConnectStep('连接火山引擎服务器...')
+      // null token → SDK uses Basic auth (works when project token auth is disabled)
+      // If this fails, set VOLC_TEMP_TOKEN in server/.env with a console-generated token
+      const volcToken = await fetchVolcToken(code, 'host')
+      await engine.joinRoom(volcToken, code, { userId: 'host' }, {
         isAutoPublish: false, isAutoSubscribeAudio: false, isAutoSubscribeVideo: false,
       })
 
@@ -234,24 +245,17 @@ export default function ScreenShare() {
     setMode('viewer')
     setStatus('connecting')
     setErrorMsg('')
-    setConnectStep('获取连接凭证...')
+    setConnectStep('初始化火山引擎 SDK...')
     try {
       const viewerUid = 'v' + Math.random().toString(36).slice(2, 8)
-      const tokenRes = await fetch(`${API_URL}/volc/token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomId: code, userId: viewerUid })
-      })
-      const tokenData = await tokenRes.json()
-      if (!tokenData.success) throw new Error(tokenData.error || '获取火山引泼 Token 失败，请检查后端配置')
 
-      setConnectStep('初始化火山引泼 SDK...')
       const { default: VERTC, MediaType } = await import('@volcengine/rtc')
       const engine = VERTC.createEngine(VOLC_APP_ID)
       volcEngineRef.current = engine
 
-      setConnectStep('连接火山引泼服务器...')
-      await engine.joinRoom(tokenData.token, code, { userId: viewerUid }, {
+      setConnectStep('连接火山引擎服务器...')
+      const volcToken = await fetchVolcToken(code, viewerUid)
+      await engine.joinRoom(volcToken, code, { userId: viewerUid }, {
         isAutoPublish: false, isAutoSubscribeAudio: false, isAutoSubscribeVideo: false,
       })
 
