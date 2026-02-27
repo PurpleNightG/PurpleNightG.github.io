@@ -3,21 +3,23 @@ import crypto from 'crypto'
 
 const router = express.Router()
 
-function buildVolcToken(appId, appKey, roomId, userId, expireSeconds = 3600) {
+// Reverse-engineered from official console-generated token
+// Format: "001" + appId (plain text) + base64( packUint16(msgLen) + msg + packUint16(sigLen) + sig )
+// Message (signed): nonce(u32) + issuedAt(u32) + expiredAt(u32) + packStr(roomId) + packStr(userId) + privileges(6 keys)
+// HMAC-SHA256 key = appKey as raw UTF-8 string
+function buildVolcToken(appId, appKey, roomId, userId, expireSeconds = 7200) {
   const now = Math.floor(Date.now() / 1000)
   const expiredAt = now + expireSeconds
-  const nonce = Math.floor(Math.random() * 0xFFFFFFFF)
-
-  const privileges = { 1: expiredAt, 2: expiredAt, 4: expiredAt, 8: expiredAt, 16: expiredAt, 32: expiredAt }
+  const nonce = crypto.randomBytes(4).readUInt32LE(0)
 
   function packUint16(n) {
     const b = Buffer.allocUnsafe(2)
-    b.writeUInt16BE(n, 0)
+    b.writeUInt16LE(n, 0)
     return b
   }
   function packUint32(n) {
     const b = Buffer.allocUnsafe(4)
-    b.writeUInt32BE(n >>> 0, 0)
+    b.writeUInt32LE(n >>> 0, 0)
     return b
   }
   function packString(s) {
@@ -25,32 +27,28 @@ function buildVolcToken(appId, appKey, roomId, userId, expireSeconds = 3600) {
     return Buffer.concat([packUint16(sb.length), sb])
   }
 
-  const sortedKeys = Object.keys(privileges).map(Number).sort((a, b) => a - b)
-  const privBufs = [packUint16(sortedKeys.length)]
-  for (const k of sortedKeys) {
+  // 6 privileges (keys 0-5), all with expiredAt as value
+  const privBufs = [packUint16(6)]
+  for (let k = 0; k < 6; k++) {
     privBufs.push(packUint16(k))
-    privBufs.push(packUint32(privileges[k]))
+    privBufs.push(packUint32(expiredAt))
   }
 
-  const version = Buffer.from('001', 'utf8')
-
-  // Sign only the data fields (without version prefix)
-  // Order: appId, roomId, userId (as mentioned in Volcengine docs)
-  const msgToSign = Buffer.concat([
-    packString(appId),
-    packString(roomId),
-    packString(userId),
+  // Message to sign (appId is NOT included - it goes in the plain text prefix)
+  const msg = Buffer.concat([
     packUint32(nonce),
     packUint32(now),
     packUint32(expiredAt),
+    packString(roomId),
+    packString(userId),
     ...privBufs,
   ])
 
-  const hmacKey = Buffer.from(appKey, 'hex')
-  const sig = crypto.createHmac('sha256', hmacKey).update(msgToSign).digest()
+  const sig = crypto.createHmac('sha256', appKey).update(msg).digest()
 
-  // Final token: version + data + signature
-  return Buffer.concat([version, msgToSign, sig]).toString('base64')
+  // Final: "001" + appId + base64( packUint16(msg.length) + msg + packUint16(sig.length) + sig )
+  const payload = Buffer.concat([packUint16(msg.length), msg, packUint16(sig.length), sig])
+  return '001' + appId + payload.toString('base64')
 }
 
 router.post('/token', (req, res) => {
@@ -76,7 +74,7 @@ router.post('/token', (req, res) => {
   }
 
   const token = buildVolcToken(appId, appKey, roomId, userId)
-  console.log('[Volc] Generated token (first 20 chars):', token.substring(0, 20))
+  console.log('[Volc] Generated token for', userId)
   res.json({ success: true, token })
 })
 

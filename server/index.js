@@ -22,6 +22,7 @@ import classmatesRoutes from './routes/classmates.js'
 import turnRoutes from './routes/turn.js'
 import agoraRoutes from './routes/agora.js'
 import volcRoutes from './routes/volc.js'
+import roomRoutes from './routes/room.js'
 
 dotenv.config()
 
@@ -87,6 +88,7 @@ app.use('/api/classmates', classmatesRoutes)
 app.use('/api/turn', turnRoutes)
 app.use('/api/agora', agoraRoutes)
 app.use('/api/volc', volcRoutes)
+app.use('/api/room', roomRoutes)
 
 // 健康检查
 app.get('/api/health', (req, res) => {
