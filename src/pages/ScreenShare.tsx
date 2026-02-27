@@ -7,26 +7,20 @@ type Status = 'idle' | 'connecting' | 'streaming' | 'watching' | 'error'
 
 const PEER_PREFIX = 'ziye-share-'
 
-const METERED_URL = 'https://purplenightg.metered.live/api/v1/turn/credentials?apiKey=9lLFksskwco90b207AfbxDfJT8TkIIf20-l89xVlccRXaVX9'
-
-const FALLBACK_ICE_SERVERS: RTCIceServer[] = [
+const ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun.qq.com:3478' },
   { urls: 'stun:stun.miwifi.com:3478' },
   { urls: 'stun:stun.aliyun.com:3478' },
+  { urls: 'stun:stun.syncthing.net:3478' },
   { urls: 'stun:stun.l.google.com:19302' },
 ]
 
-async function fetchIceServers(): Promise<RTCIceServer[]> {
-  try {
-    const resp = await fetch(METERED_URL)
-    const servers = await resp.json()
-    if (Array.isArray(servers) && servers.length > 0) {
-      return servers
-    }
-  } catch (e) {
-    console.warn('Failed to fetch TURN credentials, using fallback STUN:', e)
-  }
-  return FALLBACK_ICE_SERVERS
+const PEER_OPTIONS = {
+  host: '0.peerjs.com',
+  port: 443,
+  secure: true,
+  debug: 2,
+  pingInterval: 5000,
 }
 
 function generateRoomCode(): string {
@@ -158,20 +152,18 @@ export default function ScreenShare() {
         handleStop()
       }
 
-      // Fetch TURN credentials
-      const iceServers = await fetchIceServers()
-
       // Create peer with room code
       const code = generateRoomCode()
       setRoomCode(code)
       const peerId = PEER_PREFIX + code
 
       const peer = new Peer(peerId, {
-        debug: 0,
-        config: { iceServers }
+        ...PEER_OPTIONS,
+        config: { iceServers: ICE_SERVERS }
       })
 
       peer.on('open', () => {
+        console.log('Host peer open, id:', peer.id)
         setStatus('streaming')
         // Show local preview
         if (videoRef.current) {
@@ -240,10 +232,21 @@ export default function ScreenShare() {
         })
       })
 
+      // Auto-reconnect if signaling server disconnects
+      peer.on('disconnected', () => {
+        console.warn('Host disconnected from signaling server, reconnecting...')
+        peer.reconnect()
+      })
+
       peer.on('error', (err) => {
         console.error('Peer error:', err)
         if (err.type === 'unavailable-id') {
           setErrorMsg('房间代码冲突，请重试')
+        } else if (err.type === 'network' || err.type === 'server-error') {
+          // Network issue, try reconnect
+          console.warn('Network error, attempting reconnect...')
+          peer.reconnect()
+          return
         } else {
           setErrorMsg(`连接错误: ${err.message}`)
         }
@@ -273,9 +276,7 @@ export default function ScreenShare() {
     setMode('viewer')
     setStatus('connecting')
     setErrorMsg('')
-    setConnectStep('获取TURN凭证...')
-
-    const iceServers = await fetchIceServers()
+    setConnectStep('连接信令服务器...')
 
     const MAX_RETRIES = 3
     const TIMEOUT_MS = 10000
@@ -292,8 +293,8 @@ export default function ScreenShare() {
       }
 
       const peer = new Peer({
-        debug: 0,
-        config: { iceServers }
+        ...PEER_OPTIONS,
+        config: { iceServers: ICE_SERVERS }
       })
 
       let connected = false
