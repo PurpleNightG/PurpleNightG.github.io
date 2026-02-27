@@ -177,16 +177,14 @@ export default function ScreenShare() {
       setRoomCode(code)
 
       setConnectStep('获取连接凭证...')
-      let token: string | null = null
-      try {
-        const res = await fetch(`${API_URL}/agora/token`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ channelName: code, role: 'publisher' })
-        })
-        const data = await res.json()
-        if (data.success) token = data.token
-      } catch (e) { console.warn('Agora token fetch failed, trying without token:', e) }
+      const tokenRes = await fetch(`${API_URL}/agora/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channelName: code, role: 'publisher' })
+      })
+      const tokenData = await tokenRes.json()
+      if (!tokenData.success) throw new Error(tokenData.error || '获取Agora Token失败，请检查后端配置')
+      const token: string = tokenData.token
 
       setConnectStep('连接声网服务器...')
       await client.join(AGORA_APP_ID, code, token, null)
@@ -231,16 +229,14 @@ export default function ScreenShare() {
       agoraClientRef.current = client
 
       setConnectStep('获取连接凭证...')
-      let token: string | null = null
-      try {
-        const res = await fetch(`${API_URL}/agora/token`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ channelName: code, role: 'subscriber' })
-        })
-        const data = await res.json()
-        if (data.success) token = data.token
-      } catch (e) { console.warn('Agora token fetch failed, trying without token:', e) }
+      const tokenRes = await fetch(`${API_URL}/agora/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channelName: code, role: 'subscriber' })
+      })
+      const tokenData = await tokenRes.json()
+      if (!tokenData.success) throw new Error(tokenData.error || '获取Agora Token失败，请检查后端配置')
+      const token: string = tokenData.token
 
       setConnectStep('连接声网服务器...')
       await client.join(AGORA_APP_ID, code, token, null)
