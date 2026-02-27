@@ -53,6 +53,8 @@ export default function ScreenShare() {
   const [hostName, setHostName] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [connectionInfo, setConnectionInfo] = useState<string>('')
+  const [connectStep, setConnectStep] = useState('')
   const myName = useRef(getCurrentUsername())
 
   const peerRef = useRef<Peer | null>(null)
@@ -61,11 +63,16 @@ export default function ScreenShare() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const statusRef = useRef<Status>('idle')
+  const connectStepRef = useRef('')
 
   // Keep statusRef in sync
   useEffect(() => {
     statusRef.current = status
   }, [status])
+
+  useEffect(() => {
+    connectStepRef.current = connectStep
+  }, [connectStep])
 
   // Bind stream to video element after React renders the <video>
   useEffect(() => {
@@ -177,6 +184,31 @@ export default function ScreenShare() {
           // Host calls the viewer with the screen stream
           const call = peer.call(viewerPeerId, stream)
           connectionsRef.current.push(call)
+          
+          // Capture ICE connection info (use addEventListener to avoid overwriting PeerJS handlers)
+          const pc = (call as any).peerConnection as RTCPeerConnection | undefined
+          if (pc) {
+            pc.addEventListener('connectionstatechange', () => {
+              if (pc.connectionState === 'connected') {
+                pc.getStats().then((stats) => {
+                  let localCandidateId = ''
+                  stats.forEach((report: any) => {
+                    if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+                      localCandidateId = report.localCandidateId
+                    }
+                  })
+                  if (localCandidateId) {
+                    stats.forEach((r: any) => {
+                      if (r.id === localCandidateId && r.candidateType) {
+                        const type = r.candidateType === 'host' ? '局域网' : r.candidateType === 'srflx' ? 'STUN' : r.candidateType === 'relay' ? 'TURN' : r.candidateType
+                        setConnectionInfo(`${type} ${r.address}:${r.port} (${r.protocol})`)
+                      }
+                    })
+                  }
+                })
+              }
+            })
+          }
           setViewerCount(prev => prev + 1)
 
           call.on('close', () => {
@@ -226,6 +258,7 @@ export default function ScreenShare() {
     setMode('viewer')
     setStatus('connecting')
     setErrorMsg('')
+    setConnectStep('连接信令服务器...')
 
     const peer = new Peer({
       debug: 0,
@@ -233,11 +266,13 @@ export default function ScreenShare() {
     })
 
     peer.on('open', () => {
+      setConnectStep('连接到主播...')
       const hostPeerId = PEER_PREFIX + code
       // Connect to host via data connection to announce ourselves
       const dataConn = peer.connect(hostPeerId)
 
       dataConn.on('open', () => {
+        setConnectStep('等待主播回传视频流...')
         // Send viewer name to host
         dataConn.send({ type: 'viewer-info', name: myName.current })
       })
@@ -250,14 +285,14 @@ export default function ScreenShare() {
 
       dataConn.on('error', (err) => {
         console.error('Data connection error:', err)
-        setErrorMsg('无法连接到房间')
+        setErrorMsg('无法连接到房间（数据通道失败）')
         setStatus('error')
       })
 
       // Timeout for connection
       setTimeout(() => {
         if (statusRef.current === 'connecting') {
-          setErrorMsg('连接超时，请检查房间代码是否正确')
+          setErrorMsg(`连接超时，卡在：${connectStepRef.current}`)
           setStatus('error')
         }
       }, 15000)
@@ -266,6 +301,31 @@ export default function ScreenShare() {
     // Host will call us back with the screen stream
     peer.on('call', (call) => {
       call.answer()
+      
+      // Capture ICE connection info (use addEventListener to avoid overwriting PeerJS handlers)
+      const pc = (call as any).peerConnection as RTCPeerConnection | undefined
+      if (pc) {
+        pc.addEventListener('connectionstatechange', () => {
+          if (pc.connectionState === 'connected') {
+            pc.getStats().then((stats) => {
+              let remoteCandidateId = ''
+              stats.forEach((report: any) => {
+                if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+                  remoteCandidateId = report.remoteCandidateId
+                }
+              })
+              if (remoteCandidateId) {
+                stats.forEach((r: any) => {
+                  if (r.id === remoteCandidateId && r.candidateType) {
+                    const type = r.candidateType === 'host' ? '局域网' : r.candidateType === 'srflx' ? 'STUN' : r.candidateType === 'relay' ? 'TURN' : r.candidateType
+                    setConnectionInfo(`${type} ${r.address}:${r.port} (${r.protocol})`)
+                  }
+                })
+              }
+            })
+          }
+        })
+      }
 
       call.on('stream', (remoteStream) => {
         setStatus('watching')
@@ -461,12 +521,18 @@ export default function ScreenShare() {
                   <span className="text-white text-sm font-medium">{hostName}</span>
                 </div>
               )}
+              {connectionInfo && (
+                <div className="flex items-center gap-2 bg-gray-800/60 border border-gray-700/50 rounded-lg px-3 py-1.5">
+                  <span className="text-gray-500 text-xs">连接:</span>
+                  <span className="text-gray-300 text-xs font-mono">{connectionInfo}</span>
+                </div>
+              )}
             </>
           )}
           {status === 'connecting' && (
             <div className="flex items-center gap-3">
               <div className="w-5 h-5 border-2 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
-              <span className="text-gray-400">正在连接...</span>
+              <span className="text-gray-400">{connectStep || '正在连接...'}</span>
             </div>
           )}
         </div>
