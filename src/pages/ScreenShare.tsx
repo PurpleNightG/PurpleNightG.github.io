@@ -15,13 +15,7 @@ const ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
 ]
 
-const PEER_OPTIONS = {
-  host: '0.peerjs.com',
-  port: 443,
-  secure: true,
-  debug: 2,
-  pingInterval: 5000,
-}
+const PEER_DEBUG = 2
 
 function generateRoomCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -158,7 +152,7 @@ export default function ScreenShare() {
       const peerId = PEER_PREFIX + code
 
       const peer = new Peer(peerId, {
-        ...PEER_OPTIONS,
+        debug: PEER_DEBUG,
         config: { iceServers: ICE_SERVERS }
       })
 
@@ -293,7 +287,7 @@ export default function ScreenShare() {
       }
 
       const peer = new Peer({
-        ...PEER_OPTIONS,
+        debug: PEER_DEBUG,
         config: { iceServers: ICE_SERVERS }
       })
 
