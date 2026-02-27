@@ -8,6 +8,7 @@ type Status = 'idle' | 'connecting' | 'streaming' | 'watching' | 'error'
 const PEER_PREFIX = 'ziye-share-'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+const AGORA_APP_ID: string = import.meta.env.VITE_AGORA_APP_ID || ''
 
 const FALLBACK_ICE_SERVERS = [
   { urls: 'stun:stun.qq.com:3478' },
@@ -67,10 +68,13 @@ export default function ScreenShare() {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [connectionInfo, setConnectionInfo] = useState<string>('')
   const [connectStep, setConnectStep] = useState('')
-  const [connMode, setConnMode] = useState<'auto' | 'relay' | 'stun'>('auto')
+  const [connMode, setConnMode] = useState<'auto' | 'relay' | 'stun' | 'agora'>('auto')
+  const [hostConnMode, setHostConnMode] = useState<'peerjs' | 'agora'>('peerjs')
   const [latency, setLatency] = useState<number | null>(null)
   const myName = useRef(getCurrentUsername())
   const latencyIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const agoraClientRef = useRef<any>(null)
+  const agoraTrackRef = useRef<any>(null)
 
   const peerRef = useRef<Peer | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -140,9 +144,145 @@ export default function ScreenShare() {
       clearInterval(latencyIntervalRef.current)
       latencyIntervalRef.current = null
     }
+    if (agoraTrackRef.current) {
+      const tracks = Array.isArray(agoraTrackRef.current) ? agoraTrackRef.current : [agoraTrackRef.current]
+      tracks.forEach((t: any) => { try { t.close() } catch {} })
+      agoraTrackRef.current = null
+    }
+    if (agoraClientRef.current) {
+      try { agoraClientRef.current.leave() } catch {}
+      agoraClientRef.current = null
+    }
   }, [])
 
+  const handleStartHostAgora = async () => {
+    setMode('host')
+    setStatus('connecting')
+    setErrorMsg('')
+    setConnectStep('初始化声网SDK...')
+    try {
+      const { default: AgoraRTC } = await import('agora-rtc-sdk-ng')
+      const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' })
+      agoraClientRef.current = client
+
+      setConnectStep('获取屏幕共享权限...')
+      const screenTrack = await AgoraRTC.createScreenVideoTrack(
+        { encoderConfig: '1080p_1', optimizationMode: 'detail' },
+        'disable'
+      )
+      const videoTrack = Array.isArray(screenTrack) ? screenTrack[0] : screenTrack
+      agoraTrackRef.current = screenTrack
+
+      const code = generateRoomCode()
+      setRoomCode(code)
+
+      setConnectStep('获取连接凭证...')
+      let token: string | null = null
+      try {
+        const res = await fetch(`${API_URL}/agora/token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channelName: code, role: 'publisher' })
+        })
+        const data = await res.json()
+        if (data.success) token = data.token
+      } catch (e) { console.warn('Agora token fetch failed, trying without token:', e) }
+
+      setConnectStep('连接声网服务器...')
+      await client.join(AGORA_APP_ID, code, token, null)
+
+      setConnectStep('发布屏幕流...')
+      await client.publish(Array.isArray(screenTrack) ? screenTrack : [videoTrack])
+
+      const mediaStream = new MediaStream([videoTrack.getMediaStreamTrack()])
+      streamRef.current = mediaStream
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream
+        videoRef.current.muted = true
+        videoRef.current.play().catch(() => {})
+      }
+
+      videoTrack.on('track-ended', () => handleStop())
+
+      setConnectionInfo('声网Agora')
+      setStatus('streaming')
+
+      client.on('user-joined', () => setViewerCount(prev => prev + 1))
+      client.on('user-left', () => setViewerCount(prev => Math.max(0, prev - 1)))
+    } catch (err: any) {
+      if (err.name === 'NotAllowedError' || err.code === 'PERMISSION_DENIED') {
+        setErrorMsg('您取消了屏幕共享')
+      } else {
+        setErrorMsg(`声网连接失败: ${err.message}`)
+      }
+      setStatus('error')
+      setMode('select')
+    }
+  }
+
+  const handleJoinRoomAgora = async (code: string) => {
+    setMode('viewer')
+    setStatus('connecting')
+    setErrorMsg('')
+    setConnectStep('初始化声网SDK...')
+    try {
+      const { default: AgoraRTC } = await import('agora-rtc-sdk-ng')
+      const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' })
+      agoraClientRef.current = client
+
+      setConnectStep('获取连接凭证...')
+      let token: string | null = null
+      try {
+        const res = await fetch(`${API_URL}/agora/token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channelName: code, role: 'subscriber' })
+        })
+        const data = await res.json()
+        if (data.success) token = data.token
+      } catch (e) { console.warn('Agora token fetch failed, trying without token:', e) }
+
+      setConnectStep('连接声网服务器...')
+      await client.join(AGORA_APP_ID, code, token, null)
+
+      setConnectStep('等待主播视频流...')
+
+      client.on('user-published', async (user: any, mediaType: any) => {
+        await client.subscribe(user, mediaType)
+        if (mediaType === 'video' && user.videoTrack) {
+          const mediaStream = new MediaStream([user.videoTrack.getMediaStreamTrack()])
+          streamRef.current = mediaStream
+          setConnectionInfo('声网Agora')
+          setStatus('watching')
+          if (videoRef.current) {
+            videoRef.current.srcObject = mediaStream
+            videoRef.current.play().catch(() => {})
+          }
+        }
+      })
+
+      client.on('user-unpublished', (_user: any, mediaType: any) => {
+        if (mediaType === 'video') {
+          setErrorMsg('主播已停止共享')
+          setStatus('error')
+        }
+      })
+
+      setTimeout(() => {
+        if (statusRef.current === 'connecting') {
+          setErrorMsg(`连接超时，卡在：${connectStepRef.current}`)
+          setStatus('error')
+        }
+      }, 15000)
+    } catch (err: any) {
+      setErrorMsg(`声网连接失败: ${err.message}`)
+      setStatus('error')
+    }
+  }
+
   const handleStartHost = async () => {
+    if (hostConnMode === 'agora') return handleStartHostAgora()
+
     setMode('host')
     setStatus('connecting')
     setErrorMsg('')
@@ -294,6 +434,8 @@ export default function ScreenShare() {
       setErrorMsg('请输入6位房间代码')
       return
     }
+
+    if (connMode === 'agora') return handleJoinRoomAgora(code)
 
     setMode('viewer')
     setStatus('connecting')
@@ -476,21 +618,39 @@ export default function ScreenShare() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Host card */}
-            <button
-              onClick={handleStartHost}
-              className="group relative bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-8 text-left hover:border-purple-500/50 hover:bg-gray-800/60 transition-all duration-300"
-            >
-              <div className="absolute inset-0 bg-gradient-to-br from-purple-600/5 to-transparent rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity"></div>
-              <div className="relative">
+            <div className="group relative bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-8 text-left hover:border-purple-500/50 hover:bg-gray-800/60 transition-all duration-300">
+              <div className="absolute inset-0 bg-gradient-to-br from-purple-600/5 to-transparent rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"></div>
+              <div className="relative flex flex-col h-full">
                 <div className="w-14 h-14 rounded-xl bg-purple-600/20 flex items-center justify-center mb-5 group-hover:bg-purple-600/30 transition-colors">
                   <Play size={28} className="text-purple-400" />
                 </div>
                 <h2 className="text-xl font-bold text-white mb-2">分享我的屏幕</h2>
-                <p className="text-gray-400 text-sm leading-relaxed">
+                <p className="text-gray-400 text-sm leading-relaxed mb-5">
                   选择要共享的窗口或屏幕，生成房间代码，将代码分享给观看者即可
                 </p>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-gray-500 text-xs shrink-0">连接方式</span>
+                  <div className="flex gap-1.5 flex-1">
+                    {(['peerjs', 'agora'] as const).map((m) => {
+                      const labels = { peerjs: 'WebRTC', agora: '声网Agora' }
+                      const hints = { peerjs: '浏览器原生P2P，支持TURN中继', agora: '声网服务器中转，国内延迟低' }
+                      return (
+                        <button key={m} onClick={() => setHostConnMode(m)} title={hints[m]}
+                          className={`flex-1 py-1 rounded-md text-xs font-medium transition-colors border ${
+                            hostConnMode === m
+                              ? 'bg-purple-600/30 border-purple-500/60 text-purple-300'
+                              : 'bg-gray-900/40 border-gray-700/40 text-gray-500 hover:text-gray-300 hover:border-gray-600'
+                          }`}>{labels[m]}</button>
+                      )
+                    })}
+                  </div>
+                </div>
+                <button onClick={handleStartHost}
+                  className="w-full py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors text-sm">
+                  开始共享
+                </button>
               </div>
-            </button>
+            </div>
 
             {/* Viewer card */}
             <div className="relative bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-8 hover:border-purple-500/50 hover:bg-gray-800/60 transition-all duration-300">
@@ -520,9 +680,9 @@ export default function ScreenShare() {
               <div className="flex items-center gap-2">
                 <span className="text-gray-500 text-xs shrink-0">连接方式</span>
                 <div className="flex gap-1.5 flex-1">
-                  {(['auto', 'relay', 'stun'] as const).map((m) => {
-                    const labels = { auto: '自动', relay: 'TURN中继', stun: '仅STUN' }
-                    const hints = { auto: '优先直连，自动回退', relay: '强制中继，穿透性最强', stun: '纯P2P，不走中继' }
+                  {(['auto', 'relay', 'stun', 'agora'] as const).map((m) => {
+                    const labels = { auto: '自动', relay: 'TURN中继', stun: '仅STUN', agora: '声网Agora' }
+                    const hints = { auto: '优先直连，自动回退', relay: '强制中继，穿透性最强', stun: '纯P2P，不走中继', agora: '声网服务器中转，国内延迟低' }
                     return (
                       <button
                         key={m}

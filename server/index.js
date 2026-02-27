@@ -20,6 +20,7 @@ import publicVideosRoutes from './routes/publicVideos.js'
 import videoUploadRoutes from './routes/videoUpload.js'
 import classmatesRoutes from './routes/classmates.js'
 import turnRoutes from './routes/turn.js'
+import agoraRoutes from './routes/agora.js'
 
 dotenv.config()
 
@@ -83,6 +84,7 @@ app.use('/api/public-videos', publicVideosRoutes)
 app.use('/api/video-upload', videoUploadRoutes)
 app.use('/api/classmates', classmatesRoutes)
 app.use('/api/turn', turnRoutes)
+app.use('/api/agora', agoraRoutes)
 
 // 健康检查
 app.get('/api/health', (req, res) => {
