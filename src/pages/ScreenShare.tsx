@@ -8,7 +8,7 @@ type Status = 'idle' | 'connecting' | 'streaming' | 'watching' | 'error'
 const PEER_PREFIX = 'ziye-share-'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
-const AGORA_APP_ID: string = import.meta.env.VITE_AGORA_APP_ID || ''
+const AGORA_APP_ID: string = import.meta.env.VITE_AGORA_APP_ID || 'a51f2304cab54d86a883ab04b41840a6'
 
 const FALLBACK_ICE_SERVERS = [
   { urls: 'stun:stun.qq.com:3478' },
