@@ -199,6 +199,15 @@ export default function ScreenShare() {
           // Host calls the viewer with the screen stream
           const call = peer.call(viewerPeerId, stream)
           connectionsRef.current.push(call)
+
+          let removed = false
+          const removeViewer = () => {
+            if (removed) return
+            removed = true
+            connectionsRef.current = connectionsRef.current.filter(c => c !== call)
+            setViewerCount(prev => Math.max(0, prev - 1))
+            if (viewerName) setViewerNames(prev => { const i = prev.indexOf(viewerName); return i >= 0 ? [...prev.slice(0, i), ...prev.slice(i + 1)] : prev })
+          }
           
           // Capture ICE connection info (use addEventListener to avoid overwriting PeerJS handlers)
           const pc = (call as any).peerConnection as RTCPeerConnection | undefined
@@ -222,21 +231,17 @@ export default function ScreenShare() {
                   }
                 })
               }
+              if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+                removeViewer()
+              }
             })
           }
           setViewerCount(prev => prev + 1)
 
-          call.on('close', () => {
-            connectionsRef.current = connectionsRef.current.filter(c => c !== call)
-            setViewerCount(prev => Math.max(0, prev - 1))
-            if (viewerName) setViewerNames(prev => { const i = prev.indexOf(viewerName); return i >= 0 ? [...prev.slice(0, i), ...prev.slice(i + 1)] : prev })
-          })
-
-          call.on('error', () => {
-            connectionsRef.current = connectionsRef.current.filter(c => c !== call)
-            setViewerCount(prev => Math.max(0, prev - 1))
-            if (viewerName) setViewerNames(prev => { const i = prev.indexOf(viewerName); return i >= 0 ? [...prev.slice(0, i), ...prev.slice(i + 1)] : prev })
-          })
+          call.on('close', removeViewer)
+          call.on('error', removeViewer)
+          // dataConn close fires reliably when browser is closed abruptly
+          dataConn.on('close', removeViewer)
         })
       })
 
