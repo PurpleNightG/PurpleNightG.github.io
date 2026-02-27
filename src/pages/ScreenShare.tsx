@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import Peer, { MediaConnection } from 'peerjs'
-import { Monitor, Users, Copy, Check, StopCircle, Play, Link2, X, Maximize2, Minimize2, Wifi, Zap, Globe, Lock, Clock, CheckCircle, XCircle } from 'lucide-react'
+import { Monitor, Users, Copy, Check, StopCircle, Play, Link2, X, Maximize2, Minimize2, Wifi, Zap, Globe, Lock, Clock, CheckCircle, XCircle, ChevronDown, ChevronUp, Search, Trash2 } from 'lucide-react'
 
 type Mode = 'select' | 'host' | 'viewer'
 type Status = 'idle' | 'connecting' | 'streaming' | 'watching' | 'error'
@@ -82,6 +82,17 @@ export default function ScreenShare() {
   const [userType] = useState<'admin' | 'student' | null>(getUserType)
   const [rtcPerm, setRtcPerm] = useState<{ agora: boolean; volc: boolean; agoraPending: boolean; volcPending: boolean }>({ agora: false, volc: false, agoraPending: false, volcPending: false })
   const [pendingRequests, setPendingRequests] = useState<{ username: string; mode: string; requestedAt: number }[]>([])
+  const [shareLogs, setShareLogs] = useState<{ id: number; room_id: string; host_name: string; mode: string; peak_viewers: number; viewers: string | null; started_at: string; ended_at: string | null }[]>([])
+  const [logsOpen, setLogsOpen] = useState(false)
+  const [logSearch, setLogSearch] = useState('')
+  const [logModeFilter, setLogModeFilter] = useState<'all' | 'peerjs' | 'agora' | 'volc'>('all')
+  const [logPage, setLogPage] = useState(1)
+  const LOG_PAGE_SIZE = 10
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
+  const [deletePassword, setDeletePassword] = useState('')
+  const [deleteError, setDeleteError] = useState('')
+  const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [actionLoading, setActionLoading] = useState<string>('')
   const myName = useRef(getCurrentUsername())
   const latencyIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const agoraClientRef = useRef<any>(null)
@@ -132,7 +143,7 @@ export default function ScreenShare() {
         } else if (rtcRoleRef.current === 'viewer' && rtcUidRef.current) {
           navigator.sendBeacon(
             `${API_URL}/room/${rid}/leave`,
-            new Blob([JSON.stringify({ userId: rtcUidRef.current })], { type: 'application/json' })
+            new Blob([JSON.stringify({ userId: rtcUidRef.current, displayName: myName.current })], { type: 'application/json' })
           )
         }
       }
@@ -184,6 +195,9 @@ export default function ScreenShare() {
           const r = await fetch(`${API_URL}/room/rtc-requests`)
           const d = await r.json()
           setPendingRequests(d.requests || [])
+          const lr = await fetch(`${API_URL}/room/share-logs`)
+          const ld = await lr.json()
+          setShareLogs(ld.logs || [])
         }
       } catch {}
     }
@@ -238,7 +252,7 @@ export default function ScreenShare() {
       } else if (rtcRoleRef.current === 'viewer' && rtcUidRef.current) {
         fetch(`${API_URL}/room/${rid}/leave`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: rtcUidRef.current }),
+          body: JSON.stringify({ userId: rtcUidRef.current, displayName: myName.current }),
         }).catch(() => {})
       }
     }
@@ -280,13 +294,17 @@ export default function ScreenShare() {
       setConnectStep('连接火山引擎服务器...')
       const rawName = myName.current || 'host'
       const hostUid = rawName.replace(/[^a-zA-Z0-9@\-_.]/g, '_').slice(0, 128) || 'host'
+      const hostRes = await fetch(`${API_URL}/room/${code}/host`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ displayName: rawName, mode: 'volc' }),
+      })
+      if (hostRes.status === 409) {
+        const d = await hostRes.json()
+        throw new Error(d.error || '该账号已在其他房间中活跃')
+      }
       rtcRoomRef.current = code
       rtcRoleRef.current = 'host'
       rtcUidRef.current = hostUid
-      await fetch(`${API_URL}/room/${code}/host`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ displayName: rawName }),
-      }).catch(() => {})
       const volcToken = await fetchVolcToken(code, hostUid)
       await engine.joinRoom(volcToken, code, { userId: hostUid }, {
         isAutoPublish: false, isAutoSubscribeAudio: false, isAutoSubscribeVideo: false,
@@ -343,14 +361,19 @@ export default function ScreenShare() {
       volcEngineRef.current = engine
 
       setConnectStep('连接火山引擎服务器...')
+      const viewerDisplayName = myName.current || viewerUid
+      const viewerRes = await fetch(`${API_URL}/room/${code}/viewer`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: viewerUid, displayName: viewerDisplayName }),
+      })
+      if (viewerRes.status === 409) {
+        const d = await viewerRes.json()
+        throw new Error(d.error || '该账号已在其他房间中活跃')
+      }
       rtcRoomRef.current = code
       rtcRoleRef.current = 'viewer'
       rtcUidRef.current = viewerUid
-      const viewerDisplayName = myName.current || viewerUid
-      const roomRes = await fetch(`${API_URL}/room/${code}/viewer`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: viewerUid, displayName: viewerDisplayName }),
-      }).then(r => r.json()).catch(() => ({}))
+      const roomRes = await viewerRes.json()
       if (roomRes.hostName) setHostName(roomRes.hostName)
       const volcToken = await fetchVolcToken(code, viewerUid)
       await engine.joinRoom(volcToken, code, { userId: viewerUid }, {
@@ -410,16 +433,20 @@ export default function ScreenShare() {
 
       const code = generateRoomCode()
       setRoomCode(code)
-      rtcRoomRef.current = code
-      rtcRoleRef.current = 'host'
-      rtcUidRef.current = 'agora-host'
 
       setConnectStep('获取连接凭证...')
       const rawName = myName.current || 'host'
-      await fetch(`${API_URL}/room/${code}/host`, {
+      const hostRes = await fetch(`${API_URL}/room/${code}/host`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ displayName: rawName }),
-      }).catch(() => {})
+        body: JSON.stringify({ displayName: rawName, mode: 'agora' }),
+      })
+      if (hostRes.status === 409) {
+        const d = await hostRes.json()
+        throw new Error(d.error || '该账号已在其他房间中活跃')
+      }
+      rtcRoomRef.current = code
+      rtcRoleRef.current = 'host'
+      rtcUidRef.current = 'agora-host'
       const tokenRes = await fetch(`${API_URL}/agora/token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -483,17 +510,22 @@ export default function ScreenShare() {
       const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' })
       agoraClientRef.current = client
 
-      rtcRoomRef.current = code
-      rtcRoleRef.current = 'viewer'
       const agoraViewerUid = 'av' + Math.random().toString(36).slice(2, 8)
-      rtcUidRef.current = agoraViewerUid
 
       setConnectStep('获取连接凭证...')
       const viewerDisplayName = myName.current || agoraViewerUid
-      const roomRes = await fetch(`${API_URL}/room/${code}/viewer`, {
+      const viewerRes = await fetch(`${API_URL}/room/${code}/viewer`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: agoraViewerUid, displayName: viewerDisplayName }),
-      }).then(r => r.json()).catch(() => ({}))
+      })
+      if (viewerRes.status === 409) {
+        const d = await viewerRes.json()
+        throw new Error(d.error || '该账号已在其他房间中活跃')
+      }
+      rtcRoomRef.current = code
+      rtcRoleRef.current = 'viewer'
+      rtcUidRef.current = agoraViewerUid
+      const roomRes = await viewerRes.json()
       if (roomRes.hostName) setHostName(roomRes.hostName)
       const tokenRes = await fetch(`${API_URL}/agora/token`, {
         method: 'POST',
@@ -547,7 +579,20 @@ export default function ScreenShare() {
     }
   }
 
+  const checkAlreadyActive = async (): Promise<boolean> => {
+    try {
+      const r = await fetch(`${API_URL}/room/active-check/${encodeURIComponent(myName.current)}`)
+      const d = await r.json()
+      if (d.active) {
+        setErrorMsg(`你已经在房间 ${d.roomId} 中${d.role === 'host' ? '分享' : '观看'}，请先退出后再操作`)
+        return true
+      }
+    } catch {}
+    return false
+  }
+
   const handleStartHost = async () => {
+    if (await checkAlreadyActive()) return
     if (hostConnMode === 'volc') return handleStartHostVolc()
     if (hostConnMode === 'agora') return handleStartHostAgora()
 
@@ -580,6 +625,20 @@ export default function ScreenShare() {
       // Create peer with room code
       const code = generateRoomCode()
       setRoomCode(code)
+
+      const rawName = myName.current || 'host'
+      const hostRes = await fetch(`${API_URL}/room/${code}/host`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ displayName: rawName, mode: 'peerjs' }),
+      })
+      if (hostRes.status === 409) {
+        const d = await hostRes.json()
+        stream.getTracks().forEach(t => t.stop())
+        throw new Error(d.error || '该账号已在其他房间中活跃')
+      }
+      rtcRoomRef.current = code
+      rtcRoleRef.current = 'host'
+
       const peerId = PEER_PREFIX + code
 
       const peer = new Peer(peerId, {
@@ -703,6 +762,8 @@ export default function ScreenShare() {
       return
     }
 
+    if (await checkAlreadyActive()) return
+
     if (connMode === 'volc') return handleJoinRoomVolc(code)
     if (connMode === 'agora') return handleJoinRoomAgora(code)
 
@@ -719,6 +780,25 @@ export default function ScreenShare() {
         })
       : allIceServers
     setConnectStep('连接信令服务器...')
+
+    const viewerUid = 'pv' + Math.random().toString(36).slice(2, 8)
+    const viewerDisplayName = myName.current || viewerUid
+    const viewerRes = await fetch(`${API_URL}/room/${code}/viewer`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: viewerUid, displayName: viewerDisplayName }),
+    })
+    if (viewerRes.status === 409) {
+      const d = await viewerRes.json()
+      setErrorMsg(d.error || '该账号已在其他房间中活跃')
+      setStatus('error')
+      setMode('select')
+      return
+    }
+    rtcRoomRef.current = code
+    rtcRoleRef.current = 'viewer'
+    rtcUidRef.current = viewerUid
+    const roomResData = await viewerRes.json()
+    if (roomResData.hostName) setHostName(roomResData.hostName)
 
     const peer = new Peer({
       debug: 0,
@@ -771,37 +851,34 @@ export default function ScreenShare() {
         pc.addEventListener('connectionstatechange', () => {
           if (pc.connectionState === 'connected') {
             pc.getStats().then((stats) => {
-              let remoteCandidateId = ''
               let localCandidateId = ''
               stats.forEach((report: any) => {
                 if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-                  remoteCandidateId = report.remoteCandidateId
                   localCandidateId = report.localCandidateId
                 }
               })
-              // Check both local and remote candidate types for relay
-              let isRelay = false
-              const candidateIds = [remoteCandidateId, localCandidateId].filter(Boolean)
-              candidateIds.forEach(id => {
+              // Check LOCAL candidate type (reflects this side's transport)
+              let localType = ''
+              let localProto = ''
+              if (localCandidateId) {
                 stats.forEach((r: any) => {
-                  if (r.id === id && r.candidateType === 'relay') isRelay = true
+                  if (r.id === localCandidateId && r.candidateType) {
+                    localType = r.candidateType
+                    localProto = r.protocol || ''
+                  }
                 })
-              })
-              // If STUN-only mode but connection uses relay, reject it
-              if (connMode === 'stun' && isRelay) {
+              }
+              // If STUN-only mode but local side uses relay, reject
+              if (connMode === 'stun' && localType === 'relay') {
                 call.close()
                 peer.destroy()
                 setErrorMsg('STUN直连失败：当前网络环境无法建立P2P连接，连接已被阻止（未走TURN中继）')
                 setStatus('error')
                 return
               }
-              if (remoteCandidateId) {
-                stats.forEach((r: any) => {
-                  if (r.id === remoteCandidateId && r.candidateType) {
-                    const type = r.candidateType === 'host' ? '局域网直连' : r.candidateType === 'prflx' ? 'P2P直连' : r.candidateType === 'srflx' ? 'STUN穿透' : r.candidateType === 'relay' ? 'TURN中继' : r.candidateType
-                    setConnectionInfo(`${type} · ${r.protocol.toUpperCase()}`)
-                  }
-                })
+              if (localType) {
+                const label = localType === 'host' ? '局域网直连' : localType === 'prflx' ? 'P2P直连' : localType === 'srflx' ? 'STUN穿透' : localType === 'relay' ? 'TURN中继' : localType
+                setConnectionInfo(`${label} · ${localProto.toUpperCase()}`)
               }
             })
             if (latencyIntervalRef.current) clearInterval(latencyIntervalRef.current)
@@ -925,20 +1002,28 @@ export default function ScreenShare() {
 
   // Admin: approve a request
   const handleApprove = async (username: string, m: string) => {
+    const key = `approve-${username}-${m}`
+    if (actionLoading) return
+    setActionLoading(key)
     await fetch(`${API_URL}/room/rtc-approve`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, mode: m }),
     }).catch(() => {})
     setPendingRequests(prev => prev.filter(r => !(r.username === username && r.mode === m)))
+    setActionLoading('')
   }
 
   // Admin: reject a request
   const handleReject = async (username: string, m: string) => {
+    const key = `reject-${username}-${m}`
+    if (actionLoading) return
+    setActionLoading(key)
     await fetch(`${API_URL}/room/rtc-reject`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, mode: m }),
     }).catch(() => {})
     setPendingRequests(prev => prev.filter(r => !(r.username === username && r.mode === m)))
+    setActionLoading('')
   }
 
   // Consume permission when student starts using a non-webrtc mode
@@ -1204,12 +1289,24 @@ export default function ScreenShare() {
                     </div>
                     <div className="flex gap-2">
                       <button onClick={() => handleApprove(req.username, req.mode)}
-                        className="flex items-center gap-1 px-3 py-1 bg-green-600/20 hover:bg-green-600/30 border border-green-500/30 text-green-400 rounded-md text-xs font-medium transition-colors">
-                        <CheckCircle size={14} /> 批准
+                        disabled={!!actionLoading}
+                        className={`flex items-center gap-1 px-3 py-1 border rounded-md text-xs font-medium transition-colors ${
+                          actionLoading === `approve-${req.username}-${req.mode}`
+                            ? 'bg-green-600/30 border-green-500/40 text-green-300 cursor-wait'
+                            : actionLoading ? 'opacity-50 cursor-not-allowed bg-green-600/20 border-green-500/30 text-green-400'
+                            : 'bg-green-600/20 hover:bg-green-600/30 border-green-500/30 text-green-400'
+                        }`}>
+                        <CheckCircle size={14} /> {actionLoading === `approve-${req.username}-${req.mode}` ? '处理中...' : '批准'}
                       </button>
                       <button onClick={() => handleReject(req.username, req.mode)}
-                        className="flex items-center gap-1 px-3 py-1 bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-400 rounded-md text-xs font-medium transition-colors">
-                        <XCircle size={14} /> 拒绝
+                        disabled={!!actionLoading}
+                        className={`flex items-center gap-1 px-3 py-1 border rounded-md text-xs font-medium transition-colors ${
+                          actionLoading === `reject-${req.username}-${req.mode}`
+                            ? 'bg-red-600/30 border-red-500/40 text-red-300 cursor-wait'
+                            : actionLoading ? 'opacity-50 cursor-not-allowed bg-red-600/20 border-red-500/30 text-red-400'
+                            : 'bg-red-600/20 hover:bg-red-600/30 border-red-500/30 text-red-400'
+                        }`}>
+                        <XCircle size={14} /> {actionLoading === `reject-${req.username}-${req.mode}` ? '处理中...' : '拒绝'}
                       </button>
                     </div>
                   </div>
@@ -1314,8 +1411,172 @@ export default function ScreenShare() {
             </div>
           </div>
 
+          {/* Admin: share logs (collapsible) */}
+          {userType === 'admin' && (() => {
+            const filtered = shareLogs.filter(l => {
+              if (logModeFilter !== 'all' && l.mode !== logModeFilter) return false
+              if (logSearch) {
+                const q = logSearch.toLowerCase()
+                const viewerList: string[] = l.viewers ? JSON.parse(l.viewers) : []
+                if (!l.host_name.toLowerCase().includes(q) && !l.room_id.toLowerCase().includes(q) && !viewerList.some(v => v.toLowerCase().includes(q))) return false
+              }
+              return true
+            })
+            const totalPages = Math.max(1, Math.ceil(filtered.length / LOG_PAGE_SIZE))
+            const safePage = Math.min(logPage, totalPages)
+            const paged = filtered.slice((safePage - 1) * LOG_PAGE_SIZE, safePage * LOG_PAGE_SIZE)
+            const handleDeleteClick = (id: number) => {
+              if (deleteConfirmId === id) { setDeleteConfirmId(null); setDeletePassword(''); setDeleteError(''); return }
+              setDeleteConfirmId(id); setDeletePassword(''); setDeleteError('')
+            }
+            const handleDeleteSubmit = async (id: number) => {
+              if (deletingId) return
+              if (!deletePassword) { setDeleteError('请输入密码'); return }
+              setDeletingId(id); setDeleteError('')
+              const r = await fetch(`${API_URL}/room/share-logs/${id}`, {
+                method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: deletePassword }),
+              }).catch(() => null)
+              setDeletingId(null)
+              if (!r || !r.ok) {
+                if (r && r.status === 403) { setDeleteError('密码错误'); return }
+                setDeleteError('删除失败'); return
+              }
+              setShareLogs(prev => prev.filter(l => l.id !== id))
+              setDeleteConfirmId(null); setDeletePassword('')
+            }
+            return (
+              <div className="mt-6 bg-gray-800/30 border border-gray-700/40 rounded-xl overflow-hidden anim-fade-last">
+                <button onClick={() => setLogsOpen(!logsOpen)}
+                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-800/40 transition-colors">
+                  <span className="text-gray-300 text-sm font-semibold flex items-center gap-2">
+                    <Monitor size={16} className="text-purple-400" />
+                    共享记录
+                    <span className="text-gray-600 text-xs font-normal">({shareLogs.length})</span>
+                  </span>
+                  {logsOpen ? <ChevronUp size={16} className="text-gray-500" /> : <ChevronDown size={16} className="text-gray-500" />}
+                </button>
+                {logsOpen && (
+                  <div className="px-4 pb-4">
+                    <div className="flex flex-wrap items-center gap-2 mb-3">
+                      <div className="relative flex-1 min-w-[140px]">
+                        <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
+                        <input value={logSearch} onChange={e => { setLogSearch(e.target.value); setLogPage(1) }}
+                          placeholder="搜索发起人或房间号"
+                          className="w-full pl-8 pr-3 py-1.5 bg-gray-900/50 border border-gray-700/50 rounded-lg text-xs text-white placeholder-gray-600 focus:outline-none focus:border-purple-500/40" />
+                      </div>
+                      <div className="flex gap-1">
+                        {([['all', '全部'], ['peerjs', 'WebRTC'], ['agora', '声网'], ['volc', '火山']] as const).map(([k, label]) => (
+                          <button key={k} onClick={() => { setLogModeFilter(k); setLogPage(1) }}
+                            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors border ${
+                              logModeFilter === k
+                                ? 'bg-purple-600/20 border-purple-500/40 text-purple-300'
+                                : 'bg-gray-900/30 border-gray-700/40 text-gray-500 hover:text-gray-300'
+                            }`}>{label}</button>
+                        ))}
+                      </div>
+                    </div>
+                    {filtered.length === 0 ? (
+                      <p className="text-gray-600 text-xs text-center py-4">{shareLogs.length === 0 ? '暂无共享记录' : '无匹配记录'}</p>
+                    ) : (
+                      <>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="text-gray-500 border-b border-gray-700/50">
+                                <th className="text-left py-2 px-2 font-medium">发起人</th>
+                                <th className="text-left py-2 px-2 font-medium">方式</th>
+                                <th className="text-center py-2 px-2 font-medium">峰值观看</th>
+                                <th className="text-left py-2 px-2 font-medium">观看者</th>
+                                <th className="text-left py-2 px-2 font-medium">开始时间</th>
+                                <th className="text-left py-2 px-2 font-medium">状态</th>
+                                <th className="w-8"></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {paged.map((log) => {
+                                const modeLabel = log.mode === 'agora' ? '声网' : log.mode === 'volc' ? '火山引擎' : 'WebRTC'
+                                const modeColor = log.mode === 'agora' ? 'text-blue-400' : log.mode === 'volc' ? 'text-orange-400' : 'text-emerald-400'
+                                const startTime = new Date(log.started_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+                                const isLive = !log.ended_at
+                                let duration = ''
+                                if (log.ended_at) {
+                                  const ms = new Date(log.ended_at).getTime() - new Date(log.started_at).getTime()
+                                  const mins = Math.floor(ms / 60000)
+                                  duration = mins < 1 ? '<1分钟' : mins < 60 ? `${mins}分钟` : `${Math.floor(mins / 60)}小时${mins % 60}分`
+                                }
+                                return (
+                                  <React.Fragment key={log.id}>
+                                  <tr className="border-b border-gray-800/50 hover:bg-gray-800/30 group">
+                                    <td className="py-2 px-2 text-white font-medium">{log.host_name}</td>
+                                    <td className={`py-2 px-2 font-medium ${modeColor}`}>{modeLabel}</td>
+                                    <td className="py-2 px-2 text-center text-gray-300">{log.peak_viewers}</td>
+                                    <td className="py-2 px-2 text-gray-400 max-w-[150px] truncate" title={(() => { try { return log.viewers ? JSON.parse(log.viewers).join('、') : '-' } catch { return '-' } })()}>
+                                      {(() => { try { const v: string[] = log.viewers ? JSON.parse(log.viewers) : []; return v.length > 0 ? v.join('、') : '-' } catch { return '-' } })()}
+                                    </td>
+                                    <td className="py-2 px-2 text-gray-400">{startTime}</td>
+                                    <td className="py-2 px-2">
+                                      {isLive
+                                        ? <span className="inline-flex items-center gap-1 text-red-400"><span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />进行中</span>
+                                        : <span className="text-gray-500">{duration}</span>
+                                      }
+                                    </td>
+                                    <td className="py-2 px-1">
+                                      <button onClick={() => handleDeleteClick(log.id)} title="删除"
+                                        className={`p-1 rounded transition-all ${deleteConfirmId === log.id ? 'opacity-100 bg-red-600/20 text-red-400' : 'opacity-0 group-hover:opacity-100 hover:bg-red-600/20 text-gray-600 hover:text-red-400'}`}>
+                                        <Trash2 size={13} />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                  {deleteConfirmId === log.id && (
+                                    <tr className="border-b border-gray-800/50 bg-gray-900/40">
+                                      <td colSpan={7} className="py-2 px-2">
+                                        <div className="flex items-center gap-2">
+                                          <input type="password" value={deletePassword} onChange={e => { setDeletePassword(e.target.value); setDeleteError('') }}
+                                            onKeyDown={e => e.key === 'Enter' && handleDeleteSubmit(log.id)}
+                                            placeholder="输入删除密码" autoFocus
+                                            className="bg-gray-800/60 border border-gray-600/50 rounded px-2 py-1 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-red-500/50 w-32" />
+                                          <button onClick={() => handleDeleteSubmit(log.id)} disabled={!!deletingId}
+                                            className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                                              deletingId === log.id ? 'bg-red-600/30 text-red-300 cursor-wait' : 'bg-red-600/20 hover:bg-red-600/30 text-red-400'
+                                            }`}>
+                                            {deletingId === log.id ? '删除中...' : '确认删除'}
+                                          </button>
+                                          <button onClick={() => { setDeleteConfirmId(null); setDeletePassword(''); setDeleteError('') }}
+                                            className="px-2 py-1 rounded text-xs text-gray-500 hover:text-gray-300 transition-colors">取消</button>
+                                          {deleteError && <span className="text-red-400 text-xs">{deleteError}</span>}
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )}
+                                  </React.Fragment>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                        {totalPages > 1 && (
+                          <div className="flex items-center justify-between mt-3">
+                            <span className="text-gray-600 text-xs">共 {filtered.length} 条</span>
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => setLogPage(p => Math.max(1, p - 1))} disabled={safePage <= 1}
+                                className="px-2 py-0.5 rounded text-xs text-gray-400 hover:text-white disabled:text-gray-700 disabled:cursor-not-allowed transition-colors">上一页</button>
+                              <span className="text-gray-500 text-xs">{safePage} / {totalPages}</span>
+                              <button onClick={() => setLogPage(p => Math.min(totalPages, p + 1))} disabled={safePage >= totalPages}
+                                className="px-2 py-0.5 rounded text-xs text-gray-400 hover:text-white disabled:text-gray-700 disabled:cursor-not-allowed transition-colors">下一页</button>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
           {/* Mode description + Author */}
-          <div className="mt-8 text-center anim-fade-last">
+          <div className="mt-6 text-center anim-fade-last">
             <p className="text-gray-500 text-sm mb-4">{modeDescriptions[hostConnMode]}</p>
             <div className="flex items-center justify-center gap-2 text-gray-600 text-xs">
               <div className="h-px w-8 bg-gradient-to-r from-transparent to-gray-700" />
