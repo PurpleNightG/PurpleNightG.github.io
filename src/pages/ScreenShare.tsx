@@ -7,15 +7,15 @@ type Status = 'idle' | 'connecting' | 'streaming' | 'watching' | 'error'
 
 const PEER_PREFIX = 'ziye-share-'
 
-const ICE_SERVERS: RTCIceServer[] = [
+const ICE_SERVERS = [
   { urls: 'stun:stun.qq.com:3478' },
   { urls: 'stun:stun.miwifi.com:3478' },
   { urls: 'stun:stun.aliyun.com:3478' },
+  { urls: 'stun:stun.synology.com:3478' },
   { urls: 'stun:stun.syncthing.net:3478' },
   { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
 ]
-
-const PEER_DEBUG = 2
 
 function generateRoomCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -152,12 +152,11 @@ export default function ScreenShare() {
       const peerId = PEER_PREFIX + code
 
       const peer = new Peer(peerId, {
-        debug: PEER_DEBUG,
+        debug: 0,
         config: { iceServers: ICE_SERVERS }
       })
 
       peer.on('open', () => {
-        console.log('Host peer open, id:', peer.id)
         setStatus('streaming')
         // Show local preview
         if (videoRef.current) {
@@ -201,8 +200,8 @@ export default function ScreenShare() {
                   if (localCandidateId) {
                     stats.forEach((r: any) => {
                       if (r.id === localCandidateId && r.candidateType) {
-                        const type = r.candidateType === 'host' ? '局域网直连' : r.candidateType === 'srflx' ? 'STUN穿透' : r.candidateType === 'relay' ? 'TURN中继' : r.candidateType
-                        setConnectionInfo(`${type} (${r.protocol})`)
+                        const type = r.candidateType === 'host' ? '局域网' : r.candidateType === 'srflx' ? 'STUN' : r.candidateType === 'relay' ? 'TURN' : r.candidateType
+                        setConnectionInfo(`${type} ${r.address}:${r.port} (${r.protocol})`)
                       }
                     })
                   }
@@ -226,21 +225,10 @@ export default function ScreenShare() {
         })
       })
 
-      // Auto-reconnect if signaling server disconnects
-      peer.on('disconnected', () => {
-        console.warn('Host disconnected from signaling server, reconnecting...')
-        peer.reconnect()
-      })
-
       peer.on('error', (err) => {
         console.error('Peer error:', err)
         if (err.type === 'unavailable-id') {
           setErrorMsg('房间代码冲突，请重试')
-        } else if (err.type === 'network' || err.type === 'server-error') {
-          // Network issue, try reconnect
-          console.warn('Network error, attempting reconnect...')
-          peer.reconnect()
-          return
         } else {
           setErrorMsg(`连接错误: ${err.message}`)
         }
@@ -260,7 +248,7 @@ export default function ScreenShare() {
     }
   }
 
-  const handleJoinRoom = async () => {
+  const handleJoinRoom = () => {
     const code = inputCode.trim().toUpperCase()
     if (code.length !== 6) {
       setErrorMsg('请输入6位房间代码')
@@ -272,139 +260,107 @@ export default function ScreenShare() {
     setErrorMsg('')
     setConnectStep('连接信令服务器...')
 
-    const MAX_RETRIES = 3
-    const TIMEOUT_MS = 10000
+    const peer = new Peer({
+      debug: 0,
+      config: { iceServers: ICE_SERVERS }
+    })
 
-    const attemptConnect = (attempt: number) => {
-      if (statusRef.current !== 'connecting') return
+    peer.on('open', () => {
+      setConnectStep('连接到主播...')
+      const hostPeerId = PEER_PREFIX + code
+      // Connect to host via data connection to announce ourselves
+      const dataConn = peer.connect(hostPeerId)
 
-      setConnectStep(`连接信令服务器...${attempt > 1 ? ` (第${attempt}次尝试)` : ''}`)
-
-      // Destroy previous peer if retrying
-      if (peerRef.current) {
-        peerRef.current.destroy()
-        peerRef.current = null
-      }
-
-      const peer = new Peer({
-        debug: PEER_DEBUG,
-        config: { iceServers: ICE_SERVERS }
+      dataConn.on('open', () => {
+        setConnectStep('等待主播回传视频流...')
+        // Send viewer name to host
+        dataConn.send({ type: 'viewer-info', name: myName.current })
       })
 
-      let connected = false
-
-      peer.on('open', () => {
-        setConnectStep(`连接到主播...${attempt > 1 ? ` (第${attempt}次)` : ''}`)
-        const hostPeerId = PEER_PREFIX + code
-        const dataConn = peer.connect(hostPeerId)
-
-        dataConn.on('open', () => {
-          setConnectStep(`等待主播回传视频流...${attempt > 1 ? ` (第${attempt}次)` : ''}`)
-          dataConn.send({ type: 'viewer-info', name: myName.current })
-        })
-
-        dataConn.on('data', (data: any) => {
-          if (data?.type === 'host-info' && data.name) {
-            setHostName(data.name)
-          }
-        })
-
-        dataConn.on('error', (err) => {
-          console.error('Data connection error:', err)
-          if (!connected && attempt < MAX_RETRIES) {
-            console.log(`数据通道失败，重试第${attempt + 1}次...`)
-            attemptConnect(attempt + 1)
-          } else {
-            setErrorMsg('无法连接到房间（数据通道失败）')
-            setStatus('error')
-          }
-        })
+      dataConn.on('data', (data: any) => {
+        if (data?.type === 'host-info' && data.name) {
+          setHostName(data.name)
+        }
       })
 
-      // Host will call us back with the screen stream
-      peer.on('call', (call) => {
-        connected = true
-        call.answer()
-        
-        // Capture ICE connection info
-        const pc = (call as any).peerConnection as RTCPeerConnection | undefined
-        if (pc) {
-          pc.addEventListener('connectionstatechange', () => {
-            if (pc.connectionState === 'connected') {
-              pc.getStats().then((stats) => {
-                let localCandidateId = ''
-                stats.forEach((report: any) => {
-                  if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-                    localCandidateId = report.localCandidateId
-                  }
-                })
-                if (localCandidateId) {
-                  stats.forEach((r: any) => {
-                    if (r.id === localCandidateId && r.candidateType) {
-                      const type = r.candidateType === 'host' ? '局域网直连' : r.candidateType === 'srflx' ? 'STUN穿透' : r.candidateType === 'relay' ? 'TURN中继' : r.candidateType
-                      setConnectionInfo(`${type} (${r.protocol})`)
-                    }
-                  })
+      dataConn.on('error', (err) => {
+        console.error('Data connection error:', err)
+        setErrorMsg('无法连接到房间（数据通道失败）')
+        setStatus('error')
+      })
+
+      // Timeout for connection
+      setTimeout(() => {
+        if (statusRef.current === 'connecting') {
+          setErrorMsg(`连接超时，卡在：${connectStepRef.current}`)
+          setStatus('error')
+        }
+      }, 15000)
+    })
+
+    // Host will call us back with the screen stream
+    peer.on('call', (call) => {
+      call.answer()
+      
+      // Capture ICE connection info (use addEventListener to avoid overwriting PeerJS handlers)
+      const pc = (call as any).peerConnection as RTCPeerConnection | undefined
+      if (pc) {
+        pc.addEventListener('connectionstatechange', () => {
+          if (pc.connectionState === 'connected') {
+            pc.getStats().then((stats) => {
+              let remoteCandidateId = ''
+              stats.forEach((report: any) => {
+                if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+                  remoteCandidateId = report.remoteCandidateId
                 }
               })
-            }
-          })
-        }
-
-        call.on('stream', (remoteStream) => {
-          setStatus('watching')
-          streamRef.current = remoteStream
-          if (videoRef.current) {
-            videoRef.current.srcObject = remoteStream
-            videoRef.current.play().catch(() => {})
+              if (remoteCandidateId) {
+                stats.forEach((r: any) => {
+                  if (r.id === remoteCandidateId && r.candidateType) {
+                    const type = r.candidateType === 'host' ? '局域网' : r.candidateType === 'srflx' ? 'STUN' : r.candidateType === 'relay' ? 'TURN' : r.candidateType
+                    setConnectionInfo(`${type} ${r.address}:${r.port} (${r.protocol})`)
+                  }
+                })
+              }
+            })
           }
         })
+      }
 
-        call.on('close', () => {
-          setErrorMsg('主播已停止共享')
-          setStatus('error')
-        })
-
-        call.on('error', (err) => {
-          console.error('Call error:', err)
-          setErrorMsg('连接失败')
-          setStatus('error')
-        })
-
-        connectionsRef.current.push(call)
-      })
-
-      peer.on('error', (err) => {
-        console.error('Peer error:', err)
-        if (err.type === 'peer-unavailable') {
-          setErrorMsg('房间不存在或已关闭')
-          setStatus('error')
-        } else if (!connected && attempt < MAX_RETRIES) {
-          console.log(`信令错误，重试第${attempt + 1}次...`)
-          attemptConnect(attempt + 1)
-        } else {
-          setErrorMsg(`连接错误: ${err.message}`)
-          setStatus('error')
+      call.on('stream', (remoteStream) => {
+        setStatus('watching')
+        streamRef.current = remoteStream
+        if (videoRef.current) {
+          videoRef.current.srcObject = remoteStream
+          videoRef.current.play().catch(() => {})
         }
       })
 
-      peerRef.current = peer
+      call.on('close', () => {
+        setErrorMsg('主播已停止共享')
+        setStatus('error')
+      })
 
-      // Timeout for this attempt
-      setTimeout(() => {
-        if (statusRef.current === 'connecting' && !connected) {
-          if (attempt < MAX_RETRIES) {
-            console.log(`第${attempt}次尝试超时，重试...`)
-            attemptConnect(attempt + 1)
-          } else {
-            setErrorMsg(`连接超时（已重试${MAX_RETRIES}次），卡在：${connectStepRef.current}`)
-            setStatus('error')
-          }
-        }
-      }, TIMEOUT_MS)
-    }
+      call.on('error', (err) => {
+        console.error('Call error:', err)
+        setErrorMsg('连接失败')
+        setStatus('error')
+      })
 
-    attemptConnect(1)
+      connectionsRef.current.push(call)
+    })
+
+    peer.on('error', (err) => {
+      console.error('Peer error:', err)
+      if (err.type === 'peer-unavailable') {
+        setErrorMsg('房间不存在或已关闭')
+      } else {
+        setErrorMsg(`连接错误: ${err.message}`)
+      }
+      setStatus('error')
+    })
+
+    peerRef.current = peer
   }
 
   const handleStop = () => {
