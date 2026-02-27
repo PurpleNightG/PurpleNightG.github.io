@@ -7,15 +7,27 @@ type Status = 'idle' | 'connecting' | 'streaming' | 'watching' | 'error'
 
 const PEER_PREFIX = 'ziye-share-'
 
-const ICE_SERVERS = [
+const METERED_URL = 'https://purplenightg.metered.live/api/v1/turn/credentials?apiKey=9lLFksskwco90b207AfbxDfJT8TkIIf20-l89xVlccRXaVX9'
+
+const FALLBACK_ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun.qq.com:3478' },
   { urls: 'stun:stun.miwifi.com:3478' },
   { urls: 'stun:stun.aliyun.com:3478' },
-  { urls: 'stun:stun.synology.com:3478' },
-  { urls: 'stun:stun.syncthing.net:3478' },
   { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
 ]
+
+async function fetchIceServers(): Promise<RTCIceServer[]> {
+  try {
+    const resp = await fetch(METERED_URL)
+    const servers = await resp.json()
+    if (Array.isArray(servers) && servers.length > 0) {
+      return servers
+    }
+  } catch (e) {
+    console.warn('Failed to fetch TURN credentials, using fallback STUN:', e)
+  }
+  return FALLBACK_ICE_SERVERS
+}
 
 function generateRoomCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -146,6 +158,9 @@ export default function ScreenShare() {
         handleStop()
       }
 
+      // Fetch TURN credentials
+      const iceServers = await fetchIceServers()
+
       // Create peer with room code
       const code = generateRoomCode()
       setRoomCode(code)
@@ -153,7 +168,7 @@ export default function ScreenShare() {
 
       const peer = new Peer(peerId, {
         debug: 0,
-        config: { iceServers: ICE_SERVERS }
+        config: { iceServers }
       })
 
       peer.on('open', () => {
@@ -200,8 +215,8 @@ export default function ScreenShare() {
                   if (localCandidateId) {
                     stats.forEach((r: any) => {
                       if (r.id === localCandidateId && r.candidateType) {
-                        const type = r.candidateType === 'host' ? '局域网' : r.candidateType === 'srflx' ? 'STUN' : r.candidateType === 'relay' ? 'TURN' : r.candidateType
-                        setConnectionInfo(`${type} ${r.address}:${r.port} (${r.protocol})`)
+                        const type = r.candidateType === 'host' ? '局域网直连' : r.candidateType === 'srflx' ? 'STUN穿透' : r.candidateType === 'relay' ? 'TURN中继' : r.candidateType
+                        setConnectionInfo(`${type} (${r.protocol})`)
                       }
                     })
                   }
@@ -248,7 +263,7 @@ export default function ScreenShare() {
     }
   }
 
-  const handleJoinRoom = () => {
+  const handleJoinRoom = async () => {
     const code = inputCode.trim().toUpperCase()
     if (code.length !== 6) {
       setErrorMsg('请输入6位房间代码')
@@ -258,11 +273,14 @@ export default function ScreenShare() {
     setMode('viewer')
     setStatus('connecting')
     setErrorMsg('')
+    setConnectStep('获取TURN凭证...')
+
+    const iceServers = await fetchIceServers()
     setConnectStep('连接信令服务器...')
 
     const peer = new Peer({
       debug: 0,
-      config: { iceServers: ICE_SERVERS }
+      config: { iceServers }
     })
 
     peer.on('open', () => {
@@ -308,17 +326,17 @@ export default function ScreenShare() {
         pc.addEventListener('connectionstatechange', () => {
           if (pc.connectionState === 'connected') {
             pc.getStats().then((stats) => {
-              let remoteCandidateId = ''
+              let localCandidateId = ''
               stats.forEach((report: any) => {
                 if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-                  remoteCandidateId = report.remoteCandidateId
+                  localCandidateId = report.localCandidateId
                 }
               })
-              if (remoteCandidateId) {
+              if (localCandidateId) {
                 stats.forEach((r: any) => {
-                  if (r.id === remoteCandidateId && r.candidateType) {
-                    const type = r.candidateType === 'host' ? '局域网' : r.candidateType === 'srflx' ? 'STUN' : r.candidateType === 'relay' ? 'TURN' : r.candidateType
-                    setConnectionInfo(`${type} ${r.address}:${r.port} (${r.protocol})`)
+                  if (r.id === localCandidateId && r.candidateType) {
+                    const type = r.candidateType === 'host' ? '局域网直连' : r.candidateType === 'srflx' ? 'STUN穿透' : r.candidateType === 'relay' ? 'TURN中继' : r.candidateType
+                    setConnectionInfo(`${type} (${r.protocol})`)
                   }
                 })
               }
