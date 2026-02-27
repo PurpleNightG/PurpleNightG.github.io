@@ -67,6 +67,7 @@ export default function ScreenShare() {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [connectionInfo, setConnectionInfo] = useState<string>('')
   const [connectStep, setConnectStep] = useState('')
+  const [connMode, setConnMode] = useState<'auto' | 'relay' | 'stun'>('auto')
   const myName = useRef(getCurrentUsername())
 
   const peerRef = useRef<Peer | null>(null)
@@ -280,12 +281,21 @@ export default function ScreenShare() {
     setErrorMsg('')
     setConnectStep('获取连接配置...')
 
-    const iceServers = await fetchIceServers()
+    const allIceServers = await fetchIceServers()
+    const iceServers = connMode === 'stun'
+      ? allIceServers.filter((s: any) => {
+          const urls = Array.isArray(s.urls) ? s.urls : [s.urls]
+          return urls.every((u: string) => u.startsWith('stun:'))
+        })
+      : allIceServers
     setConnectStep('连接信令服务器...')
 
     const peer = new Peer({
       debug: 0,
-      config: { iceServers }
+      config: {
+        iceServers,
+        iceTransportPolicy: connMode === 'relay' ? 'relay' : 'all',
+      }
     })
 
     peer.on('open', () => {
@@ -460,7 +470,7 @@ export default function ScreenShare() {
               </div>
               <h2 className="text-xl font-bold text-white mb-2">观看屏幕</h2>
               <p className="text-gray-400 text-sm mb-5">输入分享者提供的6位房间代码</p>
-              <div className="flex gap-2">
+              <div className="flex gap-2 mb-3">
                 <input
                   type="text"
                   value={inputCode}
@@ -468,15 +478,38 @@ export default function ScreenShare() {
                   onKeyDown={(e) => e.key === 'Enter' && handleJoinRoom()}
                   placeholder="输入房间代码"
                   maxLength={6}
-                  className="flex-1 bg-gray-900/60 border border-gray-600/50 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50 font-mono text-lg tracking-widest text-center uppercase"
+                  className="flex-[3] min-w-0 bg-gray-900/60 border border-gray-600/50 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50 font-mono text-lg tracking-widest text-center uppercase"
                 />
                 <button
                   onClick={handleJoinRoom}
                   disabled={inputCode.length !== 6}
-                  className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-lg font-medium transition-colors"
+                  className="flex-[1] bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-lg font-medium transition-colors"
                 >
                   加入
                 </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-500 text-xs shrink-0">连接方式</span>
+                <div className="flex gap-1.5 flex-1">
+                  {(['auto', 'relay', 'stun'] as const).map((m) => {
+                    const labels = { auto: '自动', relay: 'TURN中继', stun: '仅STUN' }
+                    const hints = { auto: '优先直连，自动回退', relay: '强制中继，穿透性最强', stun: '纯P2P，不走中继' }
+                    return (
+                      <button
+                        key={m}
+                        onClick={() => setConnMode(m)}
+                        title={hints[m]}
+                        className={`flex-1 py-1 rounded-md text-xs font-medium transition-colors border ${
+                          connMode === m
+                            ? 'bg-purple-600/30 border-purple-500/60 text-purple-300'
+                            : 'bg-gray-900/40 border-gray-700/40 text-gray-500 hover:text-gray-300 hover:border-gray-600'
+                        }`}
+                      >
+                        {labels[m]}
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
               {errorMsg && mode === 'select' && (
                 <p className="text-red-400 text-sm mt-3">{errorMsg}</p>
