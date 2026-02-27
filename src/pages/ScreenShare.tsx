@@ -9,6 +9,7 @@ const PEER_PREFIX = 'ziye-share-'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 const AGORA_APP_ID: string = import.meta.env.VITE_AGORA_APP_ID || 'a51f2304cab54d86a883ab04b41840a6'
+const VOLC_APP_ID: string = import.meta.env.VITE_VOLC_APP_ID || '69a1b7836bd15e0177fffbb6'
 
 const FALLBACK_ICE_SERVERS = [
   { urls: 'stun:stun.qq.com:3478' },
@@ -68,13 +69,17 @@ export default function ScreenShare() {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [connectionInfo, setConnectionInfo] = useState<string>('')
   const [connectStep, setConnectStep] = useState('')
-  const [connMode, setConnMode] = useState<'auto' | 'relay' | 'stun' | 'agora'>('auto')
-  const [hostConnMode, setHostConnMode] = useState<'peerjs' | 'agora'>('peerjs')
+  const [connMode, setConnMode] = useState<'auto' | 'relay' | 'stun' | 'agora' | 'volc'>('auto')
+  const [hostConnMode, setHostConnMode] = useState<'peerjs' | 'agora' | 'volc'>('peerjs')
+  const [activeStreamMode, setActiveStreamMode] = useState<'peerjs' | 'agora' | 'volc'>('peerjs')
   const [latency, setLatency] = useState<number | null>(null)
   const myName = useRef(getCurrentUsername())
   const latencyIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const agoraClientRef = useRef<any>(null)
   const agoraTrackRef = useRef<any>(null)
+  const volcEngineRef = useRef<any>(null)
+  const volcContainerRef = useRef<HTMLDivElement>(null)
+  const volcHostUserIdRef = useRef<string>('')
 
   const peerRef = useRef<Peer | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -110,6 +115,20 @@ export default function ScreenShare() {
       cleanup()
     }
   }, [])
+
+  // Volcengine video binding - runs after DOM updates when mode switches to volc
+  useEffect(() => {
+    if (activeStreamMode !== 'volc') return
+    const engine = volcEngineRef.current
+    const container = volcContainerRef.current
+    if (!engine || !container) return
+    if (status === 'streaming') {
+      engine.setLocalVideoPlayer(1, { renderDom: container }) // StreamIndex.STREAM_INDEX_SCREEN = 1
+    } else if (status === 'watching' && volcHostUserIdRef.current) {
+      engine.setRemoteVideoPlayer(1, { userId: volcHostUserIdRef.current, renderDom: container })
+      engine.play(volcHostUserIdRef.current, 2, 1) // MediaType.VIDEO = 2
+    }
+  }, [activeStreamMode, status])
 
   // Fullscreen change listener
   useEffect(() => {
@@ -153,7 +172,115 @@ export default function ScreenShare() {
       try { agoraClientRef.current.leave() } catch {}
       agoraClientRef.current = null
     }
+    if (volcEngineRef.current) {
+      try { volcEngineRef.current.stopScreenCapture() } catch {}
+      try { volcEngineRef.current.leaveRoom() } catch {}
+      volcEngineRef.current = null
+    }
+    volcHostUserIdRef.current = ''
+    setActiveStreamMode('peerjs')
   }, [])
+
+  const handleStartHostVolc = async () => {
+    setMode('host')
+    setStatus('connecting')
+    setErrorMsg('')
+    setConnectStep('获取连接凭证...')
+    try {
+      const code = generateRoomCode()
+      setRoomCode(code)
+      const tokenRes = await fetch(`${API_URL}/volc/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId: code, userId: 'host' })
+      })
+      const tokenData = await tokenRes.json()
+      if (!tokenData.success) throw new Error(tokenData.error || '获取火山引泼 Token 失败，请检查后端配置')
+
+      setConnectStep('初始化火山引泼 SDK...')
+      const { default: VERTC, MediaType } = await import('@volcengine/rtc')
+      const engine = VERTC.createEngine(VOLC_APP_ID)
+      volcEngineRef.current = engine
+
+      setConnectStep('连接火山引泼服务器...')
+      await engine.joinRoom(tokenData.token, code, { userId: 'host' }, {
+        isAutoPublish: false, isAutoSubscribeAudio: false, isAutoSubscribeVideo: false,
+      })
+
+      setConnectStep('获取屏幕共享权限...')
+      await engine.startScreenCapture()
+
+      setConnectStep('发布屏幕流...')
+      await engine.publishScreen(MediaType.VIDEO)
+
+      engine.on(VERTC.events.onUserJoined, () => setViewerCount(prev => prev + 1))
+      engine.on(VERTC.events.onUserLeave, () => setViewerCount(prev => Math.max(0, prev - 1)))
+
+      setActiveStreamMode('volc')
+      setConnectionInfo('火山引泼 RTC')
+      setStatus('streaming')
+    } catch (err: any) {
+      if (err.name === 'NotAllowedError') {
+        setErrorMsg('您取消了屏幕共享')
+      } else {
+        setErrorMsg(`火山引泼连接失败: ${err.message}`)
+      }
+      setStatus('error')
+      setMode('select')
+    }
+  }
+
+  const handleJoinRoomVolc = async (code: string) => {
+    setMode('viewer')
+    setStatus('connecting')
+    setErrorMsg('')
+    setConnectStep('获取连接凭证...')
+    try {
+      const viewerUid = 'v' + Math.random().toString(36).slice(2, 8)
+      const tokenRes = await fetch(`${API_URL}/volc/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId: code, userId: viewerUid })
+      })
+      const tokenData = await tokenRes.json()
+      if (!tokenData.success) throw new Error(tokenData.error || '获取火山引泼 Token 失败，请检查后端配置')
+
+      setConnectStep('初始化火山引泼 SDK...')
+      const { default: VERTC, MediaType } = await import('@volcengine/rtc')
+      const engine = VERTC.createEngine(VOLC_APP_ID)
+      volcEngineRef.current = engine
+
+      setConnectStep('连接火山引泼服务器...')
+      await engine.joinRoom(tokenData.token, code, { userId: viewerUid }, {
+        isAutoPublish: false, isAutoSubscribeAudio: false, isAutoSubscribeVideo: false,
+      })
+
+      setConnectStep('等待主播视频流...')
+
+      engine.on(VERTC.events.onUserPublishScreen, async ({ userId }: { userId: string }) => {
+        await engine.subscribeScreen(userId, MediaType.VIDEO)
+        volcHostUserIdRef.current = userId
+        setConnectionInfo('火山引泼 RTC')
+        setActiveStreamMode('volc')
+        setStatus('watching')
+      })
+
+      engine.on(VERTC.events.onUserUnpublishScreen, () => {
+        setErrorMsg('主播已停止共享')
+        setStatus('error')
+      })
+
+      setTimeout(() => {
+        if (statusRef.current === 'connecting') {
+          setErrorMsg(`连接超时，卡在：${connectStepRef.current}`)
+          setStatus('error')
+        }
+      }, 15000)
+    } catch (err: any) {
+      setErrorMsg(`火山引泼连接失败: ${err.message}`)
+      setStatus('error')
+    }
+  }
 
   const handleStartHostAgora = async () => {
     setMode('host')
@@ -287,6 +414,7 @@ export default function ScreenShare() {
   }
 
   const handleStartHost = async () => {
+    if (hostConnMode === 'volc') return handleStartHostVolc()
     if (hostConnMode === 'agora') return handleStartHostAgora()
 
     setMode('host')
@@ -441,6 +569,7 @@ export default function ScreenShare() {
       return
     }
 
+    if (connMode === 'volc') return handleJoinRoomVolc(code)
     if (connMode === 'agora') return handleJoinRoomAgora(code)
 
     setMode('viewer')
@@ -637,9 +766,9 @@ export default function ScreenShare() {
                 <div className="flex items-center gap-2 mb-3">
                   <span className="text-gray-500 text-xs shrink-0">连接方式</span>
                   <div className="flex gap-1.5 flex-1">
-                    {(['peerjs', 'agora'] as const).map((m) => {
-                      const labels = { peerjs: 'WebRTC', agora: '声网Agora' }
-                      const hints = { peerjs: '浏览器原生P2P，支持TURN中继', agora: '声网服务器中转，国内延迟低' }
+                    {(['peerjs', 'agora', 'volc'] as const).map((m) => {
+                      const labels = { peerjs: 'WebRTC', agora: '声网Agora', volc: '火山引擎' }
+                      const hints = { peerjs: '浏览器原生P2P，支持TURN中继', agora: '声网服务器中转，国内延迟低', volc: '火山引擎RTC，国内低延迟' }
                       return (
                         <button key={m} onClick={() => setHostConnMode(m)} title={hints[m]}
                           className={`flex-1 py-1 rounded-md text-xs font-medium transition-colors border ${
@@ -686,9 +815,9 @@ export default function ScreenShare() {
               <div className="flex items-center gap-2">
                 <span className="text-gray-500 text-xs shrink-0">连接方式</span>
                 <div className="flex gap-1.5 flex-1">
-                  {(['auto', 'relay', 'stun', 'agora'] as const).map((m) => {
-                    const labels = { auto: '自动', relay: 'TURN中继', stun: '仅STUN', agora: '声网Agora' }
-                    const hints = { auto: '优先直连，自动回退', relay: '强制中继，穿透性最强', stun: '纯P2P，不走中继', agora: '声网服务器中转，国内延迟低' }
+                  {(['auto', 'relay', 'stun', 'agora', 'volc'] as const).map((m) => {
+                    const labels = { auto: '自动', relay: 'TURN中继', stun: '仅STUN', agora: '声网Agora', volc: '火山引擎' }
+                    const hints = { auto: '优先直连，自动回退', relay: '强制中继，穿透性最强', stun: '纯P2P，不走中继', agora: '声网服务器中转，国内延迟低', volc: '火山引擎RTC，国内低延迟' }
                     return (
                       <button
                         key={m}
@@ -838,13 +967,19 @@ export default function ScreenShare() {
             </p>
           </div>
         ) : (
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            className="w-full h-full object-contain"
-            style={isFullscreen ? { width: '100vw', height: '100vh' } : { maxHeight: 'calc(100vh - 12rem)' }}
-          />
+          <>
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              className={`w-full h-full object-contain ${activeStreamMode === 'volc' ? 'hidden' : ''}`}
+              style={isFullscreen ? { width: '100vw', height: '100vh' } : { maxHeight: 'calc(100vh - 12rem)' }}
+            />
+            <div
+              ref={volcContainerRef}
+              className={`absolute inset-0 ${activeStreamMode !== 'volc' ? 'hidden' : ''}`}
+            />
+          </>
         )}
       </div>
     </div>
