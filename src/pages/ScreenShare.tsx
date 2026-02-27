@@ -7,15 +7,27 @@ type Status = 'idle' | 'connecting' | 'streaming' | 'watching' | 'error'
 
 const PEER_PREFIX = 'ziye-share-'
 
-const ICE_SERVERS = [
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+
+const FALLBACK_ICE_SERVERS = [
   { urls: 'stun:stun.qq.com:3478' },
   { urls: 'stun:stun.miwifi.com:3478' },
-  { urls: 'stun:stun.aliyun.com:3478' },
-  { urls: 'stun:stun.synology.com:3478' },
-  { urls: 'stun:stun.syncthing.net:3478' },
+  { urls: 'stun:stun.cloudflare.com:3478' },
   { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
 ]
+
+async function fetchIceServers(): Promise<RTCIceServer[]> {
+  try {
+    const res = await fetch(`${API_URL}/turn/credentials`, { method: 'POST' })
+    const data = await res.json()
+    if (data.success && data.iceServers) {
+      return data.iceServers
+    }
+  } catch (e) {
+    console.warn('TURN credentials fetch failed, using fallback STUN:', e)
+  }
+  return FALLBACK_ICE_SERVERS
+}
 
 function generateRoomCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -126,8 +138,11 @@ export default function ScreenShare() {
     setMode('host')
     setStatus('connecting')
     setErrorMsg('')
+    setConnectStep('获取连接配置...')
 
     try {
+      const iceServers = await fetchIceServers()
+
       // Capture screen first
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { 
@@ -153,7 +168,7 @@ export default function ScreenShare() {
 
       const peer = new Peer(peerId, {
         debug: 0,
-        config: { iceServers: ICE_SERVERS }
+        config: { iceServers }
       })
 
       peer.on('open', () => {
@@ -248,7 +263,7 @@ export default function ScreenShare() {
     }
   }
 
-  const handleJoinRoom = () => {
+  const handleJoinRoom = async () => {
     const code = inputCode.trim().toUpperCase()
     if (code.length !== 6) {
       setErrorMsg('请输入6位房间代码')
@@ -258,11 +273,14 @@ export default function ScreenShare() {
     setMode('viewer')
     setStatus('connecting')
     setErrorMsg('')
+    setConnectStep('获取连接配置...')
+
+    const iceServers = await fetchIceServers()
     setConnectStep('连接信令服务器...')
 
     const peer = new Peer({
       debug: 0,
-      config: { iceServers: ICE_SERVERS }
+      config: { iceServers }
     })
 
     peer.on('open', () => {
