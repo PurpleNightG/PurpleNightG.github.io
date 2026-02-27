@@ -224,8 +224,8 @@ export default function ScreenShare() {
                   if (localCandidateId) {
                     stats.forEach((r: any) => {
                       if (r.id === localCandidateId && r.candidateType) {
-                        const type = r.candidateType === 'host' ? '局域网' : r.candidateType === 'srflx' ? 'STUN' : r.candidateType === 'relay' ? 'TURN' : r.candidateType
-                        setConnectionInfo(`${type} ${r.address}:${r.port} (${r.protocol})`)
+                        const type = r.candidateType === 'host' ? '局域网直连' : r.candidateType === 'prflx' ? 'P2P直连' : r.candidateType === 'srflx' ? 'STUN穿透' : r.candidateType === 'relay' ? 'TURN中继' : r.candidateType
+                        setConnectionInfo(`${type} · ${r.protocol.toUpperCase()}`)
                       }
                     })
                   }
@@ -340,8 +340,8 @@ export default function ScreenShare() {
               if (remoteCandidateId) {
                 stats.forEach((r: any) => {
                   if (r.id === remoteCandidateId && r.candidateType) {
-                    const type = r.candidateType === 'host' ? '局域网' : r.candidateType === 'srflx' ? 'STUN' : r.candidateType === 'relay' ? 'TURN' : r.candidateType
-                    setConnectionInfo(`${type} ${r.address}:${r.port} (${r.protocol})`)
+                    const type = r.candidateType === 'host' ? '局域网直连' : r.candidateType === 'prflx' ? 'P2P直连' : r.candidateType === 'srflx' ? 'STUN穿透' : r.candidateType === 'relay' ? 'TURN中继' : r.candidateType
+                    setConnectionInfo(`${type} · ${r.protocol.toUpperCase()}`)
                   }
                 })
               }
