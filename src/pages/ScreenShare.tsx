@@ -139,11 +139,14 @@ export default function ScreenShare() {
       if (rtcRoomRef.current) {
         const rid = rtcRoomRef.current
         if (rtcRoleRef.current === 'host') {
-          navigator.sendBeacon(`${API_URL}/room/${rid}/close`)
+          navigator.sendBeacon(
+            `${API_URL}/room/${rid}/close`,
+            new Blob([JSON.stringify({ displayName: myName.current, userType })], { type: 'application/json' })
+          )
         } else if (rtcRoleRef.current === 'viewer' && rtcUidRef.current) {
           navigator.sendBeacon(
             `${API_URL}/room/${rid}/leave`,
-            new Blob([JSON.stringify({ userId: rtcUidRef.current, displayName: myName.current })], { type: 'application/json' })
+            new Blob([JSON.stringify({ userId: rtcUidRef.current, displayName: myName.current, userType })], { type: 'application/json' })
           )
         }
       }
@@ -248,11 +251,14 @@ export default function ScreenShare() {
     if (rtcRoomRef.current) {
       const rid = rtcRoomRef.current
       if (rtcRoleRef.current === 'host') {
-        fetch(`${API_URL}/room/${rid}/close`, { method: 'POST' }).catch(() => {})
+        fetch(`${API_URL}/room/${rid}/close`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ displayName: myName.current, userType }),
+        }).catch(() => {})
       } else if (rtcRoleRef.current === 'viewer' && rtcUidRef.current) {
         fetch(`${API_URL}/room/${rid}/leave`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: rtcUidRef.current, displayName: myName.current }),
+          body: JSON.stringify({ userId: rtcUidRef.current, displayName: myName.current, userType }),
         }).catch(() => {})
       }
     }
@@ -296,7 +302,7 @@ export default function ScreenShare() {
       const hostUid = rawName.replace(/[^a-zA-Z0-9@\-_.]/g, '_').slice(0, 128) || 'host'
       const hostRes = await fetch(`${API_URL}/room/${code}/host`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ displayName: rawName, mode: 'volc' }),
+        body: JSON.stringify({ displayName: rawName, mode: 'volc', userType }),
       })
       if (hostRes.status === 409) {
         const d = await hostRes.json()
@@ -364,7 +370,7 @@ export default function ScreenShare() {
       const viewerDisplayName = myName.current || viewerUid
       const viewerRes = await fetch(`${API_URL}/room/${code}/viewer`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: viewerUid, displayName: viewerDisplayName }),
+        body: JSON.stringify({ userId: viewerUid, displayName: viewerDisplayName, userType }),
       })
       if (viewerRes.status === 409) {
         const d = await viewerRes.json()
@@ -438,7 +444,7 @@ export default function ScreenShare() {
       const rawName = myName.current || 'host'
       const hostRes = await fetch(`${API_URL}/room/${code}/host`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ displayName: rawName, mode: 'agora' }),
+        body: JSON.stringify({ displayName: rawName, mode: 'agora', userType }),
       })
       if (hostRes.status === 409) {
         const d = await hostRes.json()
@@ -516,7 +522,7 @@ export default function ScreenShare() {
       const viewerDisplayName = myName.current || agoraViewerUid
       const viewerRes = await fetch(`${API_URL}/room/${code}/viewer`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: agoraViewerUid, displayName: viewerDisplayName }),
+        body: JSON.stringify({ userId: agoraViewerUid, displayName: viewerDisplayName, userType }),
       })
       if (viewerRes.status === 409) {
         const d = await viewerRes.json()
@@ -581,7 +587,7 @@ export default function ScreenShare() {
 
   const checkAlreadyActive = async (): Promise<boolean> => {
     try {
-      const r = await fetch(`${API_URL}/room/active-check/${encodeURIComponent(myName.current)}`)
+      const r = await fetch(`${API_URL}/room/active-check/${encodeURIComponent(myName.current)}?userType=${userType || ''}`)
       const d = await r.json()
       if (d.active) {
         setErrorMsg(`你已经在房间 ${d.roomId} 中${d.role === 'host' ? '分享' : '观看'}，请先退出后再操作`)
@@ -629,7 +635,7 @@ export default function ScreenShare() {
       const rawName = myName.current || 'host'
       const hostRes = await fetch(`${API_URL}/room/${code}/host`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ displayName: rawName, mode: 'peerjs' }),
+        body: JSON.stringify({ displayName: rawName, mode: 'peerjs', userType }),
       })
       if (hostRes.status === 409) {
         const d = await hostRes.json()
@@ -785,7 +791,7 @@ export default function ScreenShare() {
     const viewerDisplayName = myName.current || viewerUid
     const viewerRes = await fetch(`${API_URL}/room/${code}/viewer`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: viewerUid, displayName: viewerDisplayName }),
+      body: JSON.stringify({ userId: viewerUid, displayName: viewerDisplayName, userType }),
     })
     if (viewerRes.status === 409) {
       const d = await viewerRes.json()

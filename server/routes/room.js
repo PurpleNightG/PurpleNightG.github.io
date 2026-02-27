@@ -136,6 +136,11 @@ router.post('/rtc-consume', async (req, res) => {
     `)
     // Add viewers column if table already existed without it
     try { await pool.execute(`ALTER TABLE share_logs ADD COLUMN viewers TEXT AFTER peak_viewers`) } catch {}
+    // Auto-close stale records from previous server runs (in-memory room data is lost on restart)
+    try {
+      const [result] = await pool.execute(`UPDATE share_logs SET ended_at = NOW() WHERE ended_at IS NULL`)
+      if (result.affectedRows > 0) console.log(`Auto-closed ${result.affectedRows} stale share log(s)`)
+    } catch {}
   } catch (e) {
     console.error('Failed to create share_logs table:', e.message)
   }
@@ -170,18 +175,25 @@ router.delete('/share-logs/:id', async (req, res) => {
 
 // ---- Room Info ----
 const rooms = new Map()
-// Active user tracking: displayName -> { role: 'host'|'viewer', roomId }
+// Active user tracking: "userType:displayName" -> { role, roomId, displayName }
 const activeUsers = new Map()
 
+// Composite key to distinguish admin vs student with same name
+function userKey(displayName, userType) {
+  return userType ? `${userType}:${displayName}` : displayName
+}
+
 function getRoom(roomId) {
-  if (!rooms.has(roomId)) rooms.set(roomId, { hostName: '', viewers: new Map(), mode: 'peerjs', peakViewers: 0, allViewerNames: new Set() })
+  if (!rooms.has(roomId)) rooms.set(roomId, { hostName: '', hostKey: '', viewers: new Map(), viewerKeys: new Map(), mode: 'peerjs', peakViewers: 0, allViewerNames: new Set() })
   return rooms.get(roomId)
 }
 
 // Check if user is already active in another role
 router.get('/active-check/:displayName', (req, res) => {
   const name = decodeURIComponent(req.params.displayName)
-  const info = activeUsers.get(name)
+  const ut = req.query.userType || ''
+  const key = userKey(name, ut)
+  const info = activeUsers.get(key)
   if (info) {
     res.json({ active: true, role: info.role, roomId: info.roomId })
   } else {
@@ -192,16 +204,18 @@ router.get('/active-check/:displayName', (req, res) => {
 // Host registers room with display name
 router.post('/:roomId/host', async (req, res) => {
   const room = getRoom(req.params.roomId)
-  const { displayName, mode } = req.body
+  const { displayName, mode, userType: ut } = req.body
   if (displayName) {
-    const existing = activeUsers.get(displayName)
+    const key = userKey(displayName, ut)
+    const existing = activeUsers.get(key)
     if (existing && existing.roomId !== req.params.roomId) {
       return res.status(409).json({ success: false, error: `你已经在房间 ${existing.roomId} 中${existing.role === 'host' ? '分享' : '观看'}，请先退出` })
     }
     room.hostName = displayName
+    room.hostKey = key
     room.mode = mode || 'peerjs'
     room.peakViewers = 0
-    activeUsers.set(displayName, { role: 'host', roomId: req.params.roomId })
+    activeUsers.set(key, { role: 'host', roomId: req.params.roomId, displayName })
     // Insert share log
     try {
       await pool.execute(
@@ -211,19 +225,22 @@ router.post('/:roomId/host', async (req, res) => {
     } catch {}
   }
   room.viewers.clear()
+  room.viewerKeys.clear()
   res.json({ success: true })
 })
 
 // Viewer joins room with display name
 router.post('/:roomId/viewer', (req, res) => {
   const room = getRoom(req.params.roomId)
-  const { userId, displayName } = req.body
+  const { userId, displayName, userType: ut } = req.body
   if (displayName) {
-    const existing = activeUsers.get(displayName)
+    const key = userKey(displayName, ut)
+    const existing = activeUsers.get(key)
     if (existing) {
       return res.status(409).json({ success: false, error: `你已经在房间 ${existing.roomId} 中${existing.role === 'host' ? '分享' : '观看'}，请先退出` })
     }
-    activeUsers.set(displayName, { role: 'viewer', roomId: req.params.roomId })
+    activeUsers.set(key, { role: 'viewer', roomId: req.params.roomId, displayName })
+    if (userId) room.viewerKeys.set(userId, key)
   }
   if (userId && displayName) room.viewers.set(userId, displayName)
   if (displayName) room.allViewerNames.add(displayName)
@@ -242,29 +259,47 @@ router.get('/:roomId', (req, res) => {
 
 // Viewer leaves
 router.post('/:roomId/leave', (req, res) => {
-  const { userId, displayName } = req.body
+  const { userId, displayName, userType: ut } = req.body
   const room = rooms.get(req.params.roomId)
-  if (room && userId) room.viewers.delete(userId)
-  // Only remove activeUser if it matches this room
+  if (room && userId) {
+    room.viewers.delete(userId)
+    const storedKey = room.viewerKeys.get(userId)
+    if (storedKey) { activeUsers.delete(storedKey); room.viewerKeys.delete(userId) }
+  }
+  // Fallback: try key from params
   if (displayName) {
-    const info = activeUsers.get(displayName)
-    if (info && info.roomId === req.params.roomId) activeUsers.delete(displayName)
+    const key = userKey(displayName, ut)
+    const info = activeUsers.get(key)
+    if (info && info.roomId === req.params.roomId) activeUsers.delete(key)
   }
   res.json({ success: true })
 })
 
 // Host closes room
 router.post('/:roomId/close', async (req, res) => {
+  const { displayName, userType: ut } = req.body || {}
   const room = rooms.get(req.params.roomId)
   if (room) {
-    if (room.hostName) activeUsers.delete(room.hostName)
-    room.viewers.forEach((viewerName) => activeUsers.delete(viewerName))
+    if (room.hostKey) activeUsers.delete(room.hostKey)
+    room.viewerKeys.forEach((vKey) => activeUsers.delete(vKey))
     // Update share log with end time, peak viewers, and viewer names
     const viewerNames = Array.from(room.allViewerNames)
     try {
       await pool.execute(
-        `UPDATE share_logs SET ended_at = NOW(), peak_viewers = ?, viewers = ? WHERE room_id = ? AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1`,
+        `UPDATE share_logs SET ended_at = NOW(), peak_viewers = ?, viewers = ? WHERE room_id = ? AND ended_at IS NULL`,
         [room.peakViewers, JSON.stringify(viewerNames), req.params.roomId]
+      )
+    } catch {}
+  } else {
+    // Room not in memory — clean up by key and room_id
+    if (displayName) {
+      const key = userKey(displayName, ut)
+      activeUsers.delete(key)
+    }
+    try {
+      await pool.execute(
+        `UPDATE share_logs SET ended_at = NOW() WHERE room_id = ? AND ended_at IS NULL`,
+        [req.params.roomId]
       )
     } catch {}
   }
