@@ -207,6 +207,11 @@ export default function ScreenShare() {
 
       client.on('user-joined', () => setViewerCount(prev => prev + 1))
       client.on('user-left', () => setViewerCount(prev => Math.max(0, prev - 1)))
+      if (latencyIntervalRef.current) clearInterval(latencyIntervalRef.current)
+      latencyIntervalRef.current = setInterval(() => {
+        const stats = client.getRTCStats()
+        if (stats && stats.RTT !== undefined) setLatency(stats.RTT)
+      }, 2000)
     } catch (err: any) {
       if (err.name === 'NotAllowedError' || err.code === 'PERMISSION_DENIED') {
         setErrorMsg('您取消了屏幕共享')
@@ -254,6 +259,11 @@ export default function ScreenShare() {
             videoRef.current.srcObject = mediaStream
             videoRef.current.play().catch(() => {})
           }
+          if (latencyIntervalRef.current) clearInterval(latencyIntervalRef.current)
+          latencyIntervalRef.current = setInterval(() => {
+            const stats = client.getRTCStats()
+            if (stats && stats.RTT !== undefined) setLatency(stats.RTT)
+          }, 2000)
         }
       })
 
@@ -380,7 +390,7 @@ export default function ScreenShare() {
                 latencyIntervalRef.current = setInterval(() => {
                   pc.getStats().then((stats) => {
                     stats.forEach((r: any) => {
-                      if (r.type === 'candidate-pair' && r.nominated && r.currentRoundTripTime !== undefined) {
+                      if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.currentRoundTripTime !== undefined) {
                         setLatency(Math.round(r.currentRoundTripTime * 1000))
                       }
                     })
@@ -517,7 +527,7 @@ export default function ScreenShare() {
             latencyIntervalRef.current = setInterval(() => {
               pc.getStats().then((stats) => {
                 stats.forEach((r: any) => {
-                  if (r.type === 'candidate-pair' && r.nominated && r.currentRoundTripTime !== undefined) {
+                  if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.currentRoundTripTime !== undefined) {
                     setLatency(Math.round(r.currentRoundTripTime * 1000))
                   }
                 })
