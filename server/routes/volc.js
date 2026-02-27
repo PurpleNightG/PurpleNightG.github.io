@@ -43,7 +43,8 @@ function buildVolcToken(appId, appKey, roomId, userId, expireSeconds = 3600) {
     ...privBufs,
   ])
 
-  const hmac = crypto.createHmac('sha256', appKey)
+  const hmacKey = Buffer.from(appKey, 'hex')
+  const hmac = crypto.createHmac('sha256', hmacKey)
   hmac.update(content)
   const sig = hmac.digest()
 
