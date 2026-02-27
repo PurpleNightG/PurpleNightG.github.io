@@ -68,7 +68,9 @@ export default function ScreenShare() {
   const [connectionInfo, setConnectionInfo] = useState<string>('')
   const [connectStep, setConnectStep] = useState('')
   const [connMode, setConnMode] = useState<'auto' | 'relay' | 'stun'>('auto')
+  const [latency, setLatency] = useState<number | null>(null)
   const myName = useRef(getCurrentUsername())
+  const latencyIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const peerRef = useRef<Peer | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -133,6 +135,11 @@ export default function ScreenShare() {
     }
     setViewerCount(0)
     setViewerNames([])
+    setLatency(null)
+    if (latencyIntervalRef.current) {
+      clearInterval(latencyIntervalRef.current)
+      latencyIntervalRef.current = null
+    }
   }, [])
 
   const handleStartHost = async () => {
@@ -231,6 +238,18 @@ export default function ScreenShare() {
                     })
                   }
                 })
+              }
+              if (pc.connectionState === 'connected') {
+                if (latencyIntervalRef.current) clearInterval(latencyIntervalRef.current)
+                latencyIntervalRef.current = setInterval(() => {
+                  pc.getStats().then((stats) => {
+                    stats.forEach((r: any) => {
+                      if (r.type === 'candidate-pair' && r.nominated && r.currentRoundTripTime !== undefined) {
+                        setLatency(Math.round(r.currentRoundTripTime * 1000))
+                      }
+                    })
+                  })
+                }, 2000)
               }
               if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
                 removeViewer()
@@ -356,6 +375,16 @@ export default function ScreenShare() {
                 })
               }
             })
+            if (latencyIntervalRef.current) clearInterval(latencyIntervalRef.current)
+            latencyIntervalRef.current = setInterval(() => {
+              pc.getStats().then((stats) => {
+                stats.forEach((r: any) => {
+                  if (r.type === 'candidate-pair' && r.nominated && r.currentRoundTripTime !== undefined) {
+                    setLatency(Math.round(r.currentRoundTripTime * 1000))
+                  }
+                })
+              })
+            }, 2000)
           }
         })
       }
@@ -581,6 +610,14 @@ export default function ScreenShare() {
                 <div className="flex items-center gap-2 bg-gray-800/60 border border-gray-700/50 rounded-lg px-3 py-1.5">
                   <span className="text-gray-500 text-xs">连接:</span>
                   <span className="text-gray-300 text-xs font-mono">{connectionInfo}</span>
+                </div>
+              )}
+              {latency !== null && (
+                <div className="flex items-center gap-1.5 bg-gray-800/60 border border-gray-700/50 rounded-lg px-3 py-1.5">
+                  <span className="text-gray-500 text-xs">延迟:</span>
+                  <span className={`text-xs font-mono font-medium ${
+                    latency < 50 ? 'text-green-400' : latency < 150 ? 'text-yellow-400' : 'text-red-400'
+                  }`}>{latency} ms</span>
                 </div>
               )}
             </>
