@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import Peer, { MediaConnection } from 'peerjs'
-import { Monitor, Users, Copy, Check, StopCircle, Play, Link2, X, Maximize2, Minimize2, Wifi, Zap, Globe, Lock, Clock, CheckCircle, XCircle, ChevronDown, ChevronUp, Search, Trash2 } from 'lucide-react'
+import { Monitor, Users, Copy, Check, StopCircle, Play, Link2, X, Maximize2, Minimize2, Wifi, Zap, Globe, Lock, Clock, CheckCircle, XCircle, ChevronDown, Search, Trash2 } from 'lucide-react'
 
 type Mode = 'select' | 'host' | 'viewer'
 type Status = 'idle' | 'connecting' | 'streaming' | 'watching' | 'error'
@@ -93,6 +93,7 @@ export default function ScreenShare() {
   const [deleteError, setDeleteError] = useState('')
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [actionLoading, setActionLoading] = useState<string>('')
+  const [expandedLogId, setExpandedLogId] = useState<number | null>(null)
   const myName = useRef(getCurrentUsername())
   const latencyIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const agoraClientRef = useRef<any>(null)
@@ -1187,6 +1188,18 @@ export default function ScreenShare() {
           .anim-slide-l { animation: slide-left 0.9s 0.7s cubic-bezier(0.16,1,0.3,1) both; }
           .anim-slide-r { animation: slide-right 0.9s 0.7s cubic-bezier(0.16,1,0.3,1) both; }
           .anim-fade-last { animation: reveal-up 0.6s 1s ease-out both; }
+          @keyframes slide-down {
+            from { opacity: 0; max-height: 0; transform: translateY(-8px); }
+            to { opacity: 1; max-height: 800px; transform: translateY(0); }
+          }
+          @keyframes slide-down-row {
+            from { opacity: 0; transform: translateY(-6px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+          .anim-slide-down-row { animation: slide-down-row 0.2s ease-out both; }
+          .collapsible { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.35s cubic-bezier(0.16,1,0.3,1), opacity 0.3s ease; opacity: 0; }
+          .collapsible.open { grid-template-rows: 1fr; opacity: 1; }
+          .collapsible > div { overflow: hidden; min-height: 0; }
         `}</style>
 
         {/* Canvas particle system + grid */}
@@ -1460,10 +1473,11 @@ export default function ScreenShare() {
                     共享记录
                     <span className="text-gray-600 text-xs font-normal">({shareLogs.length})</span>
                   </span>
-                  {logsOpen ? <ChevronUp size={16} className="text-gray-500" /> : <ChevronDown size={16} className="text-gray-500" />}
+                  <ChevronDown size={16} className={`text-gray-500 transition-transform duration-300 ${logsOpen ? 'rotate-180' : ''}`} />
                 </button>
-                {logsOpen && (
-                  <div className="px-4 pb-4">
+                <div className={`collapsible ${logsOpen ? 'open' : ''}`}>
+                  <div>
+                    <div className="px-4 pb-4">
                     <div className="flex flex-wrap items-center gap-2 mb-3">
                       <div className="relative flex-1 min-w-[140px]">
                         <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
@@ -1492,7 +1506,6 @@ export default function ScreenShare() {
                               <tr className="text-gray-500 border-b border-gray-700/50">
                                 <th className="text-left py-2 px-2 font-medium">发起人</th>
                                 <th className="text-left py-2 px-2 font-medium">方式</th>
-                                <th className="text-center py-2 px-2 font-medium">峰值观看</th>
                                 <th className="text-left py-2 px-2 font-medium">观看者</th>
                                 <th className="text-left py-2 px-2 font-medium">开始时间</th>
                                 <th className="text-left py-2 px-2 font-medium">状态</th>
@@ -1516,9 +1529,15 @@ export default function ScreenShare() {
                                   <tr className="border-b border-gray-800/50 hover:bg-gray-800/30 group">
                                     <td className="py-2 px-2 text-white font-medium">{log.host_name}</td>
                                     <td className={`py-2 px-2 font-medium ${modeColor}`}>{modeLabel}</td>
-                                    <td className="py-2 px-2 text-center text-gray-300">{log.peak_viewers}</td>
-                                    <td className="py-2 px-2 text-gray-400 max-w-[150px] truncate" title={(() => { try { return log.viewers ? JSON.parse(log.viewers).join('、') : '-' } catch { return '-' } })()}>
-                                      {(() => { try { const v: string[] = log.viewers ? JSON.parse(log.viewers) : []; return v.length > 0 ? v.join('、') : '-' } catch { return '-' } })()}
+                                    <td className="py-2 px-2 text-gray-400">
+                                      {(() => { try {
+                                        const v: string[] = log.viewers ? JSON.parse(log.viewers) : []
+                                        if (v.length === 0) return <span>-</span>
+                                        return <button onClick={() => setExpandedLogId(expandedLogId === log.id ? null : log.id)}
+                                          className="text-purple-400 hover:text-purple-300 transition-colors text-xs">
+                                          {v.length}人
+                                        </button>
+                                      } catch { return <span>-</span> } })()}
                                     </td>
                                     <td className="py-2 px-2 text-gray-400">{startTime}</td>
                                     <td className="py-2 px-2">
@@ -1534,27 +1553,49 @@ export default function ScreenShare() {
                                       </button>
                                     </td>
                                   </tr>
-                                  {deleteConfirmId === log.id && (
-                                    <tr className="border-b border-gray-800/50 bg-gray-900/40">
-                                      <td colSpan={7} className="py-2 px-2">
-                                        <div className="flex items-center gap-2">
-                                          <input type="password" value={deletePassword} onChange={e => { setDeletePassword(e.target.value); setDeleteError('') }}
-                                            onKeyDown={e => e.key === 'Enter' && handleDeleteSubmit(log.id)}
-                                            placeholder="输入删除密码" autoFocus
-                                            className="bg-gray-800/60 border border-gray-600/50 rounded px-2 py-1 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-red-500/50 w-32" />
-                                          <button onClick={() => handleDeleteSubmit(log.id)} disabled={!!deletingId}
-                                            className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                                              deletingId === log.id ? 'bg-red-600/30 text-red-300 cursor-wait' : 'bg-red-600/20 hover:bg-red-600/30 text-red-400'
-                                            }`}>
-                                            {deletingId === log.id ? '删除中...' : '确认删除'}
-                                          </button>
-                                          <button onClick={() => { setDeleteConfirmId(null); setDeletePassword(''); setDeleteError('') }}
-                                            className="px-2 py-1 rounded text-xs text-gray-500 hover:text-gray-300 transition-colors">取消</button>
-                                          {deleteError && <span className="text-red-400 text-xs">{deleteError}</span>}
+                                  <tr className={deleteConfirmId === log.id ? 'bg-gray-900/40' : ''}>
+                                    <td colSpan={6} className="p-0">
+                                      <div className={`collapsible ${deleteConfirmId === log.id ? 'open' : ''}`}>
+                                        <div>
+                                          <div className="flex items-center gap-2 px-2 py-2">
+                                            <input type="password" value={deleteConfirmId === log.id ? deletePassword : ''} onChange={e => { setDeletePassword(e.target.value); setDeleteError('') }}
+                                              onKeyDown={e => e.key === 'Enter' && handleDeleteSubmit(log.id)}
+                                              placeholder="输入删除密码" autoFocus={deleteConfirmId === log.id}
+                                              className="bg-gray-800/60 border border-gray-600/50 rounded px-2 py-1 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-red-500/50 w-32" />
+                                            <button onClick={() => handleDeleteSubmit(log.id)} disabled={!!deletingId}
+                                              className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                                                deletingId === log.id ? 'bg-red-600/30 text-red-300 cursor-wait' : 'bg-red-600/20 hover:bg-red-600/30 text-red-400'
+                                              }`}>
+                                              {deletingId === log.id ? '删除中...' : '确认删除'}
+                                            </button>
+                                            <button onClick={() => { setDeleteConfirmId(null); setDeletePassword(''); setDeleteError('') }}
+                                              className="px-2 py-1 rounded text-xs text-gray-500 hover:text-gray-300 transition-colors">取消</button>
+                                            {deleteError && <span className="text-red-400 text-xs">{deleteError}</span>}
+                                          </div>
                                         </div>
-                                      </td>
-                                    </tr>
-                                  )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                  {(() => { try {
+                                    const v: string[] = log.viewers ? JSON.parse(log.viewers) : []
+                                    if (v.length === 0) return null
+                                    return (
+                                      <tr className={expandedLogId === log.id ? 'bg-gray-900/30' : ''}>
+                                        <td colSpan={6} className="p-0">
+                                          <div className={`collapsible ${expandedLogId === log.id ? 'open' : ''}`}>
+                                            <div>
+                                              <div className="flex flex-wrap items-center gap-1.5 px-3 py-2">
+                                                <span className="text-gray-500 text-xs mr-1">观看者：</span>
+                                                {v.map((name, i) => (
+                                                  <span key={i} className="inline-block bg-purple-600/15 border border-purple-500/20 text-purple-300 text-xs px-2 py-0.5 rounded-md">{name}</span>
+                                                ))}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    )
+                                  } catch { return null } })()}
                                   </React.Fragment>
                                 )
                               })}
@@ -1575,8 +1616,9 @@ export default function ScreenShare() {
                         )}
                       </>
                     )}
+                    </div>
                   </div>
-                )}
+                </div>
               </div>
             )
           })()}
