@@ -449,7 +449,7 @@ export default function ScreenShare() {
       setConnectStep('获取屏幕共享权限...')
       const screenTrack = await AgoraRTC.createScreenVideoTrack(
         { encoderConfig: '1080p_1', optimizationMode: 'detail' },
-        'disable'
+        'auto'
       )
       const videoTrack = Array.isArray(screenTrack) ? screenTrack[0] : screenTrack
       agoraTrackRef.current = screenTrack
