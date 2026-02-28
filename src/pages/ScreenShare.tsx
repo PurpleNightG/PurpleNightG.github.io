@@ -505,6 +505,14 @@ export default function ScreenShare() {
       setConnectionInfo('声网Agora')
       setStatus('streaming')
 
+      client.on('user-left', (user: any) => {
+        const uid = String(user?.uid || '')
+        if (uid) fetch(`${API_URL}/room/${code}/leave`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: uid }),
+        }).catch(() => {})
+      })
+
       if (latencyIntervalRef.current) clearInterval(latencyIntervalRef.current)
       latencyIntervalRef.current = setInterval(async () => {
         const stats = client.getRTCStats()
@@ -539,7 +547,8 @@ export default function ScreenShare() {
       const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' })
       agoraClientRef.current = client
 
-      const agoraViewerUid = 'av' + Math.random().toString(36).slice(2, 8)
+      const agoraViewerNumUid = Math.floor(Math.random() * 900000000) + 100000000
+      const agoraViewerUid = String(agoraViewerNumUid)
 
       setConnectStep('获取连接凭证...')
       const viewerDisplayName = myName.current || agoraViewerUid
@@ -566,7 +575,7 @@ export default function ScreenShare() {
       const token: string = tokenData.token
 
       setConnectStep('连接声网服务器...')
-      await client.join(AGORA_APP_ID, code, token, null)
+      await client.join(AGORA_APP_ID, code, token, agoraViewerNumUid)
 
       setConnectStep('等待主播视频流...')
 
@@ -697,6 +706,7 @@ export default function ScreenShare() {
       // When a viewer connects via data connection, call them back with the stream
       peer.on('connection', (dataConn) => {
         let viewerName = ''
+        let viewerUserId = ''
         dataConn.on('open', () => {
           // Send host name to viewer
           dataConn.send({ type: 'host-info', name: myName.current })
@@ -704,6 +714,7 @@ export default function ScreenShare() {
         dataConn.on('data', (data: any) => {
           if (data?.type === 'viewer-info' && data.name) {
             viewerName = data.name
+            if (data.userId) viewerUserId = data.userId
             setViewerNames(prev => [...prev, viewerName])
           }
         })
@@ -720,6 +731,10 @@ export default function ScreenShare() {
             connectionsRef.current = connectionsRef.current.filter(c => c !== call)
             setViewerCount(prev => Math.max(0, prev - 1))
             if (viewerName) setViewerNames(prev => { const i = prev.indexOf(viewerName); return i >= 0 ? [...prev.slice(0, i), ...prev.slice(i + 1)] : prev })
+            if (viewerUserId) fetch(`${API_URL}/room/${code}/leave`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: viewerUserId, displayName: viewerName }),
+            }).catch(() => {})
           }
           
           // Capture ICE connection info (use addEventListener to avoid overwriting PeerJS handlers)
@@ -860,7 +875,7 @@ export default function ScreenShare() {
       dataConn.on('open', () => {
         setConnectStep('等待主播回传视频流...')
         // Send viewer name to host
-        dataConn.send({ type: 'viewer-info', name: myName.current })
+        dataConn.send({ type: 'viewer-info', name: myName.current, userId: viewerUid })
       })
 
       dataConn.on('data', (data: any) => {
