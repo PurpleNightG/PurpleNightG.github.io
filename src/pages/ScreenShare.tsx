@@ -311,9 +311,12 @@ export default function ScreenShare() {
       const engine = VERTC.createEngine(VOLC_APP_ID)
       volcEngineRef.current = engine
 
-      setConnectStep('连接火山引擎服务器...')
+      setConnectStep('获取屏幕共享权限...')
       const rawName = myName.current || 'host'
       const hostUid = rawName.replace(/[^a-zA-Z0-9@\-_.]/g, '_').slice(0, 128) || 'host'
+      await engine.startScreenCapture({ enableAudio: true })
+
+      setConnectStep('连接火山引擎服务器...')
       const hostRes = await fetch(`${API_URL}/room/${code}/host`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ displayName: rawName, mode: 'volc', userType }),
@@ -329,9 +332,6 @@ export default function ScreenShare() {
       await engine.joinRoom(volcToken, code, { userId: hostUid }, {
         isAutoPublish: false, isAutoSubscribeAudio: false, isAutoSubscribeVideo: false,
       })
-
-      setConnectStep('获取屏幕共享权限...')
-      await engine.startScreenCapture()
 
       setConnectStep('发布屏幕流...')
       await engine.publishScreen(MediaType.AUDIO_AND_VIDEO)
