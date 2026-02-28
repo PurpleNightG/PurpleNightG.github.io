@@ -174,6 +174,7 @@ router.delete('/share-logs/:id', async (req, res) => {
 const rooms = new Map()
 // Active user tracking: "userType:displayName" -> { role, roomId, displayName, registeredAt }
 const activeUsers = new Map()
+const killedRooms = new Set() // rooms force-closed by admin
 const ACTIVE_USER_TTL = 2 * 60 * 60 * 1000 // 2 hours
 
 // Composite key to distinguish admin vs student with same name
@@ -271,6 +272,7 @@ router.post('/admin-close/:roomId', async (req, res) => {
       )
     } catch {}
   }
+  killedRooms.add(req.params.roomId)
   res.json({ success: true })
 })
 
@@ -284,6 +286,7 @@ router.post('/:roomId/host', async (req, res) => {
     if (existing && existing.roomId !== req.params.roomId) {
       return res.status(409).json({ success: false, error: `你已经在房间 ${existing.roomId} 中${existing.role === 'host' ? '分享' : '观看'}，请先退出` })
     }
+    killedRooms.delete(req.params.roomId)
     room.hostName = displayName
     room.hostKey = key
     room.mode = mode || 'peerjs'
@@ -328,6 +331,9 @@ router.post('/:roomId/viewer', (req, res) => {
 
 // Get room info (host name + viewer list)
 router.get('/:roomId', (req, res) => {
+  if (killedRooms.has(req.params.roomId)) {
+    return res.json({ hostName: '', viewers: [], killed: true })
+  }
   const room = rooms.get(req.params.roomId)
   if (!room) return res.json({ hostName: '', viewers: [] })
   res.json({ hostName: room.hostName, viewers: Array.from(room.viewers.values()) })

@@ -348,6 +348,7 @@ export default function ScreenShare() {
         try {
           const r = await fetch(`${API_URL}/room/${code}`)
           const d = await r.json()
+          if (d.killed) { handleStop(); return }
           if (d.viewers) { setViewerNames(d.viewers); setViewerCount(d.viewers.length) }
         } catch {}
       }, 3000)
@@ -507,6 +508,7 @@ export default function ScreenShare() {
         try {
           const r = await fetch(`${API_URL}/room/${code}`)
           const d = await r.json()
+          if (d.killed) { handleStop(); return }
           if (d.viewers) { setViewerNames(d.viewers); setViewerCount(d.viewers.length) }
         } catch {}
       }, 3000)
@@ -687,6 +689,15 @@ export default function ScreenShare() {
           videoRef.current.muted = true
           videoRef.current.play().catch(() => {})
         }
+        // Poll for admin force-close
+        if (latencyIntervalRef.current) clearInterval(latencyIntervalRef.current)
+        latencyIntervalRef.current = setInterval(async () => {
+          try {
+            const r = await fetch(`${API_URL}/room/${code}`)
+            const d = await r.json()
+            if (d.killed) handleStop()
+          } catch {}
+        }, 3000)
       })
 
       // When a viewer connects via data connection, call them back with the stream
@@ -741,7 +752,7 @@ export default function ScreenShare() {
               }
               if (pc.connectionState === 'connected') {
                 if (latencyIntervalRef.current) clearInterval(latencyIntervalRef.current)
-                latencyIntervalRef.current = setInterval(() => {
+                latencyIntervalRef.current = setInterval(async () => {
                   pc.getStats().then((stats) => {
                     stats.forEach((r: any) => {
                       if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.currentRoundTripTime !== undefined) {
@@ -749,6 +760,11 @@ export default function ScreenShare() {
                       }
                     })
                   })
+                  try {
+                    const kr = await fetch(`${API_URL}/room/${code}`)
+                    const kd = await kr.json()
+                    if (kd.killed) handleStop()
+                  } catch {}
                 }, 2000)
               }
               if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
