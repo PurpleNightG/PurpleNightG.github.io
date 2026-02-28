@@ -336,8 +336,6 @@ export default function ScreenShare() {
       setConnectStep('发布屏幕流...')
       await engine.publishScreen(MediaType.VIDEO)
 
-      engine.on(VERTC.events.onUserJoined, () => setViewerCount(prev => prev + 1))
-      engine.on(VERTC.events.onUserLeave, () => setViewerCount(prev => Math.max(0, prev - 1)))
       engine.on(VERTC.events.onLocalStreamStats, (stats: any) => {
         const rtt = stats?.videoStats?.rtt ?? stats?.audioStats?.rtt
         if (rtt !== undefined) setLatency(rtt)
@@ -500,8 +498,6 @@ export default function ScreenShare() {
       setConnectionInfo('声网Agora')
       setStatus('streaming')
 
-      client.on('user-joined', () => setViewerCount(prev => prev + 1))
-      client.on('user-left', () => setViewerCount(prev => Math.max(0, prev - 1)))
       if (latencyIntervalRef.current) clearInterval(latencyIntervalRef.current)
       latencyIntervalRef.current = setInterval(async () => {
         const stats = client.getRTCStats()
