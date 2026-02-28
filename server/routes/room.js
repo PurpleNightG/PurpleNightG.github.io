@@ -136,11 +136,8 @@ router.post('/rtc-consume', async (req, res) => {
     `)
     // Add viewers column if table already existed without it
     try { await pool.execute(`ALTER TABLE share_logs ADD COLUMN viewers TEXT AFTER peak_viewers`) } catch {}
-    // Auto-close stale records from previous server runs (in-memory room data is lost on restart)
-    try {
-      const [result] = await pool.execute(`UPDATE share_logs SET ended_at = NOW() WHERE ended_at IS NULL`)
-      if (result.affectedRows > 0) console.log(`Auto-closed ${result.affectedRows} stale share log(s)`)
-    } catch {}
+    // Note: we no longer auto-close stale records on startup because RTC connections
+    // (Volcengine/Agora) may still be alive. Admin can manually close via active-rooms panel.
   } catch (e) {
     console.error('Failed to create share_logs table:', e.message)
   }
@@ -217,10 +214,13 @@ router.post('/force-leave', (req, res) => {
 })
 
 // List all active rooms (admin only)
-router.get('/active-rooms', (req, res) => {
+router.get('/active-rooms', async (req, res) => {
   const list = []
+  const seenRoomIds = new Set()
+  // In-memory rooms (live data)
   for (const [roomId, room] of rooms.entries()) {
     if (!room.hostName) continue
+    seenRoomIds.add(roomId)
     list.push({
       roomId,
       hostName: room.hostName,
@@ -229,6 +229,22 @@ router.get('/active-rooms', (req, res) => {
       viewers: Array.from(room.viewers.values()),
     })
   }
+  // DB fallback: share_logs with ended_at IS NULL not already in memory
+  try {
+    const [rows] = await pool.execute(
+      `SELECT room_id, host_name, mode FROM share_logs WHERE ended_at IS NULL`
+    )
+    for (const row of rows) {
+      if (seenRoomIds.has(row.room_id)) continue
+      list.push({
+        roomId: row.room_id,
+        hostName: row.host_name,
+        mode: row.mode,
+        viewerCount: 0,
+        viewers: [],
+      })
+    }
+  } catch {}
   res.json({ rooms: list })
 })
 
