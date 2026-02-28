@@ -334,7 +334,7 @@ export default function ScreenShare() {
       await engine.startScreenCapture()
 
       setConnectStep('发布屏幕流...')
-      await engine.publishScreen(MediaType.VIDEO)
+      await engine.publishScreen(MediaType.AUDIO_AND_VIDEO)
 
       engine.on(VERTC.events.onLocalStreamStats, (stats: any) => {
         const rtt = stats?.videoStats?.rtt ?? stats?.audioStats?.rtt
@@ -406,7 +406,7 @@ export default function ScreenShare() {
       setConnectStep('等待主播视频流...')
 
       engine.on(VERTC.events.onUserPublishScreen, async ({ userId }: { userId: string }) => {
-        await engine.subscribeScreen(userId, MediaType.VIDEO)
+        await engine.subscribeScreen(userId, MediaType.AUDIO_AND_VIDEO)
         volcHostUserIdRef.current = userId
         setConnectionInfo('火山引擎 RTC')
         setActiveStreamMode('volc')
