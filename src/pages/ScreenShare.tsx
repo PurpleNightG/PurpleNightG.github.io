@@ -348,7 +348,7 @@ export default function ScreenShare() {
         try {
           const r = await fetch(`${API_URL}/room/${code}`)
           const d = await r.json()
-          if (d.killed) { handleStop(); return }
+          if (d.killed) { cleanup(); setErrorMsg(`已被管理员 ${d.killedBy || '管理员'} 强制关闭`); setStatus('error'); return }
           if (d.viewers) { setViewerNames(d.viewers); setViewerCount(d.viewers.length) }
         } catch {}
       }, 3000)
@@ -508,7 +508,7 @@ export default function ScreenShare() {
         try {
           const r = await fetch(`${API_URL}/room/${code}`)
           const d = await r.json()
-          if (d.killed) { handleStop(); return }
+          if (d.killed) { cleanup(); setErrorMsg(`已被管理员 ${d.killedBy || '管理员'} 强制关闭`); setStatus('error'); return }
           if (d.viewers) { setViewerNames(d.viewers); setViewerCount(d.viewers.length) }
         } catch {}
       }, 3000)
@@ -695,7 +695,7 @@ export default function ScreenShare() {
           try {
             const r = await fetch(`${API_URL}/room/${code}`)
             const d = await r.json()
-            if (d.killed) handleStop()
+            if (d.killed) { cleanup(); setErrorMsg(`已被管理员 ${d.killedBy || '管理员'} 强制关闭`); setStatus('error') }
           } catch {}
         }, 3000)
       })
@@ -763,7 +763,7 @@ export default function ScreenShare() {
                   try {
                     const kr = await fetch(`${API_URL}/room/${code}`)
                     const kd = await kr.json()
-                    if (kd.killed) handleStop()
+                    if (kd.killed) { cleanup(); setErrorMsg(`已被管理员 ${kd.killedBy || '管理员'} 强制关闭`); setStatus('error') }
                   } catch {}
                 }, 2000)
               }
@@ -1402,7 +1402,11 @@ export default function ScreenShare() {
                         onClick={async () => {
                           setClosingRoomId(room.roomId)
                           try {
-                            await fetch(`${API_URL}/room/admin-close/${room.roomId}`, { method: 'POST' })
+                            await fetch(`${API_URL}/room/admin-close/${room.roomId}`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ adminName: getCurrentUsername() }),
+                            })
                             setActiveRooms(prev => prev.filter(r => r.roomId !== room.roomId))
                           } catch {}
                           setClosingRoomId(null)
