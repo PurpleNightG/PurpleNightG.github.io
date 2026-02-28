@@ -294,7 +294,11 @@ export default function ScreenShare() {
       const code = generateRoomCode()
       setRoomCode(code)
 
-      const { default: VERTC, MediaType } = await import('@volcengine/rtc')
+      let volcModule
+      try { volcModule = await import('@volcengine/rtc') } catch {
+        window.location.reload(); return
+      }
+      const { default: VERTC, MediaType } = volcModule
       const engine = VERTC.createEngine(VOLC_APP_ID)
       volcEngineRef.current = engine
 
@@ -363,7 +367,11 @@ export default function ScreenShare() {
     try {
       const viewerUid = 'v' + Math.random().toString(36).slice(2, 8)
 
-      const { default: VERTC, MediaType } = await import('@volcengine/rtc')
+      let volcModule
+      try { volcModule = await import('@volcengine/rtc') } catch {
+        window.location.reload(); return
+      }
+      const { default: VERTC, MediaType } = volcModule
       const engine = VERTC.createEngine(VOLC_APP_ID)
       volcEngineRef.current = engine
 
