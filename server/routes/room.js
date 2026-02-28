@@ -279,7 +279,10 @@ router.post('/:roomId/host', async (req, res) => {
         `INSERT INTO share_logs (room_id, host_name, mode) VALUES (?, ?, ?)`,
         [req.params.roomId, displayName, room.mode]
       )
-    } catch {}
+      console.log(`[ShareLog] Inserted: room=${req.params.roomId} host=${displayName} mode=${room.mode}`)
+    } catch (e) {
+      console.error(`[ShareLog] INSERT failed:`, e.message)
+    }
   }
   room.viewers.clear()
   room.viewerKeys.clear()
