@@ -96,6 +96,7 @@ export default function ScreenShare() {
   const [expandedLogId, setExpandedLogId] = useState<number | null>(null)
   const [activeRooms, setActiveRooms] = useState<{ roomId: string; hostName: string; mode: string; viewerCount: number; viewers: string[] }[]>([])
   const [closingRoomId, setClosingRoomId] = useState<string | null>(null)
+  const [activeRoomsOpen, setActiveRoomsOpen] = useState(false)
   const myName = useRef(getCurrentUsername())
   const latencyIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const agoraClientRef = useRef<any>(null)
@@ -609,18 +610,8 @@ export default function ScreenShare() {
       const r = await fetch(`${API_URL}/room/active-check/${encodeURIComponent(myName.current)}?userType=${userType || ''}`)
       const d = await r.json()
       if (d.active) {
-        // Auto force-leave stale session and retry
-        await fetch(`${API_URL}/room/force-leave`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ displayName: myName.current, userType }),
-        })
-        // Verify cleared
-        const r2 = await fetch(`${API_URL}/room/active-check/${encodeURIComponent(myName.current)}?userType=${userType || ''}`)
-        const d2 = await r2.json()
-        if (d2.active) {
-          setErrorMsg(`你已经在房间 ${d2.roomId} 中${d2.role === 'host' ? '分享' : '观看'}，请先退出后再操作`)
-          return true
-        }
+        setErrorMsg(`你已经在房间 ${d.roomId} 中${d.role === 'host' ? '分享' : '观看'}，请先退出后再操作`)
+        return true
       }
     } catch {}
     return false
@@ -1169,6 +1160,77 @@ export default function ScreenShare() {
   if (mode === 'select') {
     return (
       <div className="min-h-[calc(100vh-8rem)] flex items-center justify-center p-6 relative overflow-hidden">
+        {/* Admin: floating active rooms sidebar */}
+        {userType === 'admin' && activeRooms.length > 0 && (
+          <div className="fixed left-0 top-1/2 -translate-y-1/2 z-50 flex items-stretch">
+            <div
+              className={`transition-all duration-300 ease-in-out ${activeRoomsOpen ? 'w-72 opacity-100' : 'w-0 opacity-0'} overflow-hidden`}
+            >
+              <div className="bg-gray-900/95 backdrop-blur-xl border border-purple-500/30 border-r-0 rounded-r-none shadow-[0_0_40px_rgba(147,51,234,0.15)] p-4 min-w-[18rem] h-full">
+                <h3 className="text-purple-400 text-sm font-semibold mb-3 flex items-center gap-2">
+                  <Wifi size={16} />
+                  正在共享的房间
+                </h3>
+                <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+                  {activeRooms.map((room) => {
+                    const modeLabel = room.mode === 'agora' ? '声网' : room.mode === 'volc' ? '火山' : 'P2P'
+                    const modeColor = room.mode === 'agora' ? 'text-blue-400' : room.mode === 'volc' ? 'text-orange-400' : 'text-emerald-400'
+                    return (
+                      <div key={room.roomId} className="bg-gray-800/70 rounded-lg p-3 space-y-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse flex-shrink-0" />
+                          <span className="text-white text-sm font-medium truncate">{room.hostName}</span>
+                          <span className={`text-xs font-medium flex-shrink-0 ${modeColor}`}>{modeLabel}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 text-xs text-gray-500">
+                            <span>{room.roomId}</span>
+                            {room.viewerCount > 0 && <span>{room.viewerCount}人观看</span>}
+                          </div>
+                          <button
+                            onClick={async () => {
+                              setClosingRoomId(room.roomId)
+                              try {
+                                await fetch(`${API_URL}/room/admin-close/${room.roomId}`, {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ adminName: getCurrentUsername() }),
+                                })
+                                setActiveRooms(prev => prev.filter(r => r.roomId !== room.roomId))
+                              } catch {}
+                              setClosingRoomId(null)
+                            }}
+                            disabled={!!closingRoomId}
+                            className={`flex items-center gap-1 px-2 py-1 border rounded-md text-xs font-medium transition-colors ${
+                              closingRoomId === room.roomId
+                                ? 'bg-red-600/30 border-red-500/40 text-red-300 cursor-wait'
+                                : closingRoomId ? 'opacity-50 cursor-not-allowed bg-red-600/20 border-red-500/30 text-red-400'
+                                : 'bg-red-600/20 hover:bg-red-600/30 border-red-500/30 text-red-400'
+                            }`}>
+                            <StopCircle size={12} /> {closingRoomId === room.roomId ? '关闭中' : '强制关闭'}
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => setActiveRoomsOpen(prev => !prev)}
+              className={`flex-shrink-0 flex items-center justify-center gap-1.5 px-2 py-3 rounded-r-xl border border-purple-500/30 border-l-0 bg-gray-900/95 text-purple-400 hover:bg-gray-800/95 transition-all duration-300`}
+              style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+              </span>
+              <span className="text-xs font-medium">{activeRooms.length} 个房间</span>
+              <ChevronDown size={12} className={`transition-transform duration-300 ${activeRoomsOpen ? 'rotate-90' : '-rotate-90'}`} />
+            </button>
+          </div>
+        )}
+
         {/* Animated CSS */}
         <style>{`
           @keyframes light-sweep {
@@ -1372,57 +1434,6 @@ export default function ScreenShare() {
                     </div>
                   </div>
                 ))}
-              </div>
-            </div>
-          )}
-
-          {/* Admin: active rooms */}
-          {userType === 'admin' && activeRooms.length > 0 && (
-            <div className="mb-6 bg-purple-500/5 border border-purple-500/20 rounded-xl p-4 anim-reveal-2">
-              <h3 className="text-purple-400 text-sm font-semibold mb-3 flex items-center gap-2">
-                <Wifi size={16} />
-                正在共享的房间 ({activeRooms.length})
-              </h3>
-              <div className="space-y-2">
-                {activeRooms.map((room) => {
-                  const modeLabel = room.mode === 'agora' ? '声网' : room.mode === 'volc' ? '火山引擎' : 'WebRTC'
-                  const modeColor = room.mode === 'agora' ? 'text-blue-400' : room.mode === 'volc' ? 'text-orange-400' : 'text-emerald-400'
-                  return (
-                    <div key={room.roomId} className="flex items-center justify-between bg-gray-800/60 rounded-lg px-4 py-2.5">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="inline-flex items-center gap-1 text-red-400 text-xs"><span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" /></span>
-                        <span className="text-white text-sm font-medium truncate">{room.hostName}</span>
-                        <span className={`text-xs font-medium ${modeColor}`}>{modeLabel}</span>
-                        <span className="text-gray-500 text-xs">房间 {room.roomId}</span>
-                        {room.viewerCount > 0 && (
-                          <span className="text-gray-400 text-xs">{room.viewerCount}人观看</span>
-                        )}
-                      </div>
-                      <button
-                        onClick={async () => {
-                          setClosingRoomId(room.roomId)
-                          try {
-                            await fetch(`${API_URL}/room/admin-close/${room.roomId}`, {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ adminName: getCurrentUsername() }),
-                            })
-                            setActiveRooms(prev => prev.filter(r => r.roomId !== room.roomId))
-                          } catch {}
-                          setClosingRoomId(null)
-                        }}
-                        disabled={!!closingRoomId}
-                        className={`flex items-center gap-1 px-3 py-1 border rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-                          closingRoomId === room.roomId
-                            ? 'bg-red-600/30 border-red-500/40 text-red-300 cursor-wait'
-                            : closingRoomId ? 'opacity-50 cursor-not-allowed bg-red-600/20 border-red-500/30 text-red-400'
-                            : 'bg-red-600/20 hover:bg-red-600/30 border-red-500/30 text-red-400'
-                        }`}>
-                        <StopCircle size={14} /> {closingRoomId === room.roomId ? '关闭中...' : '强制关闭'}
-                      </button>
-                    </div>
-                  )
-                })}
               </div>
             </div>
           )}
