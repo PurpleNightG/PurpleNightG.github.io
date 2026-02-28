@@ -94,6 +94,8 @@ export default function ScreenShare() {
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [actionLoading, setActionLoading] = useState<string>('')
   const [expandedLogId, setExpandedLogId] = useState<number | null>(null)
+  const [activeRooms, setActiveRooms] = useState<{ roomId: string; hostName: string; mode: string; viewerCount: number; viewers: string[] }[]>([])
+  const [closingRoomId, setClosingRoomId] = useState<string | null>(null)
   const myName = useRef(getCurrentUsername())
   const latencyIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const agoraClientRef = useRef<any>(null)
@@ -202,6 +204,9 @@ export default function ScreenShare() {
           const lr = await fetch(`${API_URL}/room/share-logs`)
           const ld = await lr.json()
           setShareLogs(ld.logs || [])
+          const ar = await fetch(`${API_URL}/room/active-rooms`)
+          const ad = await ar.json()
+          setActiveRooms(ad.rooms || [])
         }
       } catch {}
     }
@@ -251,17 +256,20 @@ export default function ScreenShare() {
     }
     if (rtcRoomRef.current) {
       const rid = rtcRoomRef.current
-      if (rtcRoleRef.current === 'host') {
-        fetch(`${API_URL}/room/${rid}/close`, {
+      const endpoint = rtcRoleRef.current === 'host' ? 'close' : 'leave'
+      const payload = rtcRoleRef.current === 'host'
+        ? { displayName: myName.current, userType }
+        : { userId: rtcUidRef.current, displayName: myName.current, userType }
+      // Try close/leave, fallback to force-leave
+      fetch(`${API_URL}/room/${rid}/${endpoint}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).catch(() =>
+        fetch(`${API_URL}/room/force-leave`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ displayName: myName.current, userType }),
         }).catch(() => {})
-      } else if (rtcRoleRef.current === 'viewer' && rtcUidRef.current) {
-        fetch(`${API_URL}/room/${rid}/leave`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: rtcUidRef.current, displayName: myName.current, userType }),
-        }).catch(() => {})
-      }
+      )
     }
     volcHostUserIdRef.current = ''
     rtcRoomRef.current = ''
@@ -599,8 +607,18 @@ export default function ScreenShare() {
       const r = await fetch(`${API_URL}/room/active-check/${encodeURIComponent(myName.current)}?userType=${userType || ''}`)
       const d = await r.json()
       if (d.active) {
-        setErrorMsg(`你已经在房间 ${d.roomId} 中${d.role === 'host' ? '分享' : '观看'}，请先退出后再操作`)
-        return true
+        // Auto force-leave stale session and retry
+        await fetch(`${API_URL}/room/force-leave`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ displayName: myName.current, userType }),
+        })
+        // Verify cleared
+        const r2 = await fetch(`${API_URL}/room/active-check/${encodeURIComponent(myName.current)}?userType=${userType || ''}`)
+        const d2 = await r2.json()
+        if (d2.active) {
+          setErrorMsg(`你已经在房间 ${d2.roomId} 中${d2.role === 'host' ? '分享' : '观看'}，请先退出后再操作`)
+          return true
+        }
       }
     } catch {}
     return false
@@ -1338,6 +1356,53 @@ export default function ScreenShare() {
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Admin: active rooms */}
+          {userType === 'admin' && activeRooms.length > 0 && (
+            <div className="mb-6 bg-purple-500/5 border border-purple-500/20 rounded-xl p-4 anim-reveal-2">
+              <h3 className="text-purple-400 text-sm font-semibold mb-3 flex items-center gap-2">
+                <Wifi size={16} />
+                正在共享的房间 ({activeRooms.length})
+              </h3>
+              <div className="space-y-2">
+                {activeRooms.map((room) => {
+                  const modeLabel = room.mode === 'agora' ? '声网' : room.mode === 'volc' ? '火山引擎' : 'WebRTC'
+                  const modeColor = room.mode === 'agora' ? 'text-blue-400' : room.mode === 'volc' ? 'text-orange-400' : 'text-emerald-400'
+                  return (
+                    <div key={room.roomId} className="flex items-center justify-between bg-gray-800/60 rounded-lg px-4 py-2.5">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="inline-flex items-center gap-1 text-red-400 text-xs"><span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" /></span>
+                        <span className="text-white text-sm font-medium truncate">{room.hostName}</span>
+                        <span className={`text-xs font-medium ${modeColor}`}>{modeLabel}</span>
+                        <span className="text-gray-500 text-xs">房间 {room.roomId}</span>
+                        {room.viewerCount > 0 && (
+                          <span className="text-gray-400 text-xs">{room.viewerCount}人观看</span>
+                        )}
+                      </div>
+                      <button
+                        onClick={async () => {
+                          setClosingRoomId(room.roomId)
+                          try {
+                            await fetch(`${API_URL}/room/admin-close/${room.roomId}`, { method: 'POST' })
+                            setActiveRooms(prev => prev.filter(r => r.roomId !== room.roomId))
+                          } catch {}
+                          setClosingRoomId(null)
+                        }}
+                        disabled={!!closingRoomId}
+                        className={`flex items-center gap-1 px-3 py-1 border rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                          closingRoomId === room.roomId
+                            ? 'bg-red-600/30 border-red-500/40 text-red-300 cursor-wait'
+                            : closingRoomId ? 'opacity-50 cursor-not-allowed bg-red-600/20 border-red-500/30 text-red-400'
+                            : 'bg-red-600/20 hover:bg-red-600/30 border-red-500/30 text-red-400'
+                        }`}>
+                        <StopCircle size={14} /> {closingRoomId === room.roomId ? '关闭中...' : '强制关闭'}
+                      </button>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )}

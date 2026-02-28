@@ -175,8 +175,9 @@ router.delete('/share-logs/:id', async (req, res) => {
 
 // ---- Room Info ----
 const rooms = new Map()
-// Active user tracking: "userType:displayName" -> { role, roomId, displayName }
+// Active user tracking: "userType:displayName" -> { role, roomId, displayName, registeredAt }
 const activeUsers = new Map()
+const ACTIVE_USER_TTL = 2 * 60 * 60 * 1000 // 2 hours
 
 // Composite key to distinguish admin vs student with same name
 function userKey(displayName, userType) {
@@ -195,10 +196,66 @@ router.get('/active-check/:displayName', (req, res) => {
   const key = userKey(name, ut)
   const info = activeUsers.get(key)
   if (info) {
+    // Auto-expire stale entries
+    if (Date.now() - info.registeredAt > ACTIVE_USER_TTL) {
+      activeUsers.delete(key)
+      return res.json({ active: false })
+    }
     res.json({ active: true, role: info.role, roomId: info.roomId })
   } else {
     res.json({ active: false })
   }
+})
+
+// Force-leave: clear stale active status
+router.post('/force-leave', (req, res) => {
+  const { displayName, userType: ut } = req.body || {}
+  if (!displayName) return res.status(400).json({ success: false })
+  const key = userKey(displayName, ut)
+  activeUsers.delete(key)
+  res.json({ success: true })
+})
+
+// List all active rooms (admin only)
+router.get('/active-rooms', (req, res) => {
+  const list = []
+  for (const [roomId, room] of rooms.entries()) {
+    if (!room.hostName) continue
+    list.push({
+      roomId,
+      hostName: room.hostName,
+      mode: room.mode,
+      viewerCount: room.viewers.size,
+      viewers: Array.from(room.viewers.values()),
+    })
+  }
+  res.json({ rooms: list })
+})
+
+// Admin force-close a room
+router.post('/admin-close/:roomId', async (req, res) => {
+  const room = rooms.get(req.params.roomId)
+  if (room) {
+    if (room.hostKey) activeUsers.delete(room.hostKey)
+    room.viewerKeys.forEach((vKey) => activeUsers.delete(vKey))
+    const viewerNames = Array.from(room.allViewerNames)
+    try {
+      await pool.execute(
+        `UPDATE share_logs SET ended_at = NOW(), peak_viewers = ?, viewers = ? WHERE room_id = ? AND ended_at IS NULL`,
+        [room.peakViewers, JSON.stringify(viewerNames), req.params.roomId]
+      )
+    } catch {}
+    rooms.delete(req.params.roomId)
+  } else {
+    // Room not in memory, clean DB
+    try {
+      await pool.execute(
+        `UPDATE share_logs SET ended_at = NOW() WHERE room_id = ? AND ended_at IS NULL`,
+        [req.params.roomId]
+      )
+    } catch {}
+  }
+  res.json({ success: true })
 })
 
 // Host registers room with display name
@@ -215,7 +272,7 @@ router.post('/:roomId/host', async (req, res) => {
     room.hostKey = key
     room.mode = mode || 'peerjs'
     room.peakViewers = 0
-    activeUsers.set(key, { role: 'host', roomId: req.params.roomId, displayName })
+    activeUsers.set(key, { role: 'host', roomId: req.params.roomId, displayName, registeredAt: Date.now() })
     // Insert share log
     try {
       await pool.execute(
@@ -239,7 +296,7 @@ router.post('/:roomId/viewer', (req, res) => {
     if (existing) {
       return res.status(409).json({ success: false, error: `你已经在房间 ${existing.roomId} 中${existing.role === 'host' ? '分享' : '观看'}，请先退出` })
     }
-    activeUsers.set(key, { role: 'viewer', roomId: req.params.roomId, displayName })
+    activeUsers.set(key, { role: 'viewer', roomId: req.params.roomId, displayName, registeredAt: Date.now() })
     if (userId) room.viewerKeys.set(userId, key)
   }
   if (userId && displayName) room.viewers.set(userId, displayName)
