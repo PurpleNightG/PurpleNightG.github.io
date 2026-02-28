@@ -340,6 +340,13 @@ export default function ScreenShare() {
         const rtt = stats?.videoStats?.rtt ?? stats?.audioStats?.rtt
         if (rtt !== undefined) setLatency(rtt)
       })
+      engine.on(VERTC.events.onUserLeave, (evt: any) => {
+        const uid = evt.userId || evt.uid || evt.userInfo?.userId || ''
+        if (uid) fetch(`${API_URL}/room/${code}/leave`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: uid }),
+        }).catch(() => {})
+      })
 
       // Poll viewer names from backend (like WebRTC data channel)
       if (latencyIntervalRef.current) clearInterval(latencyIntervalRef.current)
