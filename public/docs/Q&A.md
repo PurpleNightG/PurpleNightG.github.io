@@ -35,7 +35,7 @@
 
 ## 加入他人房间/创建房间没反应
 
-这个问题是由于 **pakchunk99-Mod_PlayerLimitEditor.pak** 模组造成的，在之前的版本中出现过此类问题，现在作者已经修复了此类Bug。你可以去NexusMods下载最新版本的模组。
+<!-- 这个问题是由于 **pakchunk99-Mod_PlayerLimitEditor.pak** 模组造成的，在之前的版本中出现过此类问题，现在作者已经修复了此类Bug。你可以去NexusMods下载最新版本的模组。
 
 此外，如果你还是无法创建房间，那么可能是由于运营商拦截，请尝试以下方法：
 > 开始之前，请确保加速器正在加速Steam，保证Steam稳定在线。
@@ -71,4 +71,20 @@
 
 4. 点击**确定**，程序将会启动游戏，待游戏启动后，程序会自动启动Steam。之后进入游戏操作同上个小节**加入他人房间/创建房间没反应一致**。
 
-> 如果你需要更换间隔时间，请进入程序所在文件夹内，删除生成的 **quick_launch_config.json** 文件，然后重新启动程序即可。
+> 如果你需要更换间隔时间，请进入程序所在文件夹内，删除生成的 **quick_launch_config.json** 文件，然后重新启动程序即可。 -->
+
+1. 下载并安装UU加速器。
+
+<a href="https://uu.163.com/" target="_blank" rel="noopener noreferrer" class="doc-card">
+  <div class="doc-card-title">UU加速器</div>
+  <div class="doc-card-desc">官网直达链接</div>
+</a>
+
+2. 打开并加速**Steam商店**。
+
+3. 找到加速页面的 **Steam登录修复**。点击即可完成修复。
+![登录修复](https://s41.ax1x.com/2026/03/22/peudQ3j.png)
+
+<div class="note info">
+移动/广电宽带因国际出口限制严格，带宽小，造成无法与EPIC身份验证服务器连接所致。除以上方法外，如果手机有第二章非移动/广电的卡，可尝试流量连接电脑重启Steam重启游戏以解决此问题。
+</div>
