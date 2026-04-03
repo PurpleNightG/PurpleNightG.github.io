@@ -9,9 +9,11 @@ router.get('/', async (req, res) => {
     const [rows] = await pool.query(`
       SELECT 
         qa.*,
-        COALESCE(a.name, qa.source_admin_name) as source_admin_name
+        COALESCE(a.name, qa.source_admin_name) as source_admin_name,
+        COALESCE(b.name, qa.approver_name) as approver_name
       FROM quit_approvals qa
       LEFT JOIN admins a ON qa.source_admin_id = a.id
+      LEFT JOIN admins b ON qa.approver_id = b.id
       ORDER BY qa.apply_date DESC
     `)
     

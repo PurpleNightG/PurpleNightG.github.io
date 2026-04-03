@@ -603,8 +603,14 @@ export default function QuitApproval() {
                   </th>
                   <th>
                     <button onClick={() => handleSort('source_admin_name')} className="flex items-center gap-1 hover:text-white transition-colors">
-                      <span>操作人</span>
+                      <span>发起人</span>
                       {sortConfig?.key === 'source_admin_name' && (sortConfig.direction === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />)}
+                    </button>
+                  </th>
+                  <th>
+                    <button onClick={() => handleSort('approver_name')} className="flex items-center gap-1 hover:text-white transition-colors">
+                      <span>审批人</span>
+                      {sortConfig?.key === 'approver_name' && (sortConfig.direction === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />)}
                     </button>
                   </th>
                   <th>
@@ -634,7 +640,19 @@ export default function QuitApproval() {
                     <td>{approval.qq}</td>
                     <td>{formatDate(approval.apply_date)}</td>
                     <td>
-                      <span className="text-gray-300">{approval.source_admin_name || '未知'}</span>
+                      <span className="text-gray-300">{approval.source_admin_name || '-'}</span>
+                    </td>
+                    <td>
+                      {approval.approver_name ? (
+                        <div className="flex flex-col">
+                          <span className="text-gray-300">{approval.approver_name}</span>
+                          {approval.approval_date && (
+                            <span className="text-gray-500 text-xs">{formatDate(approval.approval_date)}</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-gray-600">-</span>
+                      )}
                     </td>
                     <td>
                       <span className="text-gray-400 text-sm" title={approval.remarks}>
