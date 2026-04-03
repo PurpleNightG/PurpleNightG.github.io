@@ -99,6 +99,7 @@ export default function ScreenShare() {
   const [activeRoomsOpen, setActiveRoomsOpen] = useState(false)
   const myName = useRef(getCurrentUsername())
   const latencyIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const agoraClientRef = useRef<any>(null)
   const agoraTrackRef = useRef<any>(null)
   const volcEngineRef = useRef<any>(null)
@@ -240,6 +241,10 @@ export default function ScreenShare() {
       clearInterval(latencyIntervalRef.current)
       latencyIntervalRef.current = null
     }
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current)
+      heartbeatIntervalRef.current = null
+    }
     if (agoraTrackRef.current) {
       const tracks = Array.isArray(agoraTrackRef.current) ? agoraTrackRef.current : [agoraTrackRef.current]
       tracks.forEach((t: any) => { try { t.close() } catch {} })
@@ -340,14 +345,6 @@ export default function ScreenShare() {
         const rtt = stats?.videoStats?.rtt ?? stats?.audioStats?.rtt
         if (rtt !== undefined) setLatency(rtt)
       })
-      engine.on(VERTC.events.onUserLeave, (evt: any) => {
-        const uid = evt.userId || evt.uid || evt.userInfo?.userId || ''
-        if (uid) fetch(`${API_URL}/room/${code}/leave`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: uid }),
-        }).catch(() => {})
-      })
-
       // Poll viewer names from backend (like WebRTC data channel)
       if (latencyIntervalRef.current) clearInterval(latencyIntervalRef.current)
       latencyIntervalRef.current = setInterval(async () => {
@@ -429,6 +426,21 @@ export default function ScreenShare() {
         setStatus('error')
       })
 
+      // Heartbeat + viewer list poll every 10s
+      if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current)
+      heartbeatIntervalRef.current = setInterval(async () => {
+        fetch(`${API_URL}/room/${code}/heartbeat`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: viewerUid }),
+        }).catch(() => {})
+        try {
+          const r = await fetch(`${API_URL}/room/${code}`)
+          const d = await r.json()
+          if (d.killed) { cleanup(); setErrorMsg(`已被管理员 ${d.killedBy || '管理员'} 强制关闭`); setStatus('error'); return }
+          if (d.viewers) { setViewerCount(d.viewers.length); setViewerNames(d.viewers) }
+        } catch {}
+      }, 10000)
+
       setTimeout(() => {
         if (statusRef.current === 'connecting') {
           setErrorMsg(`连接超时，卡在：${connectStepRef.current}`)
@@ -505,14 +517,6 @@ export default function ScreenShare() {
       setConnectionInfo('声网Agora')
       setStatus('streaming')
 
-      client.on('user-left', (user: any) => {
-        const uid = String(user?.uid || '')
-        if (uid) fetch(`${API_URL}/room/${code}/leave`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: uid }),
-        }).catch(() => {})
-      })
-
       if (latencyIntervalRef.current) clearInterval(latencyIntervalRef.current)
       latencyIntervalRef.current = setInterval(async () => {
         const stats = client.getRTCStats()
@@ -576,6 +580,21 @@ export default function ScreenShare() {
 
       setConnectStep('连接声网服务器...')
       await client.join(AGORA_APP_ID, code, token, agoraViewerNumUid)
+
+      // Heartbeat + viewer list poll every 10s
+      if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current)
+      heartbeatIntervalRef.current = setInterval(async () => {
+        fetch(`${API_URL}/room/${code}/heartbeat`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: agoraViewerUid }),
+        }).catch(() => {})
+        try {
+          const r = await fetch(`${API_URL}/room/${code}`)
+          const d = await r.json()
+          if (d.killed) { cleanup(); setErrorMsg(`已被管理员 ${d.killedBy || '管理员'} 强制关闭`); setStatus('error'); return }
+          if (d.viewers) { setViewerCount(d.viewers.length); setViewerNames(d.viewers) }
+        } catch {}
+      }, 10000)
 
       setConnectStep('等待主播视频流...')
 
@@ -857,6 +876,21 @@ export default function ScreenShare() {
     rtcUidRef.current = viewerUid
     const roomResData = await viewerRes.json()
     if (roomResData.hostName) setHostName(roomResData.hostName)
+
+    // Heartbeat + viewer list poll every 10s
+    if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current)
+    heartbeatIntervalRef.current = setInterval(async () => {
+      fetch(`${API_URL}/room/${code}/heartbeat`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: viewerUid }),
+      }).catch(() => {})
+      try {
+        const r = await fetch(`${API_URL}/room/${code}`)
+        const d = await r.json()
+        if (d.killed) { cleanup(); setErrorMsg(`已被管理员 ${d.killedBy || '管理员'} 强制关闭`); setStatus('error'); return }
+        if (d.viewers) { setViewerCount(d.viewers.length); setViewerNames(d.viewers) }
+      } catch {}
+    }, 10000)
 
     const peer = new Peer({
       debug: 0,
@@ -1823,6 +1857,23 @@ export default function ScreenShare() {
                   }`}>{latency} ms</span>
                 </div>
               )}
+              <div className="relative group flex items-center gap-1.5 text-gray-400 text-sm cursor-default select-none">
+                <Users size={15} />
+                <span>{viewerCount} 人同看</span>
+                {viewerNames.length > 0 && (
+                  <div className="absolute top-full left-0 mt-2 hidden group-hover:block z-20">
+                    <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-xl py-2 px-1 min-w-[140px]">
+                      <p className="text-gray-500 text-xs px-3 pb-1.5 border-b border-gray-700 mb-1">观看成员</p>
+                      {viewerNames.map((name, i) => (
+                        <div key={i} className="flex items-center gap-2 px-3 py-1.5">
+                          <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                          <span className="text-gray-300 text-sm whitespace-nowrap">{name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </>
           )}
           {status === 'connecting' && (

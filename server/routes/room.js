@@ -176,6 +176,7 @@ const rooms = new Map()
 const activeUsers = new Map()
 const killedRooms = new Map() // roomId -> adminName
 const ACTIVE_USER_TTL = 2 * 60 * 60 * 1000 // 2 hours
+const VIEWER_TIMEOUT = 45000 // 45 seconds without heartbeat = viewer gone
 
 // Composite key to distinguish admin vs student with same name
 function userKey(displayName, userType) {
@@ -183,8 +184,18 @@ function userKey(displayName, userType) {
 }
 
 function getRoom(roomId) {
-  if (!rooms.has(roomId)) rooms.set(roomId, { hostName: '', hostKey: '', viewers: new Map(), viewerKeys: new Map(), mode: 'peerjs', peakViewers: 0, allViewerNames: new Set() })
+  if (!rooms.has(roomId)) rooms.set(roomId, { hostName: '', hostKey: '', viewers: new Map(), viewerKeys: new Map(), viewerHeartbeats: new Map(), mode: 'peerjs', peakViewers: 0, allViewerNames: new Set() })
   return rooms.get(roomId)
+}
+
+function getActiveViewers(room) {
+  const now = Date.now()
+  const names = []
+  for (const [uid, name] of room.viewers.entries()) {
+    const hb = room.viewerHeartbeats.get(uid)
+    if (!hb || now - hb < VIEWER_TIMEOUT) names.push(name)
+  }
+  return names
 }
 
 // Check if user is already active in another role
@@ -222,12 +233,13 @@ router.get('/active-rooms', async (req, res) => {
   for (const [roomId, room] of rooms.entries()) {
     if (!room.hostName) continue
     seenRoomIds.add(roomId)
+    const activeViewers = getActiveViewers(room)
     list.push({
       roomId,
       hostName: room.hostName,
       mode: room.mode,
-      viewerCount: room.viewers.size,
-      viewers: Array.from(room.viewers.values()),
+      viewerCount: activeViewers.length,
+      viewers: activeViewers,
     })
   }
   // DB fallback: share_logs with ended_at IS NULL not already in memory
@@ -294,6 +306,7 @@ router.post('/:roomId/host', async (req, res) => {
     room.mode = mode || 'peerjs'
     room.peakViewers = 0
     activeUsers.set(key, { role: 'host', roomId: req.params.roomId, displayName, registeredAt: Date.now() })
+    room.viewerHeartbeats.clear()
     // Insert share log
     try {
       await pool.execute(
@@ -307,6 +320,7 @@ router.post('/:roomId/host', async (req, res) => {
   }
   room.viewers.clear()
   room.viewerKeys.clear()
+  room.viewerHeartbeats.clear()
   res.json({ success: true })
 })
 
@@ -323,12 +337,23 @@ router.post('/:roomId/viewer', (req, res) => {
     activeUsers.set(key, { role: 'viewer', roomId: req.params.roomId, displayName, registeredAt: Date.now() })
     if (userId) room.viewerKeys.set(userId, key)
   }
-  if (userId && displayName) room.viewers.set(userId, displayName)
+  if (userId && displayName) {
+    room.viewers.set(userId, displayName)
+    room.viewerHeartbeats.set(userId, Date.now())
+  }
   if (displayName) room.allViewerNames.add(displayName)
   // Track peak viewers
   const currentViewers = room.viewers.size
   if (currentViewers > room.peakViewers) room.peakViewers = currentViewers
   res.json({ success: true, hostName: room.hostName })
+})
+
+// Viewer heartbeat - keeps viewer in active list
+router.post('/:roomId/heartbeat', (req, res) => {
+  const { userId } = req.body
+  const room = rooms.get(req.params.roomId)
+  if (room && userId) room.viewerHeartbeats.set(userId, Date.now())
+  res.json({ success: true })
 })
 
 // Get room info (host name + viewer list)
@@ -338,7 +363,7 @@ router.get('/:roomId', (req, res) => {
   }
   const room = rooms.get(req.params.roomId)
   if (!room) return res.json({ hostName: '', viewers: [] })
-  res.json({ hostName: room.hostName, viewers: Array.from(room.viewers.values()) })
+  res.json({ hostName: room.hostName, viewers: getActiveViewers(room) })
 })
 
 // Viewer leaves
@@ -347,6 +372,7 @@ router.post('/:roomId/leave', (req, res) => {
   const room = rooms.get(req.params.roomId)
   if (room && userId) {
     room.viewers.delete(userId)
+    room.viewerHeartbeats.delete(userId)
     const storedKey = room.viewerKeys.get(userId)
     if (storedKey) { activeUsers.delete(storedKey); room.viewerKeys.delete(userId) }
   }
