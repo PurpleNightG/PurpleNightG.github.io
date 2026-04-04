@@ -55,7 +55,8 @@ app.use(cors({
         origin.includes('github.io') ||
         origin.includes('vercel.app') ||
         origin.includes('koyeb.app') ||
-        origin.includes('eu.org')) {
+        origin.includes('eu.org') ||
+        origin.includes('edgeone')) {
       callback(null, true)
     } else {
       console.log('❌ CORS阻止的请求来源:', origin)
