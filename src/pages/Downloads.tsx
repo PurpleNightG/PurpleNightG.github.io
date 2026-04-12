@@ -1,19 +1,13 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Download, Tag, Clock, FileText, PackageOpen, Layers, HardDrive, Settings2 } from 'lucide-react'
+import { Download, Tag, FileText, PackageOpen, Layers, HardDrive, Settings2 } from 'lucide-react'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+const VERSION_URL = 'https://gitee.com/NDYian/mod-manager/raw/master/version.json'
 
 interface VersionInfo {
-  id: number
   version: string
   changelog: string
   download_url: string
-  created_at?: string
-  create_time?: string
-  release_date?: string
-  update_time?: string
-  [key: string]: unknown
 }
 
 const features = [
@@ -34,10 +28,13 @@ export default function Downloads() {
   const [versionError, setVersionError] = useState(false)
 
   useEffect(() => {
-    fetch(`${API_URL}/versions/latest`)
-      .then(r => r.json())
-      .then(res => {
-        if (res.success) setVersionInfo(res.data)
+    fetch(VERSION_URL)
+      .then(r => {
+        if (!r.ok) throw new Error('fetch failed')
+        return r.json()
+      })
+      .then((data: VersionInfo) => {
+        if (data.version) setVersionInfo(data)
         else setVersionError(true)
       })
       .catch(() => setVersionError(true))
@@ -192,13 +189,7 @@ export default function Downloads() {
                   <span className="text-6xl font-extrabold text-white font-mono tracking-tight leading-none">
                     {versionInfo.version}
                   </span>
-                  {(versionInfo.created_at || versionInfo.create_time || versionInfo.release_date || versionInfo.update_time) && (
-                    <span className="flex items-center gap-1.5 text-gray-500 text-sm pb-2">
-                      <Clock size={13} />
-                      {new Date((versionInfo.created_at || versionInfo.create_time || versionInfo.release_date || versionInfo.update_time) as string).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })}
-                    </span>
-                  )}
-                </div>
+                  </div>
 
                 {/* 更新日志 */}
                 <div>
