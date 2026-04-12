@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Download, Tag, FileText, PackageOpen, Layers, HardDrive, Settings2 } from 'lucide-react'
 
-const VERSION_URL = 'https://gitee.com/NDYian/mod-manager/raw/master/version.json'
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+const VERSION_URL = `${API_URL}/versions/latest`
 
 interface VersionInfo {
   version: string
