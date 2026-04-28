@@ -1082,12 +1082,19 @@ export default function ScreenShare() {
   }
 
   const handleStop = () => {
+    // Optimistically remove from active rooms before mode switches to 'select',
+    // preventing the race where the immediate active-rooms poll still returns
+    // this room because the /close fetch hasn't reached the server yet.
+    const closingCode = roomCode
     cleanup()
     setStatus('idle')
     setMode('select')
     setRoomCode('')
     setInputCode('')
     setErrorMsg('')
+    if (closingCode) {
+      setActiveRooms(prev => prev.filter(r => r.roomId !== closingCode))
+    }
   }
 
   const handleCopy = async () => {
