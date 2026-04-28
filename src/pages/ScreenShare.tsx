@@ -395,6 +395,7 @@ export default function ScreenShare() {
       setConnectionInfo('火山引擎 RTC')
       setStatus('streaming')
     } catch (err: any) {
+      cleanup()
       if (err.name === 'NotAllowedError') {
         setErrorMsg('您取消了屏幕共享')
       } else {
@@ -471,6 +472,7 @@ export default function ScreenShare() {
         if (userInfo.userId === knownHostId) {
           setErrorMsg('主播已停止共享')
           setStatus('error')
+          setTimeout(cleanup, 0)
         }
       })
 
@@ -495,6 +497,7 @@ export default function ScreenShare() {
       engine.on(VERTC.events.onUserUnpublishScreen, () => {
         setErrorMsg('主播已停止共享')
         setStatus('error')
+        setTimeout(cleanup, 0)
       })
 
       // Heartbeat only - keeps activeUsers alive on backend; viewer list now driven by SDK events
@@ -513,13 +516,17 @@ export default function ScreenShare() {
 
       setTimeout(() => {
         if (statusRef.current === 'connecting') {
+          cleanup()
           setErrorMsg(`连接超时，卡在：${connectStepRef.current}`)
           setStatus('error')
+          setMode('select')
         }
       }, 15000)
     } catch (err: any) {
+      cleanup()
       setErrorMsg(`火山引擎连接失败: ${err.message}`)
       setStatus('error')
+      setMode('select')
     }
   }
 
@@ -599,6 +606,7 @@ export default function ScreenShare() {
         } catch {}
       }, 3000)
     } catch (err: any) {
+      cleanup()
       if (err.name === 'NotAllowedError' || err.code === 'PERMISSION_DENIED') {
         setErrorMsg('您取消了屏幕共享')
       } else {
@@ -691,18 +699,23 @@ export default function ScreenShare() {
         if (mediaType === 'video') {
           setErrorMsg('主播已停止共享')
           setStatus('error')
+          setTimeout(cleanup, 0)
         }
       })
 
       setTimeout(() => {
         if (statusRef.current === 'connecting') {
+          cleanup()
           setErrorMsg(`连接超时，卡在：${connectStepRef.current}`)
           setStatus('error')
+          setMode('select')
         }
       }, 15000)
     } catch (err: any) {
+      cleanup()
       setErrorMsg(`声网连接失败: ${err.message}`)
       setStatus('error')
+      setMode('select')
     }
   }
 
@@ -881,12 +894,14 @@ export default function ScreenShare() {
 
       peer.on('error', (err) => {
         console.error('Peer error:', err)
+        cleanup()
         if (err.type === 'unavailable-id') {
           setErrorMsg('房间代码冲突，请重试')
         } else {
           setErrorMsg(`连接错误: ${err.message}`)
         }
         setStatus('error')
+        setMode('select')
       })
 
       peerRef.current = peer
@@ -990,15 +1005,19 @@ export default function ScreenShare() {
 
       dataConn.on('error', (err) => {
         console.error('Data connection error:', err)
+        cleanup()
         setErrorMsg('无法连接到房间（数据通道失败）')
         setStatus('error')
+        setMode('select')
       })
 
       // Timeout for connection
       setTimeout(() => {
         if (statusRef.current === 'connecting') {
+          cleanup()
           setErrorMsg(`连接超时，卡在：${connectStepRef.current}`)
           setStatus('error')
+          setMode('select')
         }
       }, 15000)
     })
@@ -1032,10 +1051,10 @@ export default function ScreenShare() {
               }
               // If STUN-only mode but local side uses relay, reject
               if (connMode === 'stun' && localType === 'relay') {
-                call.close()
-                peer.destroy()
+                cleanup()
                 setErrorMsg('STUN直连失败：当前网络环境无法建立P2P连接，连接已被阻止（未走TURN中继）')
                 setStatus('error')
+                setMode('select')
                 return
               }
               if (localType) {
@@ -1067,14 +1086,18 @@ export default function ScreenShare() {
       })
 
       call.on('close', () => {
+        cleanup()
         setErrorMsg('主播已停止共享')
         setStatus('error')
+        setMode('select')
       })
 
       call.on('error', (err) => {
         console.error('Call error:', err)
+        cleanup()
         setErrorMsg('连接失败')
         setStatus('error')
+        setMode('select')
       })
 
       connectionsRef.current.push(call)
@@ -1082,12 +1105,14 @@ export default function ScreenShare() {
 
     peer.on('error', (err) => {
       console.error('Peer error:', err)
+      cleanup()
       if (err.type === 'peer-unavailable') {
         setErrorMsg('房间不存在或已关闭')
       } else {
         setErrorMsg(`连接错误: ${err.message}`)
       }
       setStatus('error')
+      setMode('select')
     })
 
     peerRef.current = peer
