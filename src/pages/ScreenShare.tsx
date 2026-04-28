@@ -457,6 +457,7 @@ export default function ScreenShare() {
       engine.on(VERTC.events.onUserJoined, ({ userInfo }: { userInfo: { userId: string; extraInfo?: string } }) => {
         if (userInfo.userId === knownHostId) return // skip host
         const name = userInfo.extraInfo || userInfo.userId
+        if (name === viewerDisplayName) return // skip own stale session (re-join: old uid still alive ~15s)
         // Remove stale entry with same display name (quick re-join: new uid arrives before old uid's leave event)
         for (const [oldUid, oldName] of Array.from(coViewerMap.entries())) {
           if (oldName === name && oldUid !== userInfo.userId) { coViewerMap.delete(oldUid); break }

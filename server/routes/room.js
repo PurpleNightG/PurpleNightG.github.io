@@ -288,11 +288,11 @@ router.post('/admin-close/:roomId', async (req, res) => {
   if (room) {
     if (room.hostKey) activeUsers.delete(room.hostKey)
     room.viewerKeys.forEach((vKey) => activeUsers.delete(vKey))
-    const viewerNames = Array.from(room.allViewerNames)
     try {
+      // viewers already persisted incrementally; just close with peak
       await pool.execute(
-        `UPDATE share_logs SET ended_at = NOW(), peak_viewers = ?, viewers = ? WHERE room_id = ? AND ended_at IS NULL`,
-        [room.peakViewers, JSON.stringify(viewerNames), req.params.roomId]
+        `UPDATE share_logs SET ended_at = NOW(), peak_viewers = GREATEST(peak_viewers, ?) WHERE room_id = ? AND ended_at IS NULL`,
+        [room.peakViewers, req.params.roomId]
       )
     } catch {}
     rooms.delete(req.params.roomId)
@@ -346,7 +346,7 @@ router.post('/:roomId/host', async (req, res) => {
 })
 
 // Viewer joins room with display name
-router.post('/:roomId/viewer', (req, res) => {
+router.post('/:roomId/viewer', async (req, res) => {
   const room = getRoom(req.params.roomId)
   const { userId, displayName, userType: ut } = req.body
   if (displayName) {
@@ -366,6 +366,30 @@ router.post('/:roomId/viewer', (req, res) => {
   // Track peak viewers
   const currentViewers = room.viewers.size
   if (currentViewers > room.peakViewers) room.peakViewers = currentViewers
+
+  // Persist viewer name to DB immediately (fixes serverless instance isolation:
+  // the instance handling /close may differ from this one and have empty allViewerNames)
+  if (displayName) {
+    try {
+      const [logs] = await pool.execute(
+        `SELECT id, viewers FROM share_logs WHERE room_id = ? AND ended_at IS NULL LIMIT 1`,
+        [req.params.roomId]
+      )
+      if (logs.length > 0) {
+        const arr = logs[0].viewers ? JSON.parse(logs[0].viewers) : []
+        if (!arr.includes(displayName)) {
+          arr.push(displayName)
+          await pool.execute(
+            `UPDATE share_logs SET viewers = ?, peak_viewers = GREATEST(peak_viewers, ?) WHERE id = ?`,
+            [JSON.stringify(arr), arr.length, logs[0].id]
+          )
+        }
+      }
+    } catch (e) {
+      console.error('[ShareLog] Failed to persist viewer:', e.message)
+    }
+  }
+
   res.json({ success: true, hostName: room.hostName })
 })
 
@@ -414,11 +438,11 @@ router.post('/:roomId/close', async (req, res) => {
     if (room.hostKey) activeUsers.delete(room.hostKey)
     room.viewerKeys.forEach((vKey) => activeUsers.delete(vKey))
     // Update share log with end time, peak viewers, and viewer names
-    const viewerNames = Array.from(room.allViewerNames)
     try {
+      // viewers already persisted incrementally; just close with peak
       await pool.execute(
-        `UPDATE share_logs SET ended_at = NOW(), peak_viewers = ?, viewers = ? WHERE room_id = ? AND ended_at IS NULL`,
-        [room.peakViewers, JSON.stringify(viewerNames), req.params.roomId]
+        `UPDATE share_logs SET ended_at = NOW(), peak_viewers = GREATEST(peak_viewers, ?) WHERE room_id = ? AND ended_at IS NULL`,
+        [room.peakViewers, req.params.roomId]
       )
     } catch {}
   } else {
