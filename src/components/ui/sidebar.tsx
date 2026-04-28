@@ -232,6 +232,13 @@ const AdminNav = ({ expandedMenus, toggleMenu }: AdminNavProps) => (
       <SubNavItem path="/admin/leave-team/approval" label="退队审批" />
       <SubNavItem path="/admin/leave-team/retention" label="留队管理" />
     </CollapsibleSection>
+    {/* Screen share - opens in new tab */}
+    <a href="#/screen-share" target="_blank" rel="noopener noreferrer" className="group block mb-1">
+      <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-all text-gray-400 hover:text-gray-200 hover:bg-gray-700/20">
+        <span className="text-gray-500 group-hover:text-gray-400 transition-colors"><Monitor size={20} /></span>
+        <span className="text-sm font-medium">屏幕共享</span>
+      </div>
+    </a>
   </nav>
 );
 
