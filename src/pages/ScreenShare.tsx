@@ -367,6 +367,10 @@ export default function ScreenShare() {
       const volcViewerMap = new Map<string, string>()
       engine.on(VERTC.events.onUserJoined, ({ userInfo }: { userInfo: { userId: string; extraInfo?: string } }) => {
         const name = userInfo.extraInfo || userInfo.userId
+        // Remove stale entry with same display name (quick re-join: new uid arrives before old uid's leave event)
+        for (const [oldUid, oldName] of Array.from(volcViewerMap.entries())) {
+          if (oldName === name && oldUid !== userInfo.userId) { volcViewerMap.delete(oldUid); break }
+        }
         volcViewerMap.set(userInfo.userId, name)
         setViewerNames(Array.from(volcViewerMap.values()))
         setViewerCount(volcViewerMap.size)
@@ -444,17 +448,25 @@ export default function ScreenShare() {
       const coViewerMap = new Map<string, string>()
       let knownHostId = ''
 
+      // Helper: refresh viewer display including self
+      const refreshCoViewers = () => {
+        setViewerNames([viewerDisplayName, ...Array.from(coViewerMap.values())])
+        setViewerCount(coViewerMap.size + 1)
+      }
+
       engine.on(VERTC.events.onUserJoined, ({ userInfo }: { userInfo: { userId: string; extraInfo?: string } }) => {
         if (userInfo.userId === knownHostId) return // skip host
         const name = userInfo.extraInfo || userInfo.userId
+        // Remove stale entry with same display name (quick re-join: new uid arrives before old uid's leave event)
+        for (const [oldUid, oldName] of Array.from(coViewerMap.entries())) {
+          if (oldName === name && oldUid !== userInfo.userId) { coViewerMap.delete(oldUid); break }
+        }
         coViewerMap.set(userInfo.userId, name)
-        setViewerNames(Array.from(coViewerMap.values()))
-        setViewerCount(coViewerMap.size)
+        refreshCoViewers()
       })
       engine.on(VERTC.events.onUserLeave, ({ userInfo }: { userInfo: { userId: string } }) => {
         coViewerMap.delete(userInfo.userId)
-        setViewerNames(Array.from(coViewerMap.values()))
-        setViewerCount(coViewerMap.size)
+        refreshCoViewers()
         if (userInfo.userId === knownHostId) {
           setErrorMsg('主播已停止共享')
           setStatus('error')
@@ -466,8 +478,7 @@ export default function ScreenShare() {
         // Remove host from co-viewer map if they were added before identity was known
         if (coViewerMap.has(userId)) {
           coViewerMap.delete(userId)
-          setViewerNames(Array.from(coViewerMap.values()))
-          setViewerCount(coViewerMap.size)
+          refreshCoViewers()
         }
         await engine.subscribeScreen(userId, MediaType.AUDIO_AND_VIDEO)
         volcHostUserIdRef.current = userId
