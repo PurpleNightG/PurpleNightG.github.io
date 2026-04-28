@@ -190,6 +190,23 @@ export default function ScreenShare() {
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
   }, [])
 
+  // Page Visibility API: when the tab becomes visible again after being backgrounded,
+  // immediately send a heartbeat so the server doesn't expire the viewer due to
+  // browser background-tab timer throttling (which can delay setInterval to 60+ seconds).
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && rtcRoleRef.current === 'viewer' && rtcRoomRef.current && rtcUidRef.current) {
+        fetch(`${API_URL}/room/${rtcRoomRef.current}/heartbeat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: rtcUidRef.current }),
+        }).catch(() => {})
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [])
+
   // RTC permission polling
   useEffect(() => {
     if (mode !== 'select') return
@@ -345,16 +362,30 @@ export default function ScreenShare() {
         const rtt = stats?.videoStats?.rtt ?? stats?.audioStats?.rtt
         if (rtt !== undefined) setLatency(rtt)
       })
-      // Poll viewer names from backend (like WebRTC data channel)
+
+      // Track viewers via SDK events (uid -> displayName map)
+      const volcViewerMap = new Map<string, string>()
+      engine.on(VERTC.events.onUserJoined, ({ userInfo }: { userInfo: { userId: string; extraInfo?: string } }) => {
+        const name = userInfo.extraInfo || userInfo.userId
+        volcViewerMap.set(userInfo.userId, name)
+        setViewerNames(Array.from(volcViewerMap.values()))
+        setViewerCount(volcViewerMap.size)
+      })
+      engine.on(VERTC.events.onUserLeave, ({ userInfo }: { userInfo: { userId: string } }) => {
+        volcViewerMap.delete(userInfo.userId)
+        setViewerNames(Array.from(volcViewerMap.values()))
+        setViewerCount(volcViewerMap.size)
+      })
+
+      // Poll only for admin force-close detection (no longer syncs viewer list)
       if (latencyIntervalRef.current) clearInterval(latencyIntervalRef.current)
       latencyIntervalRef.current = setInterval(async () => {
         try {
           const r = await fetch(`${API_URL}/room/${code}`)
           const d = await r.json()
           if (d.killed) { cleanup(); setErrorMsg(`已被管理员 ${d.killedBy || '管理员'} 强制关闭`); setStatus('error'); return }
-          if (d.viewers) { setViewerNames(d.viewers); setViewerCount(d.viewers.length) }
         } catch {}
-      }, 3000)
+      }, 5000)
 
       setActiveStreamMode('volc')
       setConnectionInfo('火山引擎 RTC')
@@ -403,13 +434,41 @@ export default function ScreenShare() {
       const roomRes = await viewerRes.json()
       if (roomRes.hostName) setHostName(roomRes.hostName)
       const volcToken = await fetchVolcToken(code, viewerUid)
-      await engine.joinRoom(volcToken, code, { userId: viewerUid }, {
+      await engine.joinRoom(volcToken, code, { userId: viewerUid, extraInfo: viewerDisplayName }, {
         isAutoPublish: false, isAutoSubscribeAudio: false, isAutoSubscribeVideo: false,
       })
 
       setConnectStep('等待主播视频流...')
 
+      // Track co-viewers via SDK events (uid -> displayName, excluding the host)
+      const coViewerMap = new Map<string, string>()
+      let knownHostId = ''
+
+      engine.on(VERTC.events.onUserJoined, ({ userInfo }: { userInfo: { userId: string; extraInfo?: string } }) => {
+        if (userInfo.userId === knownHostId) return // skip host
+        const name = userInfo.extraInfo || userInfo.userId
+        coViewerMap.set(userInfo.userId, name)
+        setViewerNames(Array.from(coViewerMap.values()))
+        setViewerCount(coViewerMap.size)
+      })
+      engine.on(VERTC.events.onUserLeave, ({ userInfo }: { userInfo: { userId: string } }) => {
+        coViewerMap.delete(userInfo.userId)
+        setViewerNames(Array.from(coViewerMap.values()))
+        setViewerCount(coViewerMap.size)
+        if (userInfo.userId === knownHostId) {
+          setErrorMsg('主播已停止共享')
+          setStatus('error')
+        }
+      })
+
       engine.on(VERTC.events.onUserPublishScreen, async ({ userId }: { userId: string }) => {
+        knownHostId = userId
+        // Remove host from co-viewer map if they were added before identity was known
+        if (coViewerMap.has(userId)) {
+          coViewerMap.delete(userId)
+          setViewerNames(Array.from(coViewerMap.values()))
+          setViewerCount(coViewerMap.size)
+        }
         await engine.subscribeScreen(userId, MediaType.AUDIO_AND_VIDEO)
         volcHostUserIdRef.current = userId
         setConnectionInfo('火山引擎 RTC')
@@ -426,7 +485,7 @@ export default function ScreenShare() {
         setStatus('error')
       })
 
-      // Heartbeat + viewer list poll every 10s
+      // Heartbeat only - keeps activeUsers alive on backend; viewer list now driven by SDK events
       if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current)
       heartbeatIntervalRef.current = setInterval(async () => {
         fetch(`${API_URL}/room/${code}/heartbeat`, {
@@ -437,7 +496,6 @@ export default function ScreenShare() {
           const r = await fetch(`${API_URL}/room/${code}`)
           const d = await r.json()
           if (d.killed) { cleanup(); setErrorMsg(`已被管理员 ${d.killedBy || '管理员'} 强制关闭`); setStatus('error'); return }
-          if (d.viewers) { setViewerCount(d.viewers.length); setViewerNames(d.viewers) }
         } catch {}
       }, 10000)
 

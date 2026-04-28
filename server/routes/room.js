@@ -176,12 +176,33 @@ const rooms = new Map()
 const activeUsers = new Map()
 const killedRooms = new Map() // roomId -> adminName
 const ACTIVE_USER_TTL = 2 * 60 * 60 * 1000 // 2 hours
-const VIEWER_TIMEOUT = 45000 // 45 seconds without heartbeat = viewer gone
+const VIEWER_TIMEOUT = 120000 // 120 seconds without heartbeat = viewer gone (tolerates browser background tab throttling ~60s)
 
 // Composite key to distinguish admin vs student with same name
 function userKey(displayName, userType) {
   return userType ? `${userType}:${displayName}` : displayName
 }
+
+// Periodic cleanup: remove stale activeUsers entries for viewers whose heartbeats expired.
+// This ensures abruptly disconnected viewers (network drop, browser crash, closed tab where
+// sendBeacon failed) don't stay "locked" in activeUsers for up to ACTIVE_USER_TTL.
+setInterval(() => {
+  const now = Date.now()
+  for (const [roomId, room] of rooms.entries()) {
+    for (const [uid] of Array.from(room.viewers.entries())) {
+      const hb = room.viewerHeartbeats.get(uid)
+      if (hb && now - hb >= VIEWER_TIMEOUT) {
+        const storedKey = room.viewerKeys.get(uid)
+        if (storedKey) {
+          activeUsers.delete(storedKey)
+          room.viewerKeys.delete(uid)
+        }
+        room.viewers.delete(uid)
+        room.viewerHeartbeats.delete(uid)
+      }
+    }
+  }
+}, 30000) // Run every 30 seconds
 
 function getRoom(roomId) {
   if (!rooms.has(roomId)) rooms.set(roomId, { hostName: '', hostKey: '', viewers: new Map(), viewerKeys: new Map(), viewerHeartbeats: new Map(), mode: 'peerjs', peakViewers: 0, allViewerNames: new Set() })
