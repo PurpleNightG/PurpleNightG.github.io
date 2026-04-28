@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { BookOpen, Home, LogIn, Smartphone, Download, Monitor } from 'lucide-react'
+import { BookOpen, Home, LogIn, Smartphone, Download, Monitor, User, Shield } from 'lucide-react'
 import { useState, useEffect } from 'react'
 
 interface LayoutProps {
@@ -9,6 +9,25 @@ interface LayoutProps {
 export default function Layout({ children }: LayoutProps) {
   const location = useLocation()
   const [isMobile, setIsMobile] = useState(false)
+  const [loggedInUser, setLoggedInUser] = useState<{ name: string; type: 'admin' | 'student' } | null>(null)
+
+  const detectLogin = () => {
+    try {
+      const adminStr = localStorage.getItem('user') || sessionStorage.getItem('user')
+      const studentStr = localStorage.getItem('studentUser') || sessionStorage.getItem('studentUser')
+      if (adminStr) {
+        const u = JSON.parse(adminStr)
+        setLoggedInUser({ name: u.username || '管理员', type: 'admin' })
+      } else if (studentStr) {
+        const u = JSON.parse(studentStr)
+        setLoggedInUser({ name: u.nickname || u.username || '学员', type: 'student' })
+      } else {
+        setLoggedInUser(null)
+      }
+    } catch {
+      setLoggedInUser(null)
+    }
+  }
 
   useEffect(() => {
     const checkMobile = () => {
@@ -19,6 +38,12 @@ export default function Layout({ children }: LayoutProps) {
     window.addEventListener('resize', checkMobile)
     
     return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+
+  useEffect(() => {
+    detectLogin()
+    window.addEventListener('storage', detectLogin)
+    return () => window.removeEventListener('storage', detectLogin)
   }, [])
 
   const isActive = (path: string) => {
@@ -127,17 +152,32 @@ export default function Layout({ children }: LayoutProps) {
                 <Monitor size={18} />
                 <span>屏幕共享</span>
               </Link>
-              <Link
-                to="/login"
-                className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
-                  isActive('/login')
-                    ? 'bg-purple-600 text-white'
-                    : 'text-gray-300 hover:bg-gray-800 hover:text-white'
-                }`}
-              >
-                <LogIn size={18} />
-                <span>登录</span>
-              </Link>
+              {loggedInUser ? (
+                <Link
+                  to={loggedInUser.type === 'admin' ? '/admin' : '/student'}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 transition-colors"
+                >
+                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-600 to-purple-800 flex items-center justify-center">
+                    {loggedInUser.type === 'admin'
+                      ? <Shield size={14} className="text-white" />
+                      : <User size={14} className="text-white" />}
+                  </div>
+                  <span className="text-white text-sm font-medium">{loggedInUser.name}</span>
+                  <span className="text-gray-400 text-xs">{loggedInUser.type === 'admin' ? '管理员' : '学员'}</span>
+                </Link>
+              ) : (
+                <Link
+                  to="/login"
+                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+                    isActive('/login')
+                      ? 'bg-purple-600 text-white'
+                      : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                  }`}
+                >
+                  <LogIn size={18} />
+                  <span>登录</span>
+                </Link>
+              )}
             </div>
           </div>
         </div>

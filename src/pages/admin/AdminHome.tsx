@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Users, UserMinus, Award, Bell, FileText, BookOpen, GraduationCap } from 'lucide-react'
+import { Users, UserMinus, Award, Bell, FileText, BookOpen, GraduationCap, Clock, LogIn, LogOut } from 'lucide-react'
 import { memberAPI, leaveAPI, blackPointAPI, reminderAPI } from '../../utils/api'
 import { useNavigate } from 'react-router-dom'
 import UserDropdown from '../../components/UserDropdown'
 import { formatDate } from '../../utils/dateFormat'
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
 interface Statistics {
   totalMembers: number
@@ -47,16 +49,60 @@ export default function AdminHome() {
   const [examCandidates, setExamCandidates] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [adminName, setAdminName] = useState('管理员')
+  const [adminUsername, setAdminUsername] = useState('')
+  const [onDuty, setOnDuty] = useState(false)
+  const [clockedInAt, setClockedInAt] = useState<string | null>(null)
+  const [dutyLoading, setDutyLoading] = useState(false)
 
   useEffect(() => {
-    // 获取管理员姓名
     const userStr = localStorage.getItem('user') || sessionStorage.getItem('user')
+    let username = ''
     if (userStr) {
       const user = JSON.parse(userStr)
+      username = user.username || ''
+      setAdminUsername(username)
       setAdminName(user.name || user.username || '管理员')
     }
     loadStatistics()
+    if (username) loadDutyStatus(username)
   }, [])
+
+  const loadDutyStatus = async (username: string) => {
+    try {
+      const res = await fetch(`${API_URL}/duty/status/${encodeURIComponent(username)}`)
+      const data = await res.json()
+      setOnDuty(data.onDuty)
+      setClockedInAt(data.clockedInAt || null)
+    } catch {}
+  }
+
+  const handleClockIn = async () => {
+    if (!adminUsername || dutyLoading) return
+    setDutyLoading(true)
+    try {
+      const res = await fetch(`${API_URL}/duty/clock-in`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: adminUsername, nickname: adminName }),
+      })
+      const data = await res.json()
+      if (data.success) { setOnDuty(true); await loadDutyStatus(adminUsername) }
+    } catch {}
+    setDutyLoading(false)
+  }
+
+  const handleClockOut = async () => {
+    if (!adminUsername || dutyLoading) return
+    setDutyLoading(true)
+    try {
+      const res = await fetch(`${API_URL}/duty/clock-out`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: adminUsername }),
+      })
+      const data = await res.json()
+      if (data.success) { setOnDuty(false); setClockedInAt(null) }
+    } catch {}
+    setDutyLoading(false)
+  }
 
   // 时间问候函数
   const getGreeting = () => {
@@ -177,7 +223,33 @@ export default function AdminHome() {
             </h1>
             <p className="text-gray-400 text-lg">欢迎使用紫夜战术公会管理后台</p>
           </div>
-          <UserDropdown userType="admin" />
+          <div className="flex items-center gap-3">
+            {/* 上班/下班按鈕 */}
+            <div className="flex items-center gap-2 bg-gray-800/60 border border-gray-700/50 rounded-xl px-4 py-2.5">
+              <div className={`w-2 h-2 rounded-full ${onDuty ? 'bg-green-400 animate-pulse' : 'bg-gray-500'}`} />
+              <span className={`text-sm font-medium ${onDuty ? 'text-green-400' : 'text-gray-400'}`}>
+                {onDuty ? '已上班' : '未上班'}
+              </span>
+              {onDuty && clockedInAt && (
+                <span className="text-xs text-gray-500 flex items-center gap-1">
+                  <Clock size={11} />
+                  {new Date(clockedInAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+              {onDuty ? (
+                <button onClick={handleClockOut} disabled={dutyLoading}
+                  className="ml-1 flex items-center gap-1.5 px-3 py-1.5 bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-400 rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
+                  <LogOut size={13} />下班
+                </button>
+              ) : (
+                <button onClick={handleClockIn} disabled={dutyLoading}
+                  className="ml-1 flex items-center gap-1.5 px-3 py-1.5 bg-green-600/20 hover:bg-green-600/30 border border-green-500/30 text-green-400 rounded-lg text-xs font-medium transition-colors disabled:opacity-50">
+                  <LogIn size={13} />上班
+                </button>
+              )}
+            </div>
+            <UserDropdown userType="admin" />
+          </div>
         </div>
 
         {loading ? (

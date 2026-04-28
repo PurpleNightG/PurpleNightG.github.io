@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { memberAPI, progressAPI } from '../utils/api'
-import { Trophy, TrendingUp, CheckCircle, Star, Sparkles, Award, Target, BookOpen, Video, Lock, Clock, AlertTriangle, KeyRound, FileText } from 'lucide-react'
+import { Trophy, TrendingUp, CheckCircle, Star, Sparkles, Award, Target, BookOpen, Video, Lock, Clock, AlertTriangle, KeyRound, FileText, UserCheck } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import UserDropdown from '../components/UserDropdown'
 import { toast } from '../utils/toast'
@@ -100,6 +100,7 @@ export default function StudentHome() {
   const [showCongrats, setShowCongrats] = useState(false)
   const [congratsConfig, setCongratsConfig] = useState<any>(null)
   const [showPasswordWarning, setShowPasswordWarning] = useState(false)
+  const [onDutyInstructors, setOnDutyInstructors] = useState<{ username: string; nickname: string; clocked_in_at: string }[]>([])
   const [passwordForm, setPasswordForm] = useState({
     oldPassword: '',
     newPassword: '',
@@ -111,7 +112,16 @@ export default function StudentHome() {
     loadMemberInfo()
     loadCourseProgress()
     checkDefaultPassword()
+    loadOnDutyInstructors()
   }, [])
+
+  const loadOnDutyInstructors = async () => {
+    try {
+      const res = await fetch(`${API_URL}/duty/today`)
+      const data = await res.json()
+      if (data.success) setOnDutyInstructors(data.instructors || [])
+    } catch {}
+  }
 
   const loadMemberInfo = async () => {
     try {
@@ -622,6 +632,31 @@ export default function StudentHome() {
           </div>
           <UserDropdown userType="student" />
         </div>
+
+        {/* 今日值班教官 */}
+        {onDutyInstructors.length > 0 && (
+          <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-green-700/30 p-4 mb-6 flex items-center gap-4">
+            <div className="w-10 h-10 rounded-xl bg-green-600/20 flex items-center justify-center flex-shrink-0">
+              <UserCheck className="text-green-400" size={22} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
+                <span className="text-green-400 text-sm font-semibold">今日值班教官</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {onDutyInstructors.map((inst) => (
+                  <span key={inst.username} className="inline-flex items-center gap-1.5 bg-green-600/15 border border-green-500/25 text-green-300 text-sm px-3 py-1 rounded-lg">
+                    {inst.nickname}
+                    <span className="text-green-500/60 text-xs">
+                      {new Date(inst.clocked_in_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} 上班
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 阶段信息容器 */}
         <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 p-8 mb-6">

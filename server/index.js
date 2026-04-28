@@ -24,6 +24,7 @@ import agoraRoutes from './routes/agora.js'
 import volcRoutes from './routes/volc.js'
 import roomRoutes from './routes/room.js'
 import versionsRoutes from './routes/versions.js'
+import dutyRoutes from './routes/duty.js'
 
 dotenv.config()
 
@@ -92,6 +93,7 @@ app.use('/api/agora', agoraRoutes)
 app.use('/api/volc', volcRoutes)
 app.use('/api/room', roomRoutes)
 app.use('/api/versions', versionsRoutes)
+app.use('/api/duty', dutyRoutes)
 
 // 健康检查
 app.get('/api/health', (req, res) => {

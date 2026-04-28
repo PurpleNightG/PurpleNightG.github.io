@@ -448,10 +448,10 @@ export default function ScreenShare() {
       const coViewerMap = new Map<string, string>()
       let knownHostId = ''
 
-      // Helper: refresh viewer display including self
+      // Helper: refresh viewer display (excludes self, same logic as host side)
       const refreshCoViewers = () => {
-        setViewerNames([viewerDisplayName, ...Array.from(coViewerMap.values())])
-        setViewerCount(coViewerMap.size + 1)
+        setViewerNames(Array.from(coViewerMap.values()))
+        setViewerCount(coViewerMap.size)
       }
 
       engine.on(VERTC.events.onUserJoined, ({ userInfo }: { userInfo: { userId: string; extraInfo?: string } }) => {

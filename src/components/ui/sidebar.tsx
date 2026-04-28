@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Home, Users, BookOpen, FileCheck, UserMinus, ChevronDown, FileText, Video } from "lucide-react";
+import { Home, Users, BookOpen, FileCheck, UserMinus, ChevronDown, FileText, Video, Monitor } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 
 const AnimatedMenuToggle = ({
@@ -320,6 +320,13 @@ const StudentNav = () => (
     {studentMenuItems.map((item) => (
       <NavItem key={item.path} path={item.path} icon={item.icon} label={item.label} />
     ))}
+    {/* Screen share - opens in new tab */}
+    <a href="#/screen-share" target="_blank" rel="noopener noreferrer" className="group block mb-1">
+      <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-all text-gray-400 hover:text-gray-200 hover:bg-gray-700/20">
+        <span className="text-gray-500 group-hover:text-gray-400 transition-colors"><Monitor size={20} /></span>
+        <span className="text-sm font-medium">屏幕共享</span>
+      </div>
+    </a>
   </nav>
 );
 
