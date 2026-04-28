@@ -283,7 +283,13 @@ export default function ProgressAssignment() {
   }
 
   // 阶段列表
-  const stageRoles = ['未新训', '新训初期', '新训一期', '新训二期', '新训三期', '新训准考', '紫夜', '紫夜尖兵', '会长', '执行官', '总教', '尖兵教官', '教官', '人事', '工程师']
+  const stageRoles = ['未新训', '新训初期', '新训一期', '新训二期', '新训三期', '新训准考', '紫夜', '紫夜尖兵', '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师']
+  const stageOrder: { [key: string]: number } = {
+    '未新训': 1, '新训初期': 2, '新训一期': 3, '新训二期': 4, '新训三期': 5,
+    '新训准考': 6, '紫夜': 7, '紫夜尖兵': 8,
+    '会长': 9, '执行官': 10, '人事': 11, '总教': 12, '尖兵教官': 13, '教官': 14, '工程师': 15
+  }
+  const specialRoles = ['会长', '执行官', '人事', '总教', '尖兵教官', '工程师', '教官']
   
   // 保存筛选条件到localStorage
   useEffect(() => {
@@ -357,6 +363,10 @@ export default function ProgressAssignment() {
         if (sortConfig.key === 'progress') {
           aVal = a.completed_courses / a.total_courses
           bVal = b.completed_courses / b.total_courses
+        } else if (sortConfig.key === 'status') {
+          const aOrder = stageOrder[a.status] ?? 999
+          const bOrder = stageOrder[b.status] ?? 999
+          return sortConfig.direction === 'asc' ? aOrder - bOrder : bOrder - aOrder
         } else {
           aVal = a[sortConfig.key as keyof Member]
           bVal = b[sortConfig.key as keyof Member]
@@ -505,6 +515,23 @@ export default function ProgressAssignment() {
                   {role}
                 </button>
               ))}
+              <button
+                onClick={() => {
+                  const allSelected = specialRoles.every((r: string) => filters.stage_role.includes(r))
+                  if (allSelected) {
+                    setFilters((prev: any) => ({ ...prev, stage_role: prev.stage_role.filter((r: string) => !specialRoles.includes(r)) }))
+                  } else {
+                    setFilters((prev: any) => ({ ...prev, stage_role: [...new Set([...prev.stage_role, ...specialRoles])] }))
+                  }
+                }}
+                className={`px-3 py-1 rounded text-sm transition-colors border border-dashed ${
+                  specialRoles.every((r: string) => filters.stage_role.includes(r))
+                    ? 'bg-green-600 text-white border-green-500'
+                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600 border-gray-500'
+                }`}
+              >
+                全部教官
+              </button>
             </div>
           </div>
         </div>
