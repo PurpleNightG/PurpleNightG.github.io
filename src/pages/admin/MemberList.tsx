@@ -163,6 +163,7 @@ export default function MemberList() {
     '紫夜', '紫夜尖兵', '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师'
   ]
   const specialRoles = ['会长', '执行官', '人事', '总教', '尖兵教官', '工程师', '教官']
+  const statusOrder: { [key: string]: number } = { '正常': 1, '请假中': 2, '其他': 3, '已退队': 4 }
 
   // 阶段排序权重（数字越小越靠前）
   const stageOrder: { [key: string]: number } = {
@@ -275,6 +276,12 @@ export default function MemberList() {
         if (sortConfig.key === 'stage_role') {
           const aOrder = stageOrder[a.stage_role] || 999
           const bOrder = stageOrder[b.stage_role] || 999
+          const comparison = aOrder - bOrder
+          return sortConfig.direction === 'asc' ? comparison : -comparison
+        }
+        if (sortConfig.key === 'status') {
+          const aOrder = statusOrder[a.status] || 999
+          const bOrder = statusOrder[b.status] || 999
           const comparison = aOrder - bOrder
           return sortConfig.direction === 'asc' ? comparison : -comparison
         }
@@ -831,7 +838,12 @@ export default function MemberList() {
                       {sortConfig?.key === 'stage_role' && (sortConfig.direction === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />)}
                     </button>
                   </th>
-                  <th>状态</th>
+                  <th>
+                    <button onClick={() => handleSort('status')} className="flex items-center gap-1 hover:text-white transition-colors">
+                      <span>状态</span>
+                      {sortConfig?.key === 'status' && (sortConfig.direction === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />)}
+                    </button>
+                  </th>
                   <th>
                     <button onClick={() => handleSort('last_training_date')} className="flex items-center gap-1 hover:text-white transition-colors">
                       <span>最后新训日期</span>
