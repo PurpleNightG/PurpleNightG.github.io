@@ -51,7 +51,7 @@ export default function Layout({ children }: LayoutProps) {
   }
 
   const isDocsPage = location.pathname.startsWith('/docs')
-  const isFullWidthPage = isDocsPage || location.pathname.startsWith('/screen-share')
+  const isFullWidthPage = isDocsPage || location.pathname.startsWith('/screen-share') || location.pathname.startsWith('/downloads')
 
   // Mobile warning screen
   if (isMobile) {

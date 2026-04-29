@@ -45,84 +45,84 @@ export default function Downloads() {
   return (
     <div className="min-h-screen">
       {/* ── Hero ─────────────────────────────────────────────── */}
-      <section className="relative flex flex-col items-center justify-center pt-36 pb-28 px-6">
-        {/* 背景光晕（仅光晕层羽化，内容不受影响） */}
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            maskImage: 'linear-gradient(to bottom, transparent 0%, black 30%, black 70%, transparent 100%), linear-gradient(to right, transparent 0%, black 15%, black 85%, transparent 100%)',
-            WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 30%, black 70%, transparent 100%), linear-gradient(to right, transparent 0%, black 15%, black 85%, transparent 100%)',
-            maskComposite: 'intersect',
-            WebkitMaskComposite: 'source-in',
-          }}
-        >
-          <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] bg-purple-700/20 rounded-full blur-[100px]" />
-          <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-indigo-600/10 rounded-full blur-3xl" />
-          <div className="absolute top-1/4 right-1/4 w-48 h-48 bg-pink-600/10 rounded-full blur-3xl" />
-        </div>
+      <section
+        className="relative flex flex-col items-center justify-center pt-36 pb-28 px-6 overflow-hidden"
+        style={{
+          backgroundImage: 'url(https://s41.ax1x.com/2026/04/29/peIaNKe.png)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center top',
+          WebkitMaskImage: 'linear-gradient(to bottom, black 80%, transparent 100%)',
+          maskImage: 'linear-gradient(to bottom, black 80%, transparent 100%)',
+        }}
+      >
+        {/* 黑色 50% 遮罩，底部羽化淡出 */}
+        <div className="absolute inset-0 pointer-events-none bg-black/50" />
 
-        {/* 页面标题 */}
-        <motion.p
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="text-purple-400 text-sm font-semibold tracking-widest uppercase mb-4"
-        >
-          下载中心
-        </motion.p>
-
-        {/* 浮动图标 */}
-        <motion.div
-          animate={{ y: [0, -14, 0] }}
-          transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-          className="relative mb-8"
-        >
-          <div className="absolute inset-0 bg-gradient-to-br from-purple-500/50 to-pink-500/50 rounded-full blur-2xl scale-125 opacity-60" />
-          <img
-            src="/mod-manager-icon.png"
-            alt="模组管理器"
-            className="relative w-36 h-36 drop-shadow-2xl"
-          />
-        </motion.div>
-
-        {/* 标题 */}
-        <motion.h1
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.15 }}
-          className="text-5xl md:text-6xl font-extrabold text-white tracking-tight text-center mb-3"
-        >
-          模组管理器
-        </motion.h1>
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.6, delay: 0.25 }}
-          className="text-gray-400 text-lg text-center mb-10"
-        >
-          紫夜公会自制 · 专为《严阵以待》打造的 MOD 管理工具
-        </motion.p>
-
-        {/* 下载按钮组 */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.35 }}
-          className="flex flex-wrap gap-4 justify-center"
-        >
-          <a
-            href="https://wwww.lanzoue.com/b0138zm34d"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2.5 px-8 py-3.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold rounded-2xl transition-all duration-200 shadow-xl shadow-purple-500/30 hover:shadow-purple-500/50 hover:-translate-y-1 text-base"
+        {/* 内容层，置于遮罩之上 */}
+        <div className="relative z-10 flex flex-col items-center w-full">
+          {/* 页面标题 */}
+          <motion.p
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="text-purple-400 text-sm font-semibold tracking-widest uppercase mb-4"
           >
-            <Download size={20} />
-            蓝奏云下载
-          </a>
-          <div className="flex items-center gap-2 px-5 py-3.5 bg-white/5 border border-white/10 rounded-2xl text-sm text-gray-400">
-            访问密码：<span className="font-mono font-bold text-purple-300 text-base">ndyian</span>
-          </div>
-        </motion.div>
+            下载中心
+          </motion.p>
+
+          {/* 浮动图标 */}
+          <motion.div
+            animate={{ y: [0, -14, 0] }}
+            transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+            className="relative mb-8"
+          >
+            <div className="absolute inset-0 bg-gradient-to-br from-purple-500/50 to-pink-500/50 rounded-full blur-2xl scale-125 opacity-60" />
+            <img
+              src="/mod-manager-icon.png"
+              alt="模组管理器"
+              className="relative w-36 h-36 drop-shadow-2xl"
+            />
+          </motion.div>
+
+          {/* 标题 */}
+          <motion.h1
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.15 }}
+            className="text-5xl md:text-6xl font-extrabold text-white tracking-tight text-center mb-3"
+          >
+            模组管理器
+          </motion.h1>
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.6, delay: 0.25 }}
+            className="text-gray-400 text-lg text-center mb-10"
+          >
+            紫夜公会自制 · 专为《严阵以待》打造的 MOD 管理工具
+          </motion.p>
+
+          {/* 下载按钮组 */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.35 }}
+            className="flex flex-wrap gap-4 justify-center"
+          >
+            <a
+              href="https://wwww.lanzoue.com/b0138zm34d"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2.5 px-8 py-3.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold rounded-2xl transition-all duration-200 shadow-xl shadow-purple-500/30 hover:shadow-purple-500/50 hover:-translate-y-1 text-base"
+            >
+              <Download size={20} />
+              蓝奏云下载
+            </a>
+            <div className="flex items-center gap-2 px-5 py-3.5 bg-white/5 border border-white/10 rounded-2xl text-sm text-gray-400">
+              访问密码：<span className="font-mono font-bold text-purple-300 text-base">ndyian</span>
+            </div>
+          </motion.div>
+        </div>
       </section>
 
       {/* ── 功能特性 ─────────────────────────────────────────── */}
