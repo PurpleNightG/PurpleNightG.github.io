@@ -52,6 +52,7 @@ export default function QuitApproval() {
   const [members, setMembers] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [confirmingApproval, setConfirmingApproval] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [approvingId, setApprovingId] = useState<number | null>(null)
   const [confirmDialog, setConfirmDialog] = useState<{show: boolean, type: string, data?: any}>({show: false, type: ''})
@@ -377,7 +378,8 @@ export default function QuitApproval() {
   }
 
   const confirmApproval = async () => {
-    if (!approvingId) return
+    if (!approvingId || confirmingApproval) return
+    setConfirmingApproval(true)
     
     // 从 localStorage 获取管理员信息
     const userStr = localStorage.getItem('user') || sessionStorage.getItem('user')
@@ -385,7 +387,7 @@ export default function QuitApproval() {
     const adminId = user?.id
     const adminName = user?.name || user?.username || '管理员'
     const approval = approvals.find(a => a.id === approvingId)
-    if (!approval) return
+    if (!approval) { setConfirmingApproval(false); return }
     
     let approvalCompleted = false
     
@@ -426,6 +428,8 @@ export default function QuitApproval() {
       } else {
         toast.error(error.message || '审批失败')
       }
+    } finally {
+      setConfirmingApproval(false)
     }
   }
 
@@ -779,15 +783,21 @@ export default function QuitApproval() {
               <div className="flex gap-3 pt-4">
                 <button
                   onClick={confirmApproval}
-                  className={`flex-1 py-2 rounded-lg transition-colors text-white ${
+                  disabled={confirmingApproval}
+                  className={`flex-1 py-2 rounded-lg transition-colors text-white flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${
                     approvalData.status === '已批准'
                       ? 'bg-green-600 hover:bg-green-700'
                       : 'bg-red-600 hover:bg-red-700'
                   }`}
                 >
-                  确认{approvalData.status === '已批准' ? '批准' : '拒绝'}
+                  {confirmingApproval && <Loader2 size={16} className="animate-spin" />}
+                  {confirmingApproval ? '处理中...' : `确认${approvalData.status === '已批准' ? '批准' : '拒绝'}`}
                 </button>
-                <button onClick={() => setApprovingId(null)} className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-2 rounded-lg transition-colors">
+                <button
+                  onClick={() => setApprovingId(null)}
+                  disabled={confirmingApproval}
+                  className="flex-1 bg-gray-600 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-2 rounded-lg transition-colors"
+                >
                   取消
                 </button>
               </div>

@@ -498,8 +498,10 @@ export default function MemberList() {
   const batchQuit = async () => {
     if (submitting) return
     setSubmitting(true)
-    const adminId = localStorage.getItem('userId')
-    const adminName = localStorage.getItem('userName') || '管理员'
+    const userStr = localStorage.getItem('user') || sessionStorage.getItem('user')
+    const userObj = userStr ? JSON.parse(userStr) : null
+    const adminId = userObj?.id
+    const adminName = userObj?.name || userObj?.username || '管理员'
     const memberIds = Array.from(selectedIds)
     
     let successCount = 0

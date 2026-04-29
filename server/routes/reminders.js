@@ -84,8 +84,8 @@ router.post('/auto-update', async (req, res) => {
       WHERE m.status NOT IN ('已退队', '请假中', '其他')
         AND m.stage_role IN (?, ?, ?, ?, ?, ?)
         AND (
-          (m.last_training_date IS NOT NULL AND DATEDIFF(CURDATE(), m.last_training_date) > ?)
-          OR (m.last_training_date IS NULL AND m.join_date IS NOT NULL AND DATEDIFF(CURDATE(), m.join_date) > ?)
+          (m.last_training_date IS NOT NULL AND DATEDIFF(CURDATE(), m.last_training_date) >= GREATEST(? - 7, 0))
+          OR (m.last_training_date IS NULL AND m.join_date IS NOT NULL AND DATEDIFF(CURDATE(), m.join_date) >= GREATEST(? - 7, 0))
         )
         AND r.id IS NULL
     `, [...trainingStages, timeoutDays, timeoutDays])
