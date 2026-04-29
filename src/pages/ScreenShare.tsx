@@ -280,10 +280,15 @@ export default function ScreenShare() {
       agoraClientRef.current = null
     }
     if (volcEngineRef.current) {
-      try { volcEngineRef.current.stopScreenCapture() } catch {}
-      try { volcEngineRef.current.leaveRoom() } catch {}
-      try { volcEngineRef.current.destroy() } catch {}
+      const _engine = volcEngineRef.current
       volcEngineRef.current = null
+      try { _engine.stopScreenCapture() } catch {}
+      // leaveRoom is async; destroy() after a short delay so the leave signal
+      // is actually transmitted before the WebSocket is torn down, ensuring
+      // peers receive onUserLeave immediately instead of waiting for the 15s timeout.
+      Promise.resolve(_engine.leaveRoom()).catch(() => {}).finally(() => {
+        try { _engine.destroy() } catch {}
+      })
     }
     if (rtcRoomRef.current) {
       const rid = rtcRoomRef.current
