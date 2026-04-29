@@ -155,6 +155,14 @@ export default function ScreenShare() {
           )
         }
       }
+      // Volcengine RTC: send graceful leave signal so onUserLeave fires immediately on peers
+      if (volcEngineRef.current) {
+        try { volcEngineRef.current.leaveRoom() } catch {}
+      }
+      // Agora RTC: same
+      if (agoraClientRef.current) {
+        try { agoraClientRef.current.leave() } catch {}
+      }
       // PeerJS cleanup
       if (peerRef.current) {
         peerRef.current.destroy()
