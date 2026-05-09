@@ -8,7 +8,8 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
-  DragEndEvent
+  DragEndEvent,
+  DragOverEvent
 } from '@dnd-kit/core'
 import {
   arrayMove,
@@ -41,7 +42,8 @@ function CourseRow({
   onDelete,
   onAssign,
   getCategoryColor,
-  getDifficultyColor
+  getDifficultyColor,
+  isSwapTarget
 }: { 
   course: Course
   isSelected: boolean
@@ -51,6 +53,7 @@ function CourseRow({
   onAssign: (course: Course) => void
   getCategoryColor: (category: string) => string
   getDifficultyColor: (difficulty: string) => string
+  isSwapTarget?: boolean
 }) {
   const {
     attributes,
@@ -61,10 +64,11 @@ function CourseRow({
     isDragging
   } = useSortable({ id: course.id })
 
-  const style = {
+  const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1
+    opacity: isDragging ? 0.5 : 1,
+    ...(isSwapTarget ? { outline: '2px solid #a855f7', outlineOffset: '-1px' } : {})
   }
 
   return (
@@ -142,6 +146,10 @@ export default function CourseManagement() {
   const [difficulties, setDifficulties] = useState<string[]>(['初级', '中级', '高级'])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [dragMode, setDragMode] = useState<'insert' | 'swap'>('insert')
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [savingOrder, setSavingOrder] = useState(false)
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
   
   // 从localStorage加载搜索关键词
   const [searchQuery, setSearchQuery] = useState(() => {
@@ -306,44 +314,55 @@ export default function CourseManagement() {
   )
 
   // 拖拽结束处理
-  const handleDragEnd = async (event: DragEndEvent) => {
+  const handleDragEnd = (event: DragEndEvent) => {
+    setDragOverId(null)
     const { active, over } = event
 
     if (over && active.id !== over.id) {
-      const oldIndex = courses.findIndex(item => item.id === active.id)
-      const newIndex = courses.findIndex(item => item.id === over.id)
-      const newItems = arrayMove(courses, oldIndex, newIndex)
-      
-      // 更新order和code
-      const updatedItems = newItems.map((item, index) => {
-        // 获取类别前缀（如 "1", "2", "3"）
-        const categoryPrefix = item.code.split('.')[0]
-        
-        // 计算该类别中的序号
-        const sameCategoryItems = newItems.filter(c => c.code.startsWith(categoryPrefix + '.'))
-        const indexInCategory = sameCategoryItems.findIndex(c => c.id === item.id) + 1
-        
-        return {
-          ...item,
-          code: `${categoryPrefix}.${indexInCategory}`,
-          order: index + 1
-        }
-      })
-
-      // 立即更新UI
-      setCourses(updatedItems)
-      
-      // 调用API保存到数据库
-      try {
-        await courseAPI.updateOrder(updatedItems)
-        toast.success('课程顺序更新成功')
-      } catch (error: any) {
-        console.error('更新顺序失败:', error)
-        toast.error('更新顺序失败: ' + error.message)
-        // 失败时重新加载
-        await loadCourses()
+      if (dragMode === 'insert') {
+        const oldIndex = courses.findIndex(item => item.id === active.id)
+        const newIndex = courses.findIndex(item => item.id === over.id)
+        const newItems = arrayMove(courses, oldIndex, newIndex)
+        const updatedItems = newItems.map((item, index) => {
+          const categoryPrefix = item.code.split('.')[0]
+          const sameCategoryItems = newItems.filter(c => c.code.startsWith(categoryPrefix + '.'))
+          const indexInCategory = sameCategoryItems.findIndex(c => c.id === item.id) + 1
+          return { ...item, code: `${categoryPrefix}.${indexInCategory}`, order: index + 1 }
+        })
+        setCourses(updatedItems)
+      } else {
+        // 替换模式：仅交换课程名称，编号和序号保持不变
+        setCourses(prev => {
+          const activeItem = prev.find(c => c.id === active.id)!
+          const overItem = prev.find(c => c.id === over.id)!
+          return prev.map(item => {
+            if (item.id === active.id) return { ...item, name: overItem.name }
+            if (item.id === over.id) return { ...item, name: activeItem.name }
+            return item
+          })
+        })
       }
+      setHasUnsavedChanges(true)
     }
+  }
+
+  const handleSaveOrder = async () => {
+    setSavingOrder(true)
+    try {
+      await courseAPI.updateOrder(courses)
+      setHasUnsavedChanges(false)
+      toast.success('课程顺序已保存')
+    } catch (error: any) {
+      console.error('保存顺序失败:', error)
+      toast.error('保存顺序失败: ' + error.message)
+    } finally {
+      setSavingOrder(false)
+    }
+  }
+
+  const handleDiscardOrder = async () => {
+    await loadCourses()
+    setHasUnsavedChanges(false)
   }
 
   // 批量操作
@@ -872,12 +891,63 @@ export default function CourseManagement() {
         </div>
       )}
 
+      {/* 拖拽模式切换 + 未保存更改提示 */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-400">拖拽模式：</span>
+          <button
+            onClick={() => setDragMode('insert')}
+            className={`px-3 py-1 rounded text-sm transition-colors ${
+              dragMode === 'insert' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            }`}
+          >
+            插入
+          </button>
+          <button
+            onClick={() => setDragMode('swap')}
+            className={`px-3 py-1 rounded text-sm transition-colors ${
+              dragMode === 'swap' ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            }`}
+          >
+            替换名称
+          </button>
+        </div>
+        {hasUnsavedChanges && (
+          <div className="flex items-center gap-3">
+            <span className="text-yellow-400 text-sm font-medium">● 有未保存的排序更改</span>
+            <button
+              onClick={handleDiscardOrder}
+              disabled={savingOrder}
+              className="px-3 py-1.5 bg-gray-600 hover:bg-gray-500 disabled:opacity-50 text-white text-sm rounded transition-colors"
+            >
+              放弃
+            </button>
+            <button
+              onClick={handleSaveOrder}
+              disabled={savingOrder}
+              className="px-3 py-1.5 bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm rounded transition-colors flex items-center gap-1.5"
+            >
+              {savingOrder && <Loader2 size={14} className="animate-spin" />}
+              {savingOrder ? '保存中...' : '保存顺序'}
+            </button>
+          </div>
+        )}
+      </div>
+
       <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 overflow-hidden">
         {loading ? (
           <div className="p-12 text-center text-gray-400">加载中...</div>
         ) : (
           <div className="admin-table-container">
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+              onDragOver={(event: DragOverEvent) => {
+                if (dragMode === 'swap') setDragOverId(event.over?.id as string || null)
+              }}
+              onDragCancel={() => setDragOverId(null)}
+            >
               <table className="admin-table">
                 <thead>
                   <tr>
@@ -910,6 +980,7 @@ export default function CourseManagement() {
                         onAssign={openAssignModal}
                         getCategoryColor={getCategoryColor}
                         getDifficultyColor={getDifficultyColor}
+                        isSwapTarget={dragMode === 'swap' && dragOverId === course.id}
                       />
                     ))}
                   </SortableContext>
