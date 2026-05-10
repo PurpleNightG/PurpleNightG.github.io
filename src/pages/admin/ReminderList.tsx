@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { reminderAPI, quitAPI, memberAPI } from '../../utils/api'
-import { RefreshCw, Settings, Edit, Filter, ChevronUp, ChevronDown, Search, X, CheckSquare, Square, UserMinus } from 'lucide-react'
+import { Settings, Edit, Filter, ChevronUp, ChevronDown, Search, X, CheckSquare, Square, UserMinus } from 'lucide-react'
 import { toast } from '../../utils/toast'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { formatDate } from '../../utils/dateFormat'
@@ -19,7 +19,6 @@ interface ReminderItem {
 export default function ReminderList() {
   const [items, setItems] = useState<ReminderItem[]>([])
   const [loading, setLoading] = useState(true)
-  const [updating, setUpdating] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [timeoutDays, setTimeoutDays] = useState(7)
   const [confirmDialog, setConfirmDialog] = useState<{show: boolean, type: string, data?: any}>({show: false, type: ''})
@@ -224,31 +223,15 @@ export default function ReminderList() {
     }
   }
 
-  const handleAutoUpdate = () => {
-    setConfirmDialog({show: true, type: 'update'})
-  }
-
-  const confirmUpdate = async () => {
-    setConfirmDialog({show: false, type: ''})
-    setUpdating(true)
-    try {
-      await reminderAPI.autoUpdate(timeoutDays)
-      toast.success('催促名单更新成功')
-      await loadItems()
-    } catch (error: any) {
-      toast.error(error.message || '更新失败')
-    } finally {
-      setUpdating(false)
-    }
-  }
-
   // 批量添加到退队审批
   const handleBatchAddToQuit = async () => {
     if (selectedIds.size === 0) return
     
-    const adminId = localStorage.getItem('userId')
-    const adminName = localStorage.getItem('userName') || '管理员'
-    
+    const userStr = localStorage.getItem('user') || sessionStorage.getItem('user')
+    const userObj = userStr ? JSON.parse(userStr) : null
+    const adminId = userObj?.id
+    const adminName = userObj?.name || userObj?.username || '管理员'
+
     try {
       const selectedItems = items.filter(item => selectedIds.has(item.id))
       const timeoutItems = selectedItems.filter(item => item.days_until_timeout < 0)
@@ -335,8 +318,10 @@ export default function ReminderList() {
   const confirmAutoAddToQuit = async () => {
     setConfirmDialog({show: false, type: ''})
     
-    const adminId = localStorage.getItem('userId')
-    const adminName = localStorage.getItem('userName') || '管理员'
+    const userStr2 = localStorage.getItem('user') || sessionStorage.getItem('user')
+    const userObj2 = userStr2 ? JSON.parse(userStr2) : null
+    const adminId = userObj2?.id
+    const adminName = userObj2?.name || userObj2?.username || '管理员'
     const timeoutItems = items.filter(item => item.days_until_timeout < 0)
     
     try {
@@ -471,14 +456,6 @@ export default function ReminderList() {
             <UserMinus size={20} />
             处理超时成员
           </button>
-          <button
-            onClick={handleAutoUpdate}
-            disabled={updating}
-            className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-          >
-            <RefreshCw size={20} className={updating ? 'animate-spin' : ''} />
-            {updating ? '更新中...' : '更新名单'}
-          </button>
         </div>
       </div>
 
@@ -585,7 +562,7 @@ export default function ReminderList() {
         ) : filteredItems.length === 0 ? (
           <div className="p-12 text-center text-gray-400">
             <p>暂无需要催促的成员</p>
-            <p className="text-sm mt-2">点击"更新名单"自动检测超过{timeoutDays}天未训练的成员</p>
+            <p className="text-sm mt-2">当有成员超过{timeoutDays}天未训练时会自动显示在此列表</p>
           </div>
         ) : (
           <div className="admin-table-container">
@@ -758,19 +735,6 @@ export default function ReminderList() {
             </div>
           </div>
         </div>
-      )}
-
-      {/* 更新确认对话框 */}
-      {confirmDialog.show && confirmDialog.type === 'update' && (
-        <ConfirmDialog
-          title="更新催促名单"
-          message={`确定要更新催促名单吗？系统将自动计算超过 ${timeoutDays} 天未训练的成员。`}
-          confirmText="更新"
-          cancelText="取消"
-          type="info"
-          onConfirm={confirmUpdate}
-          onCancel={() => setConfirmDialog({show: false, type: ''})}
-        />
       )}
 
       {/* 自动处理超时成员确认对话框 */}

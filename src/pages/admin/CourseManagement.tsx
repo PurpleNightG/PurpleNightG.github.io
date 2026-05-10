@@ -433,7 +433,12 @@ export default function CourseManagement() {
           return
         }
         await courseAPI.update(editingCourse.id, formData)
-        await loadCourses()
+        // 直接更新本地状态，保留待保存的拖拽顺序
+        setCourses(prev => prev.map(c =>
+          c.id === editingCourse.id
+            ? { ...c, code: formData.code, name: formData.name, category: formData.category, difficulty: formData.difficulty, hours: formData.hours, description: formData.description }
+            : c
+        ))
         toast.success('课程更新成功')
       } else {
         // 创建模式：检查课程编号是否已存在
@@ -441,6 +446,16 @@ export default function CourseManagement() {
         if (duplicate) {
           toast.error(`课程编号 ${formData.code} 已存在，请使用其他编号`)
           return
+        }
+
+        // 如果有未保存的拖拽顺序，先自动保存
+        if (hasUnsavedChanges) {
+          try {
+            await courseAPI.updateOrder(courses)
+            setHasUnsavedChanges(false)
+          } catch {
+            // 保存失败也继续，只是顺序可能会重置
+          }
         }
 
         // 根据课程编号计算插入位置

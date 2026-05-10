@@ -3,42 +3,68 @@ import { pool } from '../config/database.js'
 
 const router = express.Router()
 
-// 获取催促名单
+// 获取催促名单（实时从成员表计算）
 router.get('/', async (req, res) => {
   try {
-    // 从数据库获取全局超时天数设置
     const [settingRows] = await pool.query(
       'SELECT setting_value FROM system_settings WHERE setting_key = ?',
       ['reminder_timeout_days']
     )
-    const defaultTimeoutDays = settingRows.length > 0 
-      ? parseInt(settingRows[0].setting_value) 
+    const defaultTimeoutDays = settingRows.length > 0
+      ? parseInt(settingRows[0].setting_value)
       : 7
-    
+    const threshold = Math.max(defaultTimeoutDays - 7, 0)
+
+    const trainingStages = ['未新训', '新训初期', '新训一期', '新训二期', '新训三期', '新训准考']
+
     const [rows] = await pool.query(`
-      SELECT 
-        r.*,
+      SELECT
+        m.id AS id,
+        m.id AS member_id,
+        m.nickname AS member_name,
         m.qq,
-        m.nickname,
-        CASE 
-          WHEN r.custom_timeout_days IS NOT NULL THEN r.custom_timeout_days - r.days_without_training
-          ELSE ? - r.days_without_training
-        END as days_until_timeout
-      FROM reminder_list r
-      LEFT JOIN members m ON r.member_id = m.id
-      ORDER BY r.days_without_training DESC
-    `, [defaultTimeoutDays])
-    
-    res.json({
-      success: true,
-      data: rows
-    })
+        m.stage_role,
+        m.last_training_date,
+        CASE
+          WHEN m.last_training_date IS NOT NULL THEN DATEDIFF(CURDATE(), m.last_training_date)
+          ELSE DATEDIFF(CURDATE(), m.join_date)
+        END AS days_without_training,
+        rl.custom_timeout_days,
+        CASE
+          WHEN rl.custom_timeout_days IS NOT NULL THEN
+            rl.custom_timeout_days - CASE
+              WHEN m.last_training_date IS NOT NULL THEN DATEDIFF(CURDATE(), m.last_training_date)
+              ELSE DATEDIFF(CURDATE(), m.join_date)
+            END
+          ELSE
+            ? - CASE
+              WHEN m.last_training_date IS NOT NULL THEN DATEDIFF(CURDATE(), m.last_training_date)
+              ELSE DATEDIFF(CURDATE(), m.join_date)
+            END
+        END AS days_until_timeout
+      FROM members m
+      LEFT JOIN reminder_list rl ON m.id = rl.member_id
+      LEFT JOIN retention_records ret ON m.id = ret.member_id
+      WHERE m.status NOT IN ('已退队', '请假中', '其他')
+        AND m.stage_role IN (?, ?, ?, ?, ?, ?)
+        AND (
+          (m.last_training_date IS NOT NULL AND DATEDIFF(CURDATE(), m.last_training_date) >= ?)
+          OR (m.last_training_date IS NULL AND m.join_date IS NOT NULL AND DATEDIFF(CURDATE(), m.join_date) >= ?)
+        )
+        AND ret.id IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM leave_records lr
+          WHERE lr.member_id = m.id
+            AND lr.status = '已结束'
+            AND lr.end_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+        )
+      ORDER BY days_without_training DESC
+    `, [defaultTimeoutDays, ...trainingStages, threshold, threshold])
+
+    res.json({ success: true, data: rows })
   } catch (error) {
     console.error('获取催促名单失败:', error)
-    res.status(500).json({
-      success: false,
-      message: '获取催促名单失败'
-    })
+    res.status(500).json({ success: false, message: '获取催促名单失败' })
   }
 })
 
@@ -144,12 +170,27 @@ router.put('/batch/timeout', async (req, res) => {
     // 如果为null或0，则清除自定义超时天数（使用全局设置）
     const timeoutValue = custom_timeout_days > 0 ? custom_timeout_days : null
     
-    // 批量更新
-    for (const id of ids) {
-      await pool.query(
-        'UPDATE reminder_list SET custom_timeout_days = ? WHERE id = ?',
-        [timeoutValue, id]
-      )
+    // 批量 UPSERT（按 member_id）
+    for (const memberId of ids) {
+      if (timeoutValue !== null) {
+        const [existing] = await pool.query('SELECT id FROM reminder_list WHERE member_id = ?', [memberId])
+        if (existing.length > 0) {
+          await pool.query('UPDATE reminder_list SET custom_timeout_days = ? WHERE member_id = ?', [timeoutValue, memberId])
+        } else {
+          await pool.query(`
+            INSERT INTO reminder_list (member_id, member_name, stage_role, last_training_date, days_without_training, custom_timeout_days)
+            SELECT m.id, m.nickname, m.stage_role, m.last_training_date,
+              CASE WHEN m.last_training_date IS NOT NULL
+                THEN DATEDIFF(CURDATE(), m.last_training_date)
+                ELSE DATEDIFF(CURDATE(), m.join_date)
+              END,
+              ?
+            FROM members m WHERE m.id = ?
+          `, [timeoutValue, memberId])
+        }
+      } else {
+        await pool.query('DELETE FROM reminder_list WHERE member_id = ?', [memberId])
+      }
     }
     
     res.json({
@@ -176,10 +217,25 @@ router.put('/:id/timeout', async (req, res) => {
     // 如果为null或0，则清除自定义超时天数（使用全局设置）
     const timeoutValue = custom_timeout_days > 0 ? custom_timeout_days : null
     
-    await pool.query(
-      'UPDATE reminder_list SET custom_timeout_days = ? WHERE id = ?',
-      [timeoutValue, id]
-    )
+    if (timeoutValue !== null) {
+      const [existing] = await pool.query('SELECT id FROM reminder_list WHERE member_id = ?', [id])
+      if (existing.length > 0) {
+        await pool.query('UPDATE reminder_list SET custom_timeout_days = ? WHERE member_id = ?', [timeoutValue, id])
+      } else {
+        await pool.query(`
+          INSERT INTO reminder_list (member_id, member_name, stage_role, last_training_date, days_without_training, custom_timeout_days)
+          SELECT m.id, m.nickname, m.stage_role, m.last_training_date,
+            CASE WHEN m.last_training_date IS NOT NULL
+              THEN DATEDIFF(CURDATE(), m.last_training_date)
+              ELSE DATEDIFF(CURDATE(), m.join_date)
+            END,
+            ?
+          FROM members m WHERE m.id = ?
+        `, [timeoutValue, id])
+      }
+    } else {
+      await pool.query('DELETE FROM reminder_list WHERE member_id = ?', [id])
+    }
     
     res.json({
       success: true,
@@ -201,7 +257,7 @@ router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params
     
-    await pool.query('DELETE FROM reminder_list WHERE id = ?', [id])
+    await pool.query('DELETE FROM reminder_list WHERE member_id = ?', [id])
     
     res.json({
       success: true,

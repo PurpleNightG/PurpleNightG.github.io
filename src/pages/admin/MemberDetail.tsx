@@ -168,9 +168,11 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
     e.preventDefault()
     setAddingBlackPoint(true)
     try {
-      const adminId = localStorage.getItem('userId')
-      const adminName = localStorage.getItem('userName') || '管理员'
-      
+      const _userStr = localStorage.getItem('user') || sessionStorage.getItem('user')
+      const _userObj = _userStr ? JSON.parse(_userStr) : null
+      const adminId = _userObj?.id
+      const adminName = _userObj?.name || _userObj?.username || '管理员'
+
       await blackPointAPI.create({
         member_id: memberId,
         reason: blackPointForm.reason,
@@ -233,8 +235,10 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
   const confirmQuit = async () => {
     setShowQuitConfirm(false)
     
-    const adminId = localStorage.getItem('userId')
-    const adminName = localStorage.getItem('userName') || '管理员'
+    const _userStr2 = localStorage.getItem('user') || sessionStorage.getItem('user')
+    const _userObj2 = _userStr2 ? JSON.parse(_userStr2) : null
+    const adminId = _userObj2?.id
+    const adminName = _userObj2?.name || _userObj2?.username || '管理员'
     let approvalCreated = false
     
     try {

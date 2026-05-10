@@ -96,9 +96,9 @@ export default function AssessmentApproval() {
     try {
       setShowApproveModal(false)
       setProcessing(true)
-      const adminUserStr = localStorage.getItem('adminUser') || sessionStorage.getItem('adminUser')
+      const adminUserStr = localStorage.getItem('user') || sessionStorage.getItem('user')
       const adminUser = adminUserStr ? JSON.parse(adminUserStr) : null
-      const approved_by = adminUser?.username || '管理员'
+      const approved_by = adminUser?.name || adminUser?.username || '管理员'
 
       const response = await assessmentApplicationAPI.approve(selectedApplication.id, approved_by)
       
@@ -128,9 +128,9 @@ export default function AssessmentApproval() {
 
     try {
       setProcessing(true)
-      const adminUserStr = localStorage.getItem('adminUser') || sessionStorage.getItem('adminUser')
+      const adminUserStr = localStorage.getItem('user') || sessionStorage.getItem('user')
       const adminUser = adminUserStr ? JSON.parse(adminUserStr) : null
-      const approved_by = adminUser?.username || '管理员'
+      const approved_by = adminUser?.name || adminUser?.username || '管理员'
 
       await assessmentApplicationAPI.reject(selectedApplication.id, rejectReason, approved_by)
       
