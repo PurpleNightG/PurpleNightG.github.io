@@ -320,6 +320,17 @@ export default function CourseManagement() {
 
     if (over && active.id !== over.id) {
       if (dragMode === 'insert') {
+        // 插入模式：禁止跨阶段（course code 第一段不同）
+        const activeItem = courses.find(c => c.id === active.id)
+        const overItem = courses.find(c => c.id === over.id)
+        if (activeItem && overItem) {
+          const activeStage = activeItem.code.split('.')[0]
+          const overStage = overItem.code.split('.')[0]
+          if (activeStage !== overStage) {
+            toast.error('插入模式下不能跨阶段调整顺序，请使用替换模式')
+            return
+          }
+        }
         const oldIndex = courses.findIndex(item => item.id === active.id)
         const newIndex = courses.findIndex(item => item.id === over.id)
         const newItems = arrayMove(courses, oldIndex, newIndex)
@@ -431,6 +442,15 @@ export default function CourseManagement() {
         if (duplicate) {
           toast.error(`课程编号 ${formData.code} 已存在，请使用其他编号`)
           return
+        }
+        // 如果有未保存的拖拽顺序，先自动保存
+        if (hasUnsavedChanges) {
+          try {
+            await courseAPI.updateOrder(courses)
+            setHasUnsavedChanges(false)
+          } catch {
+            // 保存失败也继续
+          }
         }
         await courseAPI.update(editingCourse.id, formData)
         // 直接更新本地状态，保留待保存的拖拽顺序
