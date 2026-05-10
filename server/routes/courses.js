@@ -50,11 +50,11 @@ router.put('/order', async (req, res) => {
         )
       }
       
-      // 第二阶段：更新为最终的code和order
+      // 第二阶段：更新为最终的code、order和name
       for (const course of courses) {
         await connection.query(
-          'UPDATE courses SET code = ?, `order` = ? WHERE id = ?',
-          [course.code, course.order, course.id]
+          'UPDATE courses SET code = ?, `order` = ?, name = ? WHERE id = ?',
+          [course.code, course.order, course.name, course.id]
         )
       }
       
