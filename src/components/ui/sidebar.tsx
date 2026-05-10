@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Home, Users, BookOpen, FileCheck, UserMinus, ChevronDown, FileText, Video, Monitor } from "lucide-react";
+import { Home, Users, BookOpen, FileCheck, UserMinus, ChevronDown, FileText, Video, Monitor, AlertTriangle, Calendar } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 
 const AnimatedMenuToggle = ({
@@ -319,6 +319,8 @@ const studentMenuItems = [
   { path: '/student/classmates', icon: <Users size={20} />, label: '同期学员' },
   { path: '/student/apply-assessment', icon: <FileCheck size={20} />, label: '申请考核' },
   { path: '/student/assessment-report', icon: <FileText size={20} />, label: '新训考核报告' },
+  { path: '/student/blackpoints', icon: <AlertTriangle size={20} />, label: '黑点记录' },
+  { path: '/student/leave', icon: <Calendar size={20} />, label: '请假记录' },
   { path: '/student/videos', icon: <Video size={20} />, label: '公开视频查看' },
 ];
 

@@ -1,7 +1,26 @@
 import express from 'express'
 import { pool } from '../config/database.js'
+import jwt from 'jsonwebtoken'
 
 const router = express.Router()
+
+// 学员获取自己的黑点记录
+router.get('/my', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '')
+    if (!token) return res.status(401).json({ success: false, message: '未登录' })
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key')
+    const memberId = decoded.id
+
+    const [rows] = await pool.query(`
+      SELECT * FROM black_point_records WHERE member_id = ? ORDER BY register_date DESC
+    `, [memberId])
+    res.json({ success: true, data: rows })
+  } catch (error) {
+    console.error('获取个人黑点记录失败:', error)
+    res.status(500).json({ success: false, message: '获取黑点记录失败' })
+  }
+})
 
 // 获取所有黑点记录
 router.get('/', async (req, res) => {

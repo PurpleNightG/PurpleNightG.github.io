@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { leaveAPI, memberAPI } from '../../utils/api'
-import { Plus, Edit, Trash2, Filter, ChevronUp, ChevronDown, Search, X, CheckSquare, Square, Loader2 } from 'lucide-react'
+import { Plus, Edit, Trash2, Filter, ChevronUp, ChevronDown, Search, X, CheckSquare, Square, Loader2, CheckCircle, XCircle, Bell } from 'lucide-react'
 import { formatDate, toInputDate } from '../../utils/dateFormat'
 import { toast } from '../../utils/toast'
 import ConfirmDialog from '../../components/ConfirmDialog'
@@ -18,6 +18,22 @@ interface LeaveRecord {
   total_days: number
   remaining_days?: number
   status: '请假中' | '已结束'
+}
+
+interface LeaveApplication {
+  id: number
+  member_id: number
+  member_name: string
+  qq: string
+  reason: string
+  start_date: string
+  end_date: string
+  total_days: number
+  status: '待审批' | '已批准' | '已拒绝'
+  reviewer_name: string | null
+  review_date: string | null
+  review_remark: string | null
+  created_at: string
 }
 
 interface MemberOption {
@@ -47,6 +63,11 @@ export default function LeaveRecords() {
   const [members, setMembers] = useState<MemberOption[]>([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [activeTab, setActiveTab] = useState<'records' | 'applications'>('records')
+  const [applications, setApplications] = useState<LeaveApplication[]>([])
+  const [loadingApps, setLoadingApps] = useState(false)
+  const [reviewModal, setReviewModal] = useState<{show: boolean, app: LeaveApplication | null, remark: string}>({show: false, app: null, remark: ''})
+  const [reviewing, setReviewing] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [editingRecord, setEditingRecord] = useState<LeaveRecord | null>(null)
   const [confirmDialog, setConfirmDialog] = useState<{show: boolean, type: string, data?: any}>({show: false, type: ''})
@@ -69,8 +90,7 @@ export default function LeaveRecords() {
 
   useEffect(() => {
     const loadData = async () => {
-      await loadRecords()
-      await loadMembers()
+      await Promise.all([loadRecords(), loadMembers(), loadApplications()])
     }
     loadData()
   }, [])
@@ -78,6 +98,52 @@ export default function LeaveRecords() {
   useEffect(() => { localStorage.setItem('leaveFilters', JSON.stringify(filters)) }, [filters])
   useEffect(() => { if (sortConfig) localStorage.setItem('leaveSort', JSON.stringify(sortConfig)) }, [sortConfig])
   useEffect(() => { localStorage.setItem('leaveSearch', searchQuery) }, [searchQuery])
+
+  const loadApplications = async () => {
+    setLoadingApps(true)
+    try {
+      const res = await leaveAPI.getApplications()
+      setApplications(res.data || [])
+    } catch (error: any) {
+      toast.error(error.message || '加载申请失败')
+    } finally {
+      setLoadingApps(false)
+    }
+  }
+
+  const handleDeleteApplication = async (id: number) => {
+    try {
+      await leaveAPI.deleteApplication(id)
+      toast.success('请假申请记录已删除')
+      await loadApplications()
+    } catch (error: any) {
+      toast.error(error.message || '删除失败')
+    }
+  }
+
+  const handleReview = async (status: '已批准' | '已拒绝') => {
+    if (!reviewModal.app) return
+    setReviewing(true)
+    try {
+      const userStr = localStorage.getItem('user') || sessionStorage.getItem('user')
+      const userObj = userStr ? JSON.parse(userStr) : null
+      const reviewerName = userObj?.name || userObj?.username || '管理员'
+      const reviewerId = userObj?.id
+      await leaveAPI.reviewApplication(reviewModal.app.id, {
+        status,
+        reviewer_name: reviewerName,
+        reviewer_id: reviewerId,
+        review_remark: reviewModal.remark
+      })
+      toast.success(status === '已批准' ? '已批准请假申请' : '已拒绝请假申请')
+      setReviewModal({show: false, app: null, remark: ''})
+      await Promise.all([loadApplications(), loadRecords()])
+    } catch (error: any) {
+      toast.error(error.message || '审批失败')
+    } finally {
+      setReviewing(false)
+    }
+  }
 
   const loadRecords = async () => {
     setLoading(true)
@@ -324,6 +390,8 @@ export default function LeaveRecords() {
 
   const activeFilterCount = filters.status.length
 
+  const pendingCount = applications.filter(a => a.status === '待审批').length
+
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
@@ -341,33 +409,62 @@ export default function LeaveRecords() {
           )}
         </div>
         <div className="flex gap-3">
-          <div className="relative">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="搜索成员、QQ、原因..."
-              className="bg-gray-700 border border-gray-600 rounded-lg pl-10 pr-10 py-2 text-white placeholder-gray-400 w-64 focus:outline-none focus:border-purple-500 transition-colors"
-            />
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
-                <X size={18} />
+          {activeTab === 'records' && (
+            <>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="搜索成员、QQ、原因..."
+                  className="bg-gray-700 border border-gray-600 rounded-lg pl-10 pr-10 py-2 text-white placeholder-gray-400 w-64 focus:outline-none focus:border-purple-500 transition-colors"
+                />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                {searchQuery && (
+                  <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
+                    <X size={18} />
+                  </button>
+                )}
+              </div>
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${showFilters ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
+              >
+                <Filter size={20} />
+                筛选{activeFilterCount > 0 && ` (${activeFilterCount})`}
               </button>
-            )}
-          </div>
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${showFilters ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}`}
-          >
-            <Filter size={20} />
-            筛选{activeFilterCount > 0 && ` (${activeFilterCount})`}
-          </button>
-          <button onClick={openCreateModal} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors">
-            <Plus size={20} />
-            添加请假
-          </button>
+              <button onClick={openCreateModal} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors">
+                <Plus size={20} />
+                添加请假
+              </button>
+            </>
+          )}
         </div>
+      </div>
+
+      {/* Tab 切换 */}
+      <div className="flex gap-1 mb-4 bg-gray-800/50 rounded-lg p-1 w-fit">
+        <button
+          onClick={() => setActiveTab('records')}
+          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+            activeTab === 'records' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          请假记录
+        </button>
+        <button
+          onClick={() => setActiveTab('applications')}
+          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors relative ${
+            activeTab === 'applications' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          请假申请
+          {pendingCount > 0 && (
+            <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-white text-xs flex items-center justify-center">
+              {pendingCount}
+            </span>
+          )}
+        </button>
       </div>
 
       {selectedIds.size > 0 && (
@@ -386,7 +483,7 @@ export default function LeaveRecords() {
         </div>
       )}
 
-      {showFilters && (
+      {activeTab === 'records' && showFilters && (
         <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 mb-4">
           <div className="flex justify-between items-center mb-3">
             <div className="flex items-center gap-3">
@@ -419,6 +516,79 @@ export default function LeaveRecords() {
         </div>
       )}
 
+      {/* 请假申请面板 */}
+      {activeTab === 'applications' && (
+        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 overflow-hidden">
+          {loadingApps ? (
+            <div className="p-12 text-center text-gray-400">加载中...</div>
+          ) : applications.length === 0 ? (
+            <div className="p-12 text-center">
+              <Bell className="text-gray-600 mx-auto mb-3" size={48} />
+              <p className="text-gray-400">暂无请假申请</p>
+            </div>
+          ) : (
+            <div className="admin-table-container">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>成员</th>
+                    <th>QQ号</th>
+                    <th>请假原因</th>
+                    <th>开始日期</th>
+                    <th>结束日期</th>
+                    <th>天数</th>
+                    <th>状态</th>
+                    <th>审批人</th>
+                    <th>审批备注</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {applications.map(app => (
+                    <tr key={app.id}>
+                      <td>{app.member_name}</td>
+                      <td>{app.qq}</td>
+                      <td className="max-w-[160px] truncate" title={app.reason}>{app.reason || '—'}</td>
+                      <td>{formatDate(app.start_date)}</td>
+                      <td>{formatDate(app.end_date)}</td>
+                      <td>{app.total_days} 天</td>
+                      <td>
+                        {app.status === '待审批' && <span className="status-badge bg-yellow-600/20 text-yellow-300">待审批</span>}
+                        {app.status === '已批准' && <span className="status-badge bg-green-600/20 text-green-300">已批准</span>}
+                        {app.status === '已拒绝' && <span className="status-badge bg-red-600/20 text-red-300">已拒绝</span>}
+                      </td>
+                      <td>{app.reviewer_name || '—'}</td>
+                      <td className="max-w-[120px] truncate text-gray-400" title={app.review_remark || ''}>{app.review_remark || '—'}</td>
+                      <td>
+                        <div className="flex items-center gap-3">
+                          {app.status === '待审批' && (
+                            <button
+                              onClick={() => setReviewModal({show: true, app, remark: ''})}
+                              className="text-blue-400 hover:text-blue-300 transition-colors text-sm"
+                            >
+                              审批
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setConfirmDialog({show: true, type: 'deleteApp', data: app})}
+                            className="text-red-400 hover:text-red-300 transition-colors"
+                            title="删除记录"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 请假记录面板 */}
+      {activeTab === 'records' && (
       <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 overflow-hidden">
         {loading ? (
           <div className="p-12 text-center text-gray-400">加载中...</div>
@@ -533,6 +703,56 @@ export default function LeaveRecords() {
           </div>
         )}
       </div>
+      )}
+
+      {/* 审批模态框 */}
+      {reviewModal.show && reviewModal.app && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700">
+            <h2 className="text-xl font-bold text-white mb-1">审批请假申请</h2>
+            <p className="text-gray-400 text-sm mb-4">{reviewModal.app.member_name} 申请 {reviewModal.app.total_days} 天请假</p>
+            <div className="bg-gray-700/50 rounded-lg p-3 mb-4 space-y-1 text-sm">
+              <div className="flex gap-2"><span className="text-gray-400">时间：</span><span className="text-white">{formatDate(reviewModal.app.start_date)} — {formatDate(reviewModal.app.end_date)}</span></div>
+              {reviewModal.app.reason && <div className="flex gap-2"><span className="text-gray-400">原因：</span><span className="text-white">{reviewModal.app.reason}</span></div>}
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-300 mb-1">审批备注（选填）</label>
+              <textarea
+                value={reviewModal.remark}
+                onChange={e => setReviewModal(m => ({...m, remark: e.target.value}))}
+                rows={2}
+                placeholder="可填写审批意见..."
+                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 resize-none focus:outline-none focus:border-purple-500"
+              />
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => handleReview('已批准')}
+                disabled={reviewing}
+                className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white py-2 rounded-lg transition-colors flex items-center justify-center gap-2"
+              >
+                {reviewing ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+                批准
+              </button>
+              <button
+                onClick={() => handleReview('已拒绝')}
+                disabled={reviewing}
+                className="flex-1 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white py-2 rounded-lg transition-colors flex items-center justify-center gap-2"
+              >
+                {reviewing ? <Loader2 size={16} className="animate-spin" /> : <XCircle size={16} />}
+                拒绝
+              </button>
+              <button
+                onClick={() => setReviewModal({show: false, app: null, remark: ''})}
+                disabled={reviewing}
+                className="px-4 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
@@ -665,6 +885,18 @@ export default function LeaveRecords() {
           cancelText="取消"
           type="danger"
           onConfirm={confirmBatchDelete}
+          onCancel={() => setConfirmDialog({show: false, type: ''})}
+        />
+      )}
+
+      {confirmDialog.show && confirmDialog.type === 'deleteApp' && (
+        <ConfirmDialog
+          title="删除请假申请"
+          message={`确定要删除 ${confirmDialog.data?.member_name} 的请假申请记录吗？`}
+          confirmText="删除"
+          cancelText="取消"
+          type="danger"
+          onConfirm={() => { setConfirmDialog({show: false, type: ''}); handleDeleteApplication(confirmDialog.data.id) }}
           onCancel={() => setConfirmDialog({show: false, type: ''})}
         />
       )}

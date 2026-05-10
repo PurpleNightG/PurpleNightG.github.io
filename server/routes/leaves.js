@@ -1,7 +1,174 @@
 import express from 'express'
 import { pool } from '../config/database.js'
+import jwt from 'jsonwebtoken'
 
 const router = express.Router()
+
+// 学员获取自己的请假记录
+router.get('/my', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '')
+    if (!token) return res.status(401).json({ success: false, message: '未登录' })
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key')
+    const memberId = decoded.id
+
+    const [rows] = await pool.query(`
+      SELECT *, DATEDIFF(end_date, CURDATE()) as remaining_days
+      FROM leave_records
+      WHERE member_id = ?
+      ORDER BY created_at DESC
+    `, [memberId])
+    res.json({ success: true, data: rows })
+  } catch (error) {
+    console.error('获取个人请假记录失败:', error)
+    res.status(500).json({ success: false, message: '获取记录失败' })
+  }
+})
+
+// 管理员获取所有请假申请
+router.get('/applications', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT * FROM leave_applications ORDER BY created_at DESC
+    `)
+    res.json({ success: true, data: rows })
+  } catch (error) {
+    console.error('获取请假申请失败:', error)
+    res.status(500).json({ success: false, message: '获取申请失败' })
+  }
+})
+
+// 学员获取自己的请假申请
+router.get('/applications/my', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '')
+    if (!token) return res.status(401).json({ success: false, message: '未登录' })
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key')
+    const memberId = decoded.id
+
+    const [rows] = await pool.query(`
+      SELECT * FROM leave_applications WHERE member_id = ? ORDER BY created_at DESC
+    `, [memberId])
+    res.json({ success: true, data: rows })
+  } catch (error) {
+    console.error('获取个人申请失败:', error)
+    res.status(500).json({ success: false, message: '获取申请失败' })
+  }
+})
+
+// 学员提交请假申请
+router.post('/applications', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '')
+    if (!token) return res.status(401).json({ success: false, message: '未登录' })
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key')
+    const memberId = decoded.id
+
+    const { reason, start_date, end_date } = req.body
+    if (!start_date || !end_date) {
+      return res.status(400).json({ success: false, message: '请填写请假日期' })
+    }
+
+    // 检查是否有进行中的请假
+    const [activeLeaves] = await pool.query(
+      'SELECT COUNT(*) as count FROM leave_records WHERE member_id = ? AND status = ?',
+      [memberId, '请假中']
+    )
+    if (activeLeaves[0].count > 0) {
+      return res.status(400).json({ success: false, message: '您目前有正在进行的请假，无法再次申请' })
+    }
+
+    // 检查是否有待审批的申请
+    const [pendingApps] = await pool.query(
+      'SELECT COUNT(*) as count FROM leave_applications WHERE member_id = ? AND status = ?',
+      [memberId, '待审批']
+    )
+    if (pendingApps[0].count > 0) {
+      return res.status(400).json({ success: false, message: '您已有待审批的请假申请，请等待审批后再次申请' })
+    }
+
+    const [member] = await pool.query(
+      'SELECT nickname, qq FROM members WHERE id = ?',
+      [memberId]
+    )
+    if (member.length === 0) {
+      return res.status(404).json({ success: false, message: '成员不存在' })
+    }
+
+    const [dateDiff] = await pool.query(
+      'SELECT DATEDIFF(?, ?) as total_days',
+      [end_date, start_date]
+    )
+    const total_days = dateDiff[0].total_days + 1
+
+    await pool.query(`
+      INSERT INTO leave_applications (member_id, member_name, qq, reason, start_date, end_date, total_days, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, '待审批')
+    `, [memberId, member[0].nickname, member[0].qq, reason || '', start_date, end_date, total_days])
+
+    res.json({ success: true, message: '请假申请已提交，请等待管理员审批' })
+  } catch (error) {
+    console.error('提交请假申请失败:', error)
+    res.status(500).json({ success: false, message: '提交申请失败' })
+  }
+})
+
+// 管理员删除请假申请记录
+router.delete('/applications/:id', async (req, res) => {
+  try {
+    const { id } = req.params
+    await pool.query('DELETE FROM leave_applications WHERE id = ?', [id])
+    res.json({ success: true, message: '请假申请记录已删除' })
+  } catch (error) {
+    console.error('删除请假申请失败:', error)
+    res.status(500).json({ success: false, message: '删除失败' })
+  }
+})
+
+// 管理员审批请假申请
+router.put('/applications/:id/review', async (req, res) => {
+  try {
+    const { id } = req.params
+    const { status, reviewer_name, reviewer_id, review_remark } = req.body
+
+    const [apps] = await pool.query(
+      'SELECT * FROM leave_applications WHERE id = ?',
+      [id]
+    )
+    if (apps.length === 0) {
+      return res.status(404).json({ success: false, message: '申请不存在' })
+    }
+    const app = apps[0]
+
+    await pool.query(`
+      UPDATE leave_applications SET
+        status = ?,
+        reviewer_id = ?,
+        reviewer_name = ?,
+        review_remark = ?,
+        review_date = CURDATE()
+      WHERE id = ?
+    `, [status, reviewer_id || null, reviewer_name || '', review_remark || '', id])
+
+    if (status === '已批准') {
+      // 创建请假记录
+      await pool.query(`
+        INSERT INTO leave_records (member_id, member_name, qq, reason, start_date, end_date, total_days, status, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, '请假中', ?)
+      `, [app.member_id, app.member_name, app.qq, app.reason, app.start_date, app.end_date, app.total_days, reviewer_id || null])
+      // 更新成员状态
+      await pool.query(
+        'UPDATE members SET status = ? WHERE id = ?',
+        ['请假中', app.member_id]
+      )
+    }
+
+    res.json({ success: true, message: status === '已批准' ? '请假申请已批准' : '请假申请已拒绝' })
+  } catch (error) {
+    console.error('审批请假申请失败:', error)
+    res.status(500).json({ success: false, message: '审批失败' })
+  }
+})
 
 // 获取所有请假记录
 router.get('/', async (req, res) => {

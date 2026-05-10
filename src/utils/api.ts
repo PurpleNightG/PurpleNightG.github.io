@@ -14,7 +14,7 @@ async function request(url: string, options: RequestInit = {}) {
     ...(options.headers as Record<string, string>),
   }
   
-  if (token) {
+  if (token && !headers['Authorization']) {
     headers['Authorization'] = `Bearer ${token}`
   }
   
@@ -138,6 +138,37 @@ export const studentAPI = {
 // 请假记录 API
 export const leaveAPI = {
   getAll: () => request('/leaves'),
+  getMy: (studentToken: string) => request('/leaves/my', {
+    headers: { Authorization: `Bearer ${studentToken}` },
+  }),
+  getMyApplications: (studentToken: string) => request('/leaves/applications/my', {
+    headers: { Authorization: `Bearer ${studentToken}` },
+  }),
+  getApplications: () => request('/leaves/applications'),
+  applyLeave: async (studentToken: string, data: any) => {
+    const result = await request('/leaves/applications', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${studentToken}` },
+      body: JSON.stringify(data),
+    })
+    return result
+  },
+  deleteApplication: async (id: number) => {
+    const result = await request(`/leaves/applications/${id}`, {
+      method: 'DELETE',
+    })
+    clearCache('/leaves')
+    return result
+  },
+  reviewApplication: async (id: number, data: any) => {
+    const result = await request(`/leaves/applications/${id}/review`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+    clearCache('/leaves')
+    clearCache('/members')
+    return result
+  },
   create: async (data: any) => {
     const result = await request('/leaves', {
       method: 'POST',
@@ -177,6 +208,9 @@ export const leaveAPI = {
 // 黑点记录 API
 export const blackPointAPI = {
   getAll: () => request('/blackpoints'),
+  getMy: (studentToken: string) => request('/blackpoints/my', {
+    headers: { Authorization: `Bearer ${studentToken}` },
+  }),
   create: (data: any) => request('/blackpoints', {
     method: 'POST',
     body: JSON.stringify(data),

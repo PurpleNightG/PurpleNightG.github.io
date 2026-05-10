@@ -9,6 +9,8 @@ import StudentApplyAssessment from './StudentApplyAssessment'
 import StudentAssessmentReport from './StudentAssessmentReport'
 import StudentHome from './StudentHome'
 import StudentClassmates from './StudentClassmates'
+import StudentBlackPoints from './StudentBlackPoints'
+import StudentLeave from './StudentLeave'
 
 function StudentDashboardContent() {
   const [isMobile, setIsMobile] = useState(false)
@@ -55,6 +57,8 @@ function StudentDashboardContent() {
           <Route path="classmates" element={<StudentClassmates />} />
           <Route path="apply-assessment" element={<StudentApplyAssessment />} />
           <Route path="assessment-report" element={<StudentAssessmentReport />} />
+          <Route path="blackpoints" element={<StudentBlackPoints />} />
+          <Route path="leave" element={<StudentLeave />} />
           <Route path="videos" element={<PublicVideos />} />
         </Routes>
       </main>
