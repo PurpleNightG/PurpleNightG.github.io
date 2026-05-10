@@ -363,7 +363,7 @@ router.put('/:id', async (req, res) => {
     
     // 检查课程是否存在
     const [existing] = await pool.query(
-      'SELECT id FROM courses WHERE id = ?',
+      'SELECT id, `order` FROM courses WHERE id = ?',
       [id]
     )
     
@@ -405,7 +405,7 @@ router.put('/:id', async (req, res) => {
       category,
       difficulty,
       hours,
-      order,
+      order ?? existing[0].order,
       description || '',
       id
     ])
