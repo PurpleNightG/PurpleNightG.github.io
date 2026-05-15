@@ -1,27 +1,38 @@
 [
   {
-    "name": "紫夜CQB战术公会",
-    "path": "PNG.md"
+    "name": "HTJ",
+    "path": "HTJ.md",
+    "type": "file"
   },
   {
-    "name": "紫夜新训须知",
-    "path": "HTJ.md"
+    "name": "Modmanager",
+    "path": "Modmanager.md",
+    "type": "file"
   },
   {
-    "name": "模组详细说明",
-    "path": "mod-explan.md"
+    "name": "PNG",
+    "path": "PNG.md",
+    "type": "file"
   },
   {
-    "name": "紫夜战术公会公告细则",
-    "path": "PNGrule.md"
+    "name": "PNGrule",
+    "path": "PNGrule.md",
+    "type": "file"
   },
   {
-    "name": "一些关于本游戏的小问题",
-    "path": "Q&A.md"
+    "name": "Q&A",
+    "path": "Q&A.md",
+    "type": "file"
   },
   {
-    "name": "模组管理器介绍",
-    "path": "Modmanager.md"
+    "name": "mod-explan",
+    "path": "mod-explan.md",
+    "type": "file"
+  },
+  {
+    "name": "教学大纲",
+    "path": "教学大纲/",
+    "type": "dir",
+    "children": []
   }
-  
 ]
