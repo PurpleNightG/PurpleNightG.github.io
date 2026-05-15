@@ -17,6 +17,7 @@ import AssessmentApproval from './admin/AssessmentApproval'
 import AssessmentGuidelines from './admin/AssessmentGuidelines'
 import PublicVideosManagement from './admin/PublicVideosManagement'
 import VideoUpload from './admin/VideoUpload'
+import DocManagement from './admin/DocManagement'
 
 function AdminDashboardContent() {
   const [isMobile, setIsMobile] = useState(false)
@@ -72,6 +73,7 @@ function AdminDashboardContent() {
           <Route path="/leave-team/reminders" element={<ReminderList />} />
           <Route path="/leave-team/approval" element={<QuitApproval />} />
           <Route path="/leave-team/retention" element={<RetentionManagement />} />
+          <Route path="/docs" element={<DocManagement />} />
         </Routes>
       </main>
     </div>

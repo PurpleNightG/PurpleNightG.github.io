@@ -25,6 +25,7 @@ import volcRoutes from './routes/volc.js'
 import roomRoutes from './routes/room.js'
 import versionsRoutes from './routes/versions.js'
 import dutyRoutes from './routes/duty.js'
+import docsRoutes from './routes/docs.js'
 
 dotenv.config()
 
@@ -94,6 +95,7 @@ app.use('/api/volc', volcRoutes)
 app.use('/api/room', roomRoutes)
 app.use('/api/versions', versionsRoutes)
 app.use('/api/duty', dutyRoutes)
+app.use('/api/docs', docsRoutes)
 
 // 健康检查
 app.get('/api/health', (req, res) => {

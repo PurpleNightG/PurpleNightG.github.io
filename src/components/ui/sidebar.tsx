@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Home, Users, BookOpen, FileCheck, UserMinus, ChevronDown, FileText, Video, Monitor, AlertTriangle, Calendar } from "lucide-react";
+import { Home, Users, BookOpen, FileCheck, UserMinus, ChevronDown, FileText, Video, Monitor, AlertTriangle, Calendar, BookMarked } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 
 const AnimatedMenuToggle = ({
@@ -232,6 +232,7 @@ const AdminNav = ({ expandedMenus, toggleMenu }: AdminNavProps) => (
       <SubNavItem path="/admin/leave-team/approval" label="退队审批" />
       <SubNavItem path="/admin/leave-team/retention" label="留队管理" />
     </CollapsibleSection>
+    <NavItem path="/admin/docs" icon={<BookMarked size={20} />} label="文档管理" />
     {/* Screen share - opens in new tab */}
     <a href="#/screen-share" target="_blank" rel="noopener noreferrer" className="group block mb-1">
       <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-all text-gray-400 hover:text-gray-200 hover:bg-gray-700/20">
