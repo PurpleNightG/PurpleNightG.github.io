@@ -33,6 +33,12 @@
     "name": "教学大纲",
     "path": "教学大纲/",
     "type": "dir",
-    "children": []
+    "children": [
+      {
+        "name": "mod-explan",
+        "path": "教学大纲/mod-explan.md",
+        "type": "file"
+      }
+    ]
   }
 ]
