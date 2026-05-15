@@ -53,6 +53,12 @@ async function listRecursive(dirPath) {
       result.push({ name: item.name, path: relPath, type: 'dir', children })
     }
   }
+  // 文件夹排前面，同类型按名称排序
+  result.sort((a, b) => {
+    if (a.type === 'dir' && b.type !== 'dir') return -1
+    if (a.type !== 'dir' && b.type === 'dir') return 1
+    return a.name.localeCompare(b.name, 'zh-CN')
+  })
   return result
 }
 
@@ -219,6 +225,74 @@ router.delete('/folder', async (req, res) => {
     res.json({ success: true, message: '文件夹删除成功' })
   } catch (error) {
     console.error('删除文件夹失败:', error)
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
+
+// 批量重命名/移动文件（一次提交）
+router.post('/batch-rename', async (req, res) => {
+  try {
+    const { operations } = req.body
+    // operations: [{ oldPath, newPath, sha }]
+    if (!Array.isArray(operations) || operations.length === 0) {
+      return res.status(400).json({ success: false, message: '缺少 operations 参数' })
+    }
+
+    const errors = []
+    for (const op of operations) {
+      const { oldPath, newPath, sha } = op
+      if (!oldPath || !newPath || !sha) { errors.push(`参数不完整: ${JSON.stringify(op)}`); continue }
+      if (oldPath === newPath) continue
+      try {
+        // 获取原文件内容
+        const getRes = await fetch(
+          `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DOCS_PATH}/${oldPath}?ref=${BRANCH}`,
+          { headers: getHeaders() }
+        )
+        if (!getRes.ok) { errors.push(`获取 ${oldPath} 失败`); continue }
+        const fileData = await getRes.json()
+        const rawContent = fileData.content.replace(/\n/g, '')
+
+        // 创建新路径文件
+        const createRes = await fetch(
+          `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DOCS_PATH}/${newPath}`,
+          {
+            method: 'PUT',
+            headers: getHeaders(),
+            body: JSON.stringify({
+              message: `docs: rename ${oldPath} -> ${newPath}`,
+              content: rawContent,
+              branch: BRANCH
+            })
+          }
+        )
+        if (!createRes.ok) { const e = await createRes.json(); errors.push(`创建 ${newPath} 失败: ${e.message}`); continue }
+
+        // 删除旧文件
+        await fetch(
+          `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DOCS_PATH}/${oldPath}`,
+          {
+            method: 'DELETE',
+            headers: getHeaders(),
+            body: JSON.stringify({ message: `docs: remove ${oldPath}`, sha, branch: BRANCH })
+          }
+        )
+      } catch (e) {
+        errors.push(`处理 ${oldPath} 时出错: ${e.message}`)
+      }
+    }
+
+    // 统一更新索引和版本（只调用一次）
+    await updateIndex()
+    await updateVersion()
+
+    if (errors.length > 0) {
+      res.json({ success: true, message: `完成，但部分操作失败:\n${errors.join('\n')}` })
+    } else {
+      res.json({ success: true, message: `成功重命名/移动 ${operations.length} 个文件` })
+    }
+  } catch (error) {
+    console.error('批量重命名失败:', error)
     res.status(500).json({ success: false, message: error.message })
   }
 })

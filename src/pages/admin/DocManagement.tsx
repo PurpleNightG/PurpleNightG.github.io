@@ -1,12 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
 import {
   FileText, FolderOpen, Folder, Plus, Trash2, Save,
-  Eye, Edit3, Loader2, RefreshCw, AlertCircle, ChevronRight, ChevronDown, FolderPlus, Pencil
+  Eye, Edit3, Loader2, RefreshCw, AlertCircle, ChevronRight, ChevronDown, FolderPlus, Pencil, Type
 } from 'lucide-react'
 import { toast } from '../../utils/toast'
+import RichEditor from '../../components/RichEditor'
 
 interface TreeItem {
   name: string
@@ -24,6 +25,113 @@ interface SelectedFile {
 }
 
 const API = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000/api'
+
+// --- 树转换工具 ---
+
+function flattenTree(items: TreeItem[]): TreeItem[] {
+  const files: TreeItem[] = []
+  for (const item of items) {
+    if (item.type === 'file') files.push(item)
+    else if (item.type === 'dir' && item.children) files.push(...flattenTree(item.children))
+  }
+  return files
+}
+
+function buildTreeFromFlat(files: TreeItem[]): TreeItem[] {
+  const root: TreeItem[] = []
+  const dirMap = new Map<string, TreeItem>()
+
+  const ensureDir = (parts: string[]): TreeItem => {
+    const fullPath = parts.join('/') + '/'
+    if (dirMap.has(fullPath)) return dirMap.get(fullPath)!
+    const node: TreeItem = { name: parts[parts.length - 1], path: fullPath, type: 'dir', children: [] }
+    dirMap.set(fullPath, node)
+    if (parts.length === 1) {
+      root.push(node)
+    } else {
+      const parent = ensureDir(parts.slice(0, -1))
+      parent.children!.push(node)
+    }
+    return node
+  }
+
+  for (const file of files) {
+    const parts = file.path.split('/')
+    if (parts.length === 1) {
+      root.push(file)
+    } else {
+      const dir = ensureDir(parts.slice(0, -1))
+      dir.children!.push(file)
+    }
+  }
+
+  const sortLevel = (items: TreeItem[]) => {
+    items.sort((a, b) => {
+      if (a.type === 'dir' && b.type !== 'dir') return -1
+      if (a.type !== 'dir' && b.type === 'dir') return 1
+      return a.name.localeCompare(b.name, 'zh-CN')
+    })
+    items.forEach(item => { if (item.children) sortLevel(item.children) })
+  }
+  sortLevel(root)
+  return root
+}
+
+// Collect all dir nodes (path → TreeItem) from a tree
+function collectDirs(items: TreeItem[], out: Map<string, TreeItem> = new Map()): Map<string, TreeItem> {
+  for (const item of items) {
+    if (item.type === 'dir') {
+      out.set(item.path, item)
+      if (item.children) collectDirs(item.children, out)
+    }
+  }
+  return out
+}
+
+function applyPendingRenames(
+  tree: TreeItem[],
+  pendingRenames: Map<string, { newPath: string; sha: string }>
+): TreeItem[] {
+  if (pendingRenames.size === 0) return tree
+  const files = flattenTree(tree).map(file => {
+    const pending = pendingRenames.get(file.path)
+    if (pending) {
+      const newName = pending.newPath.split('/').pop()!
+      return { ...file, path: pending.newPath, name: newName }
+    }
+    return file
+  })
+  const rebuilt = buildTreeFromFlat(files)
+
+  // Graft back any empty dirs that existed in the original tree but got lost
+  // because buildTreeFromFlat only creates dirs that contain files.
+  const existingDirPaths = new Set<string>()
+  collectDirs(rebuilt).forEach((_, p) => existingDirPaths.add(p))
+
+  const insertDir = (nodes: TreeItem[], dirPath: string, dirNode: TreeItem) => {
+    const parts = dirPath.replace(/\/$/, '').split('/')
+    if (parts.length === 1) {
+      if (!nodes.some(n => n.type === 'dir' && n.path === dirPath)) {
+        nodes.push({ ...dirNode, children: [] })
+        nodes.sort((a, b) => {
+          if (a.type === 'dir' && b.type !== 'dir') return -1
+          if (a.type !== 'dir' && b.type === 'dir') return 1
+          return a.name.localeCompare(b.name, 'zh-CN')
+        })
+      }
+      return
+    }
+    const parentPath = parts.slice(0, -1).join('/') + '/'
+    const parent = nodes.find(n => n.type === 'dir' && n.path === parentPath)
+    if (parent?.children) insertDir(parent.children, dirPath, dirNode)
+  }
+
+  collectDirs(tree).forEach((dirNode, path) => {
+    if (!existingDirPaths.has(path)) insertDir(rebuilt, path, dirNode)
+  })
+
+  return rebuilt
+}
 
 async function apiFetch(path: string, options: RequestInit = {}) {
   const token = localStorage.getItem('token')
@@ -121,7 +229,7 @@ export default function DocManagement() {
   const [tree, setTree] = useState<TreeItem[]>([])
   const [selectedFile, setSelectedFile] = useState<SelectedFile | null>(null)
   const [content, setContent] = useState('')
-  const [preview, setPreview] = useState(false)
+  const [editorMode, setEditorMode] = useState<'md' | 'rich' | 'preview'>('md')
   const [loadingTree, setLoadingTree] = useState(false)
   const [loadingFile, setLoadingFile] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -146,10 +254,27 @@ export default function DocManagement() {
   const [showRename, setShowRename] = useState(false)
   const [renameNewName, setRenameNewName] = useState('')
   const [renameNewFolder, setRenameNewFolder] = useState('')
-  const [renaming, setRenaming] = useState(false)
 
-  // 所有文件夹路径（用于下拉选择父文件夹）
-  const [allFolders, setAllFolders] = useState<string[]>([])
+  // 待提交队列: repoPath -> { newPath, sha }
+  const [pendingRenames, setPendingRenames] = useState<Map<string, { newPath: string; sha: string }>>(new Map())
+  const [submitting, setSubmitting] = useState(false)
+
+  const displayTree = useMemo(
+    () => applyPendingRenames(tree, pendingRenames),
+    [tree, pendingRenames]
+  )
+
+  const allFolders = useMemo(() => {
+    const acc = new Set<string>()
+    const collect = (items: TreeItem[]) => {
+      for (const item of items) {
+        if (item.type === 'dir') { acc.add(item.path); if (item.children) collect(item.children) }
+      }
+    }
+    collect(displayTree)  // folders visible after pending renames
+    collect(tree)         // also keep original tree folders (e.g. empty ones lost from displayTree)
+    return Array.from(acc).sort()
+  }, [displayTree, tree])
 
   useEffect(() => { loadTree() }, [])
 
@@ -169,7 +294,6 @@ export default function DocManagement() {
       const res = await apiFetch('/docs/list')
       const data: TreeItem[] = res.data || []
       setTree(data)
-      setAllFolders(collectFolders(data))
     } catch (err: any) {
       toast.error(err.message || '加载文件列表失败')
     } finally {
@@ -189,10 +313,12 @@ export default function DocManagement() {
     if (loadingFile) return
     setLoadingFile(true)
     setContent('')
-    setPreview(false)
+    setEditorMode('md')
+    // item.path may be the preview (new) path from displayTree; resolve to real GitHub path
+    const realPath = originalPath(item.path)
     try {
-      const res = await apiFetch(`/docs/file?filename=${encodeURIComponent(item.path)}`)
-      setSelectedFile({ name: item.name, path: item.path, sha: res.data.sha })
+      const res = await apiFetch(`/docs/file?filename=${encodeURIComponent(realPath)}`)
+      setSelectedFile({ name: item.name, path: realPath, sha: res.data.sha })
       setContent(res.data.content)
     } catch (err: any) {
       toast.error(err.message || '加载文件内容失败')
@@ -270,51 +396,72 @@ export default function DocManagement() {
     }
   }
 
+  // 获取文件的有效路径（考虑待提交队列中的重命名）
+  const effectivePath = (repoPath: string) =>
+    pendingRenames.get(repoPath)?.newPath ?? repoPath
+
+  // 反向查找：给定 displayTree 中的预览路径，返回 GitHub 上的实际原始路径
+  const originalPath = (displayPath: string): string => {
+    for (const [orig, { newPath }] of pendingRenames) {
+      if (newPath === displayPath) return orig
+    }
+    return displayPath
+  }
+
   const openRenameModal = () => {
     if (!selectedFile) return
-    const basename = selectedFile.name.replace(/\.md$/, '')
-    const folder = selectedFile.path.includes('/')
-      ? selectedFile.path.split('/').slice(0, -1).join('/') + '/'
+    const eff = effectivePath(selectedFile.path)
+    const basename = eff.split('/').pop()!.replace(/\.md$/, '')
+    const folder = eff.includes('/')
+      ? eff.split('/').slice(0, -1).join('/') + '/'
       : ''
     setRenameNewName(basename)
     setRenameNewFolder(folder)
     setShowRename(true)
   }
 
-  const doRename = async () => {
+  // 加入待提交队列，不立即调 API
+  const doRename = () => {
     if (!selectedFile || !renameNewName.trim()) return
     let name = renameNewName.trim()
     if (!name.endsWith('.md')) name += '.md'
     const newPath = renameNewFolder
       ? `${renameNewFolder.replace(/\/$/, '')}/${name}`
       : name
-    if (newPath === selectedFile.path) { setShowRename(false); return }
-    setRenaming(true)
+    setPendingRenames(prev => {
+      const next = new Map(prev)
+      if (newPath === selectedFile.path) {
+        next.delete(selectedFile.path)  // 还原成原路径则取消
+      } else {
+        next.set(selectedFile.path, { newPath, sha: selectedFile.sha })
+      }
+      return next
+    })
+    setShowRename(false)
+    toast.success(`已加入待提交队列：${selectedFile.path} → ${newPath}`)
+  }
+
+  const submitAllRenames = async () => {
+    if (pendingRenames.size === 0) return
+    setSubmitting(true)
     try {
-      // 1. 创建新文件
-      await apiFetch('/docs/file', {
-        method: 'PUT',
-        body: JSON.stringify({ filename: newPath, content, sha: null }),
+      const operations = Array.from(pendingRenames.entries()).map(([oldPath, { newPath, sha }]) => ({
+        oldPath, newPath, sha
+      }))
+      const res = await apiFetch('/docs/batch-rename', {
+        method: 'POST',
+        body: JSON.stringify({ operations }),
       })
-      // 2. 删除旧文件
-      await apiFetch('/docs/file', {
-        method: 'DELETE',
-        body: JSON.stringify({ filename: selectedFile.path, sha: selectedFile.sha }),
-      })
-      toast.success('重命名/移动成功')
-      setShowRename(false)
+      toast.success(res.message || '批量提交成功')
+      setPendingRenames(new Map())
+      if (selectedFile && pendingRenames.has(selectedFile.path)) {
+        setSelectedFile(null); setContent('')
+      }
       await loadTree()
-      // 自动选中新文件
-      const res = await apiFetch(`/docs/file?filename=${encodeURIComponent(newPath)}`)
-      setSelectedFile({ name, path: newPath, sha: res.data.sha })
-      setContent(res.data.content)
-      if (renameNewFolder) setExpandedFolders(prev => new Set(prev).add(
-        renameNewFolder.endsWith('/') ? renameNewFolder : renameNewFolder + '/'
-      ))
     } catch (err: any) {
-      toast.error(err.message || '重命名失败')
+      toast.error(err.message || '批量提交失败')
     } finally {
-      setRenaming(false)
+      setSubmitting(false)
     }
   }
 
@@ -371,18 +518,51 @@ export default function DocManagement() {
           </div>
         </div>
 
+        {/* 待提交队列面板 */}
+        {pendingRenames.size > 0 && (
+          <div className="border-t border-gray-700 bg-gray-900/60 flex-shrink-0">
+            <div className="px-3 py-2 flex items-center justify-between">
+              <span className="text-yellow-400 text-xs font-semibold">待提交 ({pendingRenames.size})</span>
+              <button onClick={() => setPendingRenames(new Map())} className="text-gray-500 hover:text-red-400 text-xs transition-colors">清空</button>
+            </div>
+            <div className="max-h-32 overflow-y-auto px-3 pb-1 space-y-1">
+              {Array.from(pendingRenames.entries()).map(([oldPath, { newPath }]) => (
+                <div key={oldPath} className="flex items-start gap-1 text-xs">
+                  <button
+                    onClick={() => setPendingRenames(prev => { const n = new Map(prev); n.delete(oldPath); return n })}
+                    className="text-red-500 hover:text-red-400 flex-shrink-0 mt-0.5"
+                  >✕</button>
+                  <span className="text-gray-500 truncate">{oldPath}</span>
+                  <span className="text-gray-600 flex-shrink-0">→</span>
+                  <span className="text-gray-300 truncate">{newPath}</span>
+                </div>
+              ))}
+            </div>
+            <div className="px-3 pb-2">
+              <button
+                onClick={submitAllRenames}
+                disabled={submitting}
+                className="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs bg-yellow-600 hover:bg-yellow-700 disabled:opacity-50 text-white rounded transition-colors"
+              >
+                {submitting ? <Loader2 size={12} className="animate-spin" /> : null}
+                {submitting ? '提交中...' : `提交全部 (${pendingRenames.size})`}
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="flex-1 overflow-y-auto py-1">
           {loadingTree && tree.length === 0 ? (
             <div className="flex justify-center py-8"><Loader2 size={20} className="animate-spin text-gray-500" /></div>
           ) : tree.length === 0 ? (
             <div className="text-center py-8 text-gray-500 text-xs">暂无文档，点击 + 新建</div>
           ) : (
-            tree.map(item => (
+            displayTree.map(item => (
               <TreeNode
                 key={item.path}
                 item={item}
                 depth={0}
-                selectedPath={selectedFile?.path || ''}
+                selectedPath={selectedFile ? (pendingRenames.get(selectedFile.path)?.newPath ?? selectedFile.path) : ''}
                 onSelectFile={openFile}
                 onDeleteFile={item => setDeleteTarget({ item, type: 'file' })}
                 onDeleteFolder={item => setDeleteTarget({ item, type: 'dir' })}
@@ -410,13 +590,18 @@ export default function DocManagement() {
           <div className="flex items-center gap-2">
             {selectedFile && (
               <>
-                <button
-                  onClick={() => setPreview(!preview)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${preview ? 'bg-purple-600/20 text-purple-300 border border-purple-600/40' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`}
-                >
-                  {preview ? <Edit3 size={14} /> : <Eye size={14} />}
-                  {preview ? '编辑' : '预览'}
-                </button>
+                {/* 编辑模式切换 */}
+                <div className="flex items-center rounded border border-gray-700 overflow-hidden text-xs">
+                  <button onClick={() => setEditorMode('md')} className={`flex items-center gap-1 px-2.5 py-1.5 transition-colors ${editorMode === 'md' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`} title="Markdown 模式">
+                    <Edit3 size={13} /> MD
+                  </button>
+                  <button onClick={() => setEditorMode('rich')} className={`flex items-center gap-1 px-2.5 py-1.5 transition-colors ${editorMode === 'rich' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`} title="富文本模式">
+                    <Type size={13} /> 富文本
+                  </button>
+                  <button onClick={() => setEditorMode('preview')} className={`flex items-center gap-1 px-2.5 py-1.5 transition-colors ${editorMode === 'preview' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-700'}`} title="预览">
+                    <Eye size={13} /> 预览
+                  </button>
+                </div>
                 <button
                   onClick={openRenameModal}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded text-sm text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
@@ -448,12 +633,14 @@ export default function DocManagement() {
             </div>
           ) : loadingFile ? (
             <div className="flex items-center justify-center h-full"><Loader2 size={32} className="animate-spin text-purple-400" /></div>
-          ) : preview ? (
+          ) : editorMode === 'preview' ? (
             <div className="h-full overflow-y-auto px-12 py-8">
               <article className="markdown-content max-w-4xl">
                 <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{content}</ReactMarkdown>
               </article>
             </div>
+          ) : editorMode === 'rich' ? (
+            <RichEditor value={content} onChange={setContent} />
           ) : (
             <textarea
               value={content}
@@ -495,9 +682,9 @@ export default function DocManagement() {
             </div>
             <div className="flex justify-end gap-2">
               <button onClick={() => setShowRename(false)} className="px-4 py-2 text-sm text-gray-400 hover:text-white">取消</button>
-              <button onClick={doRename} disabled={renaming || !renameNewName.trim()} className="flex items-center gap-1.5 px-4 py-2 text-sm bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg">
-                {renaming ? <Loader2 size={14} className="animate-spin" /> : <Pencil size={14} />}
-                {renaming ? '处理中...' : '确定'}
+              <button onClick={doRename} disabled={!renameNewName.trim()} className="flex items-center gap-1.5 px-4 py-2 text-sm bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg">
+                <Pencil size={14} />
+                加入队列
               </button>
             </div>
           </div>

@@ -3,6 +3,7 @@ import { Smartphone } from 'lucide-react'
 import { Routes, Route } from 'react-router-dom'
 import ProtectedRoute from '../components/ProtectedRoute'
 import { AdminSidebar } from '../components/ui/sidebar'
+import { BadgeProvider } from '../contexts/BadgeContext'
 import AdminHome from './admin/AdminHome'
 import MemberList from './admin/MemberList'
 import LeaveRecords from './admin/LeaveRecords'
@@ -53,6 +54,7 @@ function AdminDashboardContent() {
   }
 
   return (
+    <BadgeProvider>
     <div className="flex h-screen bg-gradient-to-br from-gray-900 via-gray-900 to-purple-900">
       <AdminSidebar />
 
@@ -77,6 +79,7 @@ function AdminDashboardContent() {
         </Routes>
       </main>
     </div>
+    </BadgeProvider>
   )
 }
 

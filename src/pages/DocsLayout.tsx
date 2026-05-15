@@ -50,9 +50,15 @@ function DocTree({
   toggleFolder: (path: string) => void
   depth?: number
 }) {
+  const sorted = [...items].sort((a, b) => {
+    if (a.type === 'dir' && b.type !== 'dir') return -1
+    if (a.type !== 'dir' && b.type === 'dir') return 1
+    return 0
+  })
+
   return (
     <>
-      {items.map(item => {
+      {sorted.map(item => {
         if (item.type === 'dir') {
           const isOpen = expandedFolders.has(item.path) || searchTerm !== ''
           return (
