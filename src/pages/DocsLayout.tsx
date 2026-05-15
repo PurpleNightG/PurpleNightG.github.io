@@ -3,12 +3,14 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
-import { FileText, Search, FolderOpen } from 'lucide-react'
+import { FileText, Search, FolderOpen, Folder, ChevronRight, ChevronDown } from 'lucide-react'
 import UpdateNotification from '../components/UpdateNotification'
 
 interface DocItem {
   name: string
   path: string
+  type?: 'file' | 'dir'
+  children?: DocItem[]
 }
 
 // 使用 memo 包装 Markdown 内容，避免滚动时重新渲染导致 iframe 重新加载
@@ -33,11 +35,79 @@ const MarkdownContent = memo(({ content }: { content: string }) => (
 
 MarkdownContent.displayName = 'MarkdownContent'
 
+function DocTree({
+  items,
+  currentDocName,
+  expandedFolders,
+  searchTerm,
+  toggleFolder,
+  depth = 0,
+}: {
+  items: DocItem[]
+  currentDocName: string
+  expandedFolders: Set<string>
+  searchTerm: string
+  toggleFolder: (path: string) => void
+  depth?: number
+}) {
+  return (
+    <>
+      {items.map(item => {
+        if (item.type === 'dir') {
+          const isOpen = expandedFolders.has(item.path) || searchTerm !== ''
+          return (
+            <div key={item.path}>
+              <button
+                onClick={() => toggleFolder(item.path)}
+                className="w-full flex items-center gap-2 px-5 py-2 text-gray-400 hover:text-gray-200 hover:bg-gray-800/40 transition-colors"
+                style={{ paddingLeft: `${20 + depth * 12}px` }}
+              >
+                {isOpen ? <ChevronDown size={13} className="flex-shrink-0 text-gray-500" /> : <ChevronRight size={13} className="flex-shrink-0 text-gray-500" />}
+                {isOpen ? <FolderOpen size={14} className="text-yellow-400 flex-shrink-0" /> : <Folder size={14} className="text-yellow-400 flex-shrink-0" />}
+                <span className="text-sm font-medium truncate">{item.name}</span>
+              </button>
+              {isOpen && item.children && (
+                <DocTree
+                  items={item.children}
+                  currentDocName={currentDocName}
+                  expandedFolders={expandedFolders}
+                  searchTerm={searchTerm}
+                  toggleFolder={toggleFolder}
+                  depth={depth + 1}
+                />
+              )}
+            </div>
+          )
+        }
+        const docPath = item.path.replace(/\.md$/, '')
+        const isActive = currentDocName === docPath
+        return (
+          <Link
+            key={item.path}
+            to={`/docs/${docPath}`}
+            className={`flex items-center gap-2 py-2 transition-all duration-300 border-l-2 ${
+              isActive
+                ? 'bg-gray-800 border-purple-600 text-white'
+                : 'border-transparent text-gray-400 hover:bg-gray-800/50 hover:text-gray-300'
+            }`}
+            style={{ paddingLeft: `${20 + depth * 12}px` }}
+          >
+            <FileText size={14} className={`flex-shrink-0 ${isActive ? 'text-purple-400' : 'text-gray-600'}`} />
+            <span className="text-sm font-medium truncate">{item.name}</span>
+          </Link>
+        )
+      })}
+    </>
+  )
+}
+
 export default function DocsLayout() {
-  const { docName } = useParams<{ docName?: string }>()
+  const params = useParams()
+  const docName = params['*'] || undefined
   const navigate = useNavigate()
   const [docs, setDocs] = useState<DocItem[]>([])
   const [searchTerm, setSearchTerm] = useState('')
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
   const [content, setContent] = useState('')
   const [loading, setLoading] = useState(false)
   const [lightboxOpen, setLightboxOpen] = useState(false)
@@ -58,13 +128,27 @@ export default function DocsLayout() {
     return () => clearInterval(versionCheckInterval)
   }, [])
 
+  // 从 docs 树中找第一个文件
+  const findFirstFile = (items: DocItem[]): DocItem | null => {
+    for (const item of items) {
+      if (!item.type || item.type === 'file') return item
+      if (item.type === 'dir' && item.children) {
+        const found = findFirstFile(item.children)
+        if (found) return found
+      }
+    }
+    return null
+  }
+
   useEffect(() => {
     if (docName) {
       loadDocument(docName)
     } else if (docs.length > 0) {
-      // 默认加载第一个文档
-      const firstDoc = docs[0].path.replace('.md', '')
-      navigate(`/docs/${encodeURIComponent(firstDoc)}`, { replace: true })
+      const first = findFirstFile(docs)
+      if (first) {
+        const pathWithoutExt = first.path.replace(/\.md$/, '')
+        navigate(`/docs/${pathWithoutExt}`, { replace: true })
+      }
     }
   }, [docName, docs])
 
@@ -122,11 +206,9 @@ export default function DocsLayout() {
   const loadDocument = async (name: string) => {
     setLoading(true)
     try {
-      // 添加时间戳参数绕过缓存
+      // name 可能是 folder/docname 或 docname（均不含 .md 后缀）
       const response = await fetch(`/docs/${name}.md?t=${Date.now()}`)
-      if (!response.ok) {
-        throw new Error('文档未找到')
-      }
+      if (!response.ok) throw new Error('文档未找到')
       const text = await response.text()
       setContent(text)
     } catch (err) {
@@ -251,11 +333,31 @@ export default function DocsLayout() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [lightboxOpen, images.length])
 
-  const filteredDocs = docs.filter((doc) =>
-    doc.name.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  // 递归过滤（保留匹配项及其父文件夹）
+  const filterTree = (items: DocItem[], term: string): DocItem[] => {
+    if (!term) return items
+    return items.reduce<DocItem[]>((acc, item) => {
+      if (item.type === 'dir' && item.children) {
+        const filteredChildren = filterTree(item.children, term)
+        if (filteredChildren.length > 0) acc.push({ ...item, children: filteredChildren })
+      } else if (item.name.toLowerCase().includes(term.toLowerCase())) {
+        acc.push(item)
+      }
+      return acc
+    }, [])
+  }
 
-  const currentDocName = docName ? decodeURIComponent(docName) : ''
+  const filteredDocs = filterTree(docs, searchTerm)
+
+  const toggleFolder = (path: string) => {
+    setExpandedFolders(prev => {
+      const next = new Set(prev)
+      next.has(path) ? next.delete(path) : next.add(path)
+      return next
+    })
+  }
+
+  const currentDocName = docName || ''
 
   return (
     <>
@@ -347,24 +449,13 @@ export default function DocsLayout() {
           {/* Document List */}
           <div className="flex-1 overflow-y-auto animate-fade-in animate-delay-400">
             {filteredDocs.length > 0 ? (
-              filteredDocs.map((doc) => {
-                const docPath = doc.path.replace('.md', '')
-                const isActive = currentDocName === docPath
-                return (
-                  <Link
-                    key={doc.path}
-                    to={`/docs/${encodeURIComponent(docPath)}`}
-                    className={`flex items-center space-x-3 px-5 py-3 transition-all duration-300 border-l-2 ${
-                      isActive
-                        ? 'bg-gray-800 border-purple-600 text-white'
-                        : 'border-transparent text-gray-400 hover:bg-gray-800/50 hover:text-gray-300'
-                    }`}
-                  >
-                    <FileText size={16} className={isActive ? 'text-purple-400' : 'text-gray-600'} />
-                    <span className="text-sm font-medium truncate">{doc.name}</span>
-                  </Link>
-                )
-              })
+              <DocTree
+                items={filteredDocs}
+                currentDocName={currentDocName}
+                expandedFolders={expandedFolders}
+                searchTerm={searchTerm}
+                toggleFolder={toggleFolder}
+              />
             ) : (
               <div className="text-center py-8 px-4 text-gray-600 text-sm">
                 {searchTerm ? '未找到匹配的文档' : '暂无文档'}

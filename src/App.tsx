@@ -36,7 +36,7 @@ function App() {
               <Route path="/" element={<Home />} />
               <Route path="/downloads" element={<Downloads />} />
               <Route path="/docs" element={<DocsLayout />} />
-              <Route path="/docs/:docName" element={<DocsLayout />} />
+              <Route path="/docs/*" element={<DocsLayout />} />
               <Route path="/screen-share" element={<ProtectedRoute><ScreenShare /></ProtectedRoute>} />
             </Routes>
           </Layout>
