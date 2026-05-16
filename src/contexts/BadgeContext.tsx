@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const API = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000/api'
 
 interface Badges {
   leavePending: number
@@ -18,7 +18,7 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
   const fetchBadges = useCallback(async () => {
     try {
       const token = localStorage.getItem('token')
-      const res = await fetch(`${API}/api/badges`, {
+      const res = await fetch(`${API}/badges`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       })
       const data = await res.json()
