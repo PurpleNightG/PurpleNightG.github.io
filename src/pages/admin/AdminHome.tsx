@@ -505,7 +505,7 @@ export default function AdminHome() {
               
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <a
-                  href="#/docs/PNG"
+                  href="#/docs/紫夜CQB战术公会"
                   className="group flex flex-col items-center gap-3 p-5 bg-gray-700/30 hover:bg-gray-700/50 rounded-xl transition-all border border-gray-600/30 hover:border-purple-500/50"
                 >
                   <div className="p-3 bg-purple-600/20 rounded-lg group-hover:bg-purple-600/30 transition-colors">
@@ -515,7 +515,7 @@ export default function AdminHome() {
                 </a>
                 
                 <a
-                  href="#/docs/PNGrule"
+                  href="#/docs/紫夜战术公会公告细则"
                   className="group flex flex-col items-center gap-3 p-5 bg-gray-700/30 hover:bg-gray-700/50 rounded-xl transition-all border border-gray-600/30 hover:border-blue-500/50"
                 >
                   <div className="p-3 bg-blue-600/20 rounded-lg group-hover:bg-blue-600/30 transition-colors">
@@ -525,7 +525,7 @@ export default function AdminHome() {
                 </a>
                 
                 <a
-                  href="#/docs/HTJ"
+                  href="#/docs/紫夜新训须知"
                   className="group flex flex-col items-center gap-3 p-5 bg-gray-700/30 hover:bg-gray-700/50 rounded-xl transition-all border border-gray-600/30 hover:border-green-500/50"
                 >
                   <div className="p-3 bg-green-600/20 rounded-lg group-hover:bg-green-600/30 transition-colors">
@@ -535,7 +535,7 @@ export default function AdminHome() {
                 </a>
                 
                 <a
-                  href="#/docs/mod-explan"
+                  href="#/docs/模组详细说明"
                   className="group flex flex-col items-center gap-3 p-5 bg-gray-700/30 hover:bg-gray-700/50 rounded-xl transition-all border border-gray-600/30 hover:border-orange-500/50"
                 >
                   <div className="p-3 bg-orange-600/20 rounded-lg group-hover:bg-orange-600/30 transition-colors">

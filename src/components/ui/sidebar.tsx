@@ -66,6 +66,7 @@ interface CollapsibleSectionProps {
   isExpanded: boolean;
   onToggle: () => void;
   children: React.ReactNode;
+  badge?: number;
 }
 
 export const CollapsibleSection = ({
@@ -74,6 +75,7 @@ export const CollapsibleSection = ({
   isExpanded,
   onToggle,
   children,
+  badge,
 }: CollapsibleSectionProps) => (
   <div className="mb-1">
     <button
@@ -93,6 +95,11 @@ export const CollapsibleSection = ({
           {icon}
         </span>
         <span className="text-sm font-medium">{title}</span>
+        {!!badge && badge > 0 && (
+          <span className="bg-purple-500 text-white text-xs font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 leading-none">
+            {badge > 99 ? "99+" : badge}
+          </span>
+        )}
       </div>
       <motion.div
         animate={{ rotate: isExpanded ? 180 : 0 }}
@@ -217,7 +224,8 @@ const AdminNav = ({ expandedMenus, toggleMenu }: AdminNavProps) => {
   <nav className="flex-1 overflow-y-auto py-4 px-3">
     <NavItem path="/admin" icon={<Home size={20} />} label="首页" />
     <CollapsibleSection title="成员管理" icon={<Users size={20} />}
-      isExpanded={expandedMenus.includes("成员管理")} onToggle={() => toggleMenu("成员管理")}>
+      isExpanded={expandedMenus.includes("成员管理")} onToggle={() => toggleMenu("成员管理")}
+      badge={badges.leavePending}>
       <SubNavItem path="/admin/members/list" label="成员列表" />
       <SubNavItem path="/admin/members/leave" label="请假记录" badge={badges.leavePending} />
       <SubNavItem path="/admin/members/violations" label="黑点记录" />
@@ -228,7 +236,8 @@ const AdminNav = ({ expandedMenus, toggleMenu }: AdminNavProps) => {
       <SubNavItem path="/admin/courses/progress" label="进度分配" />
     </CollapsibleSection>
     <CollapsibleSection title="考核管理" icon={<FileCheck size={20} />}
-      isExpanded={expandedMenus.includes("考核管理")} onToggle={() => toggleMenu("考核管理")}>
+      isExpanded={expandedMenus.includes("考核管理")} onToggle={() => toggleMenu("考核管理")}
+      badge={badges.assessmentPending}>
       <SubNavItem path="/admin/assessments/records" label="考核记录" />
       <SubNavItem path="/admin/assessments/approval" label="考核审批" badge={badges.assessmentPending} />
       <SubNavItem path="/admin/assessments/guidelines" label="考核须知管理" />
@@ -236,7 +245,8 @@ const AdminNav = ({ expandedMenus, toggleMenu }: AdminNavProps) => {
       <SubNavItem path="/admin/assessments/upload" label="视频上传管理" />
     </CollapsibleSection>
     <CollapsibleSection title="退队管理" icon={<UserMinus size={20} />}
-      isExpanded={expandedMenus.includes("退队管理")} onToggle={() => toggleMenu("退队管理")}>
+      isExpanded={expandedMenus.includes("退队管理")} onToggle={() => toggleMenu("退队管理")}
+      badge={badges.reminderCount}>
       <SubNavItem path="/admin/leave-team/reminders" label="催促名单" badge={badges.reminderCount} />
       <SubNavItem path="/admin/leave-team/approval" label="退队审批" />
       <SubNavItem path="/admin/leave-team/retention" label="留队管理" />

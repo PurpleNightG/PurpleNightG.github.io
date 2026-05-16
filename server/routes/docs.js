@@ -72,11 +72,53 @@ function buildIndexTree(tree) {
   })
 }
 
+// 合并已有排序（existing）与最新文件列表（auto），保留用户自定义顺序
+// - existing 中存在且 auto 中仍有的条目：保持原顺序
+// - auto 中新增（existing 没有）的条目：追加到末尾
+// - existing 中已删除（auto 中不存在）的条目：丢弃
+function mergeIndexOrder(existing, auto) {
+  const autoMap = new Map(auto.map(item => [item.path, item]))
+  const result = []
+  const used = new Set()
+  for (const ex of existing) {
+    if (autoMap.has(ex.path)) {
+      const autoItem = autoMap.get(ex.path)
+      used.add(ex.path)
+      if (ex.type === 'dir' && autoItem.type === 'dir') {
+        result.push({ ...autoItem, children: mergeIndexOrder(ex.children || [], autoItem.children || []) })
+      } else {
+        result.push(autoItem)
+      }
+    }
+  }
+  for (const item of auto) {
+    if (!used.has(item.path)) result.push(item)
+  }
+  return result
+}
+
 async function updateIndex() {
   try {
     const tree = await listRecursive(DOCS_PATH)
-    const index = buildIndexTree(tree)
-    const encoded = Buffer.from(JSON.stringify(index, null, 2), 'utf-8').toString('base64')
+    const autoIndex = buildIndexTree(tree)
+
+    // 尝试读取现有 index.json 以保留用户自定义排序
+    let finalIndex = autoIndex
+    try {
+      const existingRes = await fetch(
+        `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DOCS_PATH}/index.json?ref=${BRANCH}`,
+        { headers: getHeaders() }
+      )
+      if (existingRes.ok) {
+        const existingData = await existingRes.json()
+        const existingIndex = JSON.parse(
+          Buffer.from(existingData.content.replace(/\n/g, ''), 'base64').toString('utf-8')
+        )
+        finalIndex = mergeIndexOrder(existingIndex, autoIndex)
+      }
+    } catch { /* 读取失败则使用自动排序 */ }
+
+    const encoded = Buffer.from(JSON.stringify(finalIndex, null, 2), 'utf-8').toString('base64')
     const sha = await getFileSha(`${DOCS_PATH}/index.json`)
     await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DOCS_PATH}/index.json`, {
       method: 'PUT',
@@ -293,6 +335,29 @@ router.post('/batch-rename', async (req, res) => {
     }
   } catch (error) {
     console.error('批量重命名失败:', error)
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
+
+// 保存自定义排序（管理端拖拽排序后直接写入 index.json）
+router.put('/order', async (req, res) => {
+  try {
+    const { index } = req.body
+    if (!Array.isArray(index)) return res.status(400).json({ success: false, message: '缺少 index 参数' })
+    const encoded = Buffer.from(JSON.stringify(index, null, 2), 'utf-8').toString('base64')
+    const sha = await getFileSha(`${DOCS_PATH}/index.json`)
+    const response = await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DOCS_PATH}/index.json`, {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify({ message: 'docs: reorder index', content: encoded, branch: BRANCH, ...(sha ? { sha } : {}) })
+    })
+    if (!response.ok) {
+      const err = await response.json()
+      throw new Error(err.message || '保存排序失败')
+    }
+    res.json({ success: true, message: '排序已保存，GitHub Pages 约1分钟后生效' })
+  } catch (error) {
+    console.error('保存排序失败:', error)
     res.status(500).json({ success: false, message: error.message })
   }
 })

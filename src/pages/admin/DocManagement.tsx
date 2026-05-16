@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
 import {
   FileText, FolderOpen, Folder, Plus, Trash2, Save,
-  Eye, Edit3, Loader2, RefreshCw, AlertCircle, ChevronRight, ChevronDown, FolderPlus, Pencil, Type
+  Eye, Edit3, Loader2, RefreshCw, AlertCircle, ChevronRight, ChevronDown, FolderPlus, Pencil, Type, GripVertical
 } from 'lucide-react'
 import { toast } from '../../utils/toast'
 import RichEditor from '../../components/RichEditor'
@@ -75,6 +75,39 @@ function buildTreeFromFlat(files: TreeItem[]): TreeItem[] {
   }
   sortLevel(root)
   return root
+}
+
+// 在同一层级内移动条目：将 fromPath 小节点移到 beforePath 小节点前面
+function reorderInLevel(items: TreeItem[], fromPath: string, beforePath: string): TreeItem[] {
+  const fromIdx = items.findIndex(i => i.path === fromPath)
+  const toIdx = items.findIndex(i => i.path === beforePath)
+  if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return items
+  const next = [...items]
+  const [moved] = next.splice(fromIdx, 1)
+  const insertAt = next.findIndex(i => i.path === beforePath)
+  next.splice(insertAt, 0, moved)
+  return next
+}
+
+// 递归在树中寻找内层并重排
+function reorderTree(items: TreeItem[], fromPath: string, beforePath: string): TreeItem[] {
+  if (items.some(i => i.path === fromPath) && items.some(i => i.path === beforePath)) {
+    return reorderInLevel(items, fromPath, beforePath)
+  }
+  return items.map(item => {
+    if (item.type === 'dir' && item.children) {
+      return { ...item, children: reorderTree(item.children, fromPath, beforePath) }
+    }
+    return item
+  })
+}
+
+// 构建干净的 index.json 结构（去掉 sha/size）
+function buildCleanIndex(items: TreeItem[]): object[] {
+  return items.map(item => {
+    if (item.type === 'dir') return { name: item.name, path: item.path, type: 'dir', children: buildCleanIndex(item.children || []) }
+    return { name: item.name.replace(/\.md$/, ''), path: item.path, type: 'file' }
+  })
 }
 
 // Collect all dir nodes (path → TreeItem) from a tree
@@ -154,6 +187,10 @@ function TreeNode({
   onDeleteFolder,
   expandedFolders,
   toggleFolder,
+  sortMode,
+  dragPath,
+  onDragStart,
+  onDropBefore,
 }: {
   item: TreeItem
   depth: number
@@ -163,28 +200,43 @@ function TreeNode({
   onDeleteFolder: (item: TreeItem) => void
   expandedFolders: Set<string>
   toggleFolder: (path: string) => void
+  sortMode?: boolean
+  dragPath?: string | null
+  onDragStart?: (path: string) => void
+  onDropBefore?: (toPath: string) => void
 }) {
   const indent = depth * 12
+  const [dragOver, setDragOver] = useState(false)
 
   if (item.type === 'dir') {
     const isOpen = expandedFolders.has(item.path)
     return (
-      <div>
+      <div
+        draggable={!!sortMode}
+        onDragStart={e => { e.stopPropagation(); onDragStart?.(item.path) }}
+        onDragOver={e => { e.preventDefault(); e.stopPropagation(); if (dragPath !== item.path) setDragOver(true) }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={e => { e.preventDefault(); e.stopPropagation(); setDragOver(false); if (dragPath && dragPath !== item.path) onDropBefore?.(item.path) }}
+        className={dragOver && dragPath !== item.path ? 'border-t-2 border-purple-400' : ''}
+      >
         <div
           className="flex items-center gap-1.5 px-3 py-1.5 text-gray-400 hover:text-gray-200 hover:bg-gray-700/30 cursor-pointer group"
           style={{ paddingLeft: `${12 + indent}px` }}
-          onClick={() => toggleFolder(item.path)}
+          onClick={() => !sortMode && toggleFolder(item.path)}
         >
-          {isOpen ? <ChevronDown size={13} className="flex-shrink-0" /> : <ChevronRight size={13} className="flex-shrink-0" />}
+          {sortMode
+            ? <GripVertical size={12} className="flex-shrink-0 text-gray-600 cursor-grab" />
+            : isOpen ? <ChevronDown size={13} className="flex-shrink-0" /> : <ChevronRight size={13} className="flex-shrink-0" />
+          }
           {isOpen ? <FolderOpen size={14} className="text-yellow-400 flex-shrink-0" /> : <Folder size={14} className="text-yellow-400 flex-shrink-0" />}
           <span className="text-sm font-medium truncate flex-1">{item.name}</span>
-          <button
+          {!sortMode && <button
             onClick={e => { e.stopPropagation(); onDeleteFolder(item) }}
             className="opacity-0 group-hover:opacity-100 p-0.5 text-red-500 hover:text-red-400 transition-all flex-shrink-0"
             title="删除文件夹"
           >
             <Trash2 size={12} />
-          </button>
+          </button>}
         </div>
         {isOpen && item.children?.map(child => (
           <TreeNode
@@ -197,6 +249,10 @@ function TreeNode({
             onDeleteFolder={onDeleteFolder}
             expandedFolders={expandedFolders}
             toggleFolder={toggleFolder}
+            sortMode={sortMode}
+            dragPath={dragPath}
+            onDragStart={onDragStart}
+            onDropBefore={onDropBefore}
           />
         ))}
       </div>
@@ -206,21 +262,29 @@ function TreeNode({
   const isActive = selectedPath === item.path
   return (
     <div
+      draggable={!!sortMode}
+      onDragStart={e => { e.stopPropagation(); onDragStart?.(item.path) }}
+      onDragOver={e => { e.preventDefault(); e.stopPropagation(); if (dragPath !== item.path) setDragOver(true) }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={e => { e.preventDefault(); e.stopPropagation(); setDragOver(false); if (dragPath && dragPath !== item.path) onDropBefore?.(item.path) }}
       className={`flex items-center gap-1.5 px-3 py-1.5 cursor-pointer group border-l-2 transition-colors ${
         isActive ? 'bg-purple-600/20 border-purple-500 text-white' : 'border-transparent text-gray-400 hover:bg-gray-700/30 hover:text-gray-200'
-      }`}
+      } ${dragOver && dragPath !== item.path ? 'border-t-2 border-t-purple-400' : ''}`}
       style={{ paddingLeft: `${20 + indent}px` }}
-      onClick={() => onSelectFile(item)}
+      onClick={() => !sortMode && onSelectFile(item)}
     >
-      <FileText size={13} className="flex-shrink-0" />
+      {sortMode
+        ? <GripVertical size={12} className="flex-shrink-0 text-gray-600 cursor-grab" />
+        : <FileText size={13} className="flex-shrink-0" />
+      }
       <span className="text-sm truncate flex-1">{item.name}</span>
-      <button
+      {!sortMode && <button
         onClick={e => { e.stopPropagation(); onDeleteFile(item) }}
         className="opacity-0 group-hover:opacity-100 p-0.5 text-red-500 hover:text-red-400 transition-all flex-shrink-0"
         title="删除文件"
       >
         <Trash2 size={12} />
-      </button>
+      </button>}
     </div>
   )
 }
@@ -258,6 +322,12 @@ export default function DocManagement() {
   // 待提交队列: repoPath -> { newPath, sha }
   const [pendingRenames, setPendingRenames] = useState<Map<string, { newPath: string; sha: string }>>(new Map())
   const [submitting, setSubmitting] = useState(false)
+
+  // 排序模式
+  const [sortMode, setSortMode] = useState(false)
+  const [dragPath, setDragPath] = useState<string | null>(null)
+  const [orderDirty, setOrderDirty] = useState(false)
+  const [savingOrder, setSavingOrder] = useState(false)
 
   const displayTree = useMemo(
     () => applyPendingRenames(tree, pendingRenames),
@@ -441,6 +511,21 @@ export default function DocManagement() {
     toast.success(`已加入待提交队列：${selectedFile.path} → ${newPath}`)
   }
 
+  const saveOrder = async () => {
+    setSavingOrder(true)
+    try {
+      const index = buildCleanIndex(displayTree)
+      await apiFetch('/docs/order', { method: 'PUT', body: JSON.stringify({ index }) })
+      toast.success('排序已保存，GitHub Pages 约1分钟后生效')
+      setOrderDirty(false)
+      setSortMode(false)
+    } catch (err: any) {
+      toast.error(err.message || '保存排序失败')
+    } finally {
+      setSavingOrder(false)
+    }
+  }
+
   const submitAllRenames = async () => {
     if (pendingRenames.size === 0) return
     setSubmitting(true)
@@ -506,15 +591,45 @@ export default function DocManagement() {
             <span className="text-white font-semibold text-sm">官方文档</span>
           </div>
           <div className="flex gap-1">
-            <button onClick={loadTree} className="p-1.5 text-gray-400 hover:text-white rounded hover:bg-gray-700 transition-colors" title="刷新">
-              <RefreshCw size={13} />
-            </button>
-            <button onClick={() => { setNewFileFolder(''); setShowNewFile(true) }} className="p-1.5 text-gray-400 hover:text-purple-400 rounded hover:bg-gray-700 transition-colors" title="新建文件">
-              <Plus size={13} />
-            </button>
-            <button onClick={() => { setNewFolderParent(''); setShowNewFolder(true) }} className="p-1.5 text-gray-400 hover:text-yellow-400 rounded hover:bg-gray-700 transition-colors" title="新建文件夹">
-              <FolderPlus size={13} />
-            </button>
+            {sortMode ? (
+              <>
+                <button
+                  onClick={saveOrder}
+                  disabled={!orderDirty || savingOrder}
+                  className="flex items-center gap-1 px-2 py-1 text-xs bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white rounded transition-colors"
+                  title="保存排序"
+                >
+                  {savingOrder ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
+                  保存
+                </button>
+                <button
+                  onClick={() => { setSortMode(false); setOrderDirty(false); loadTree() }}
+                  className="px-2 py-1 text-xs text-gray-400 hover:text-white rounded hover:bg-gray-700 transition-colors"
+                  title="取消排序"
+                >
+                  取消
+                </button>
+              </>
+            ) : (
+              <>
+                <button onClick={loadTree} className="p-1.5 text-gray-400 hover:text-white rounded hover:bg-gray-700 transition-colors" title="刷新">
+                  <RefreshCw size={13} />
+                </button>
+                <button
+                  onClick={() => setSortMode(true)}
+                  className="p-1.5 text-gray-400 hover:text-purple-400 rounded hover:bg-gray-700 transition-colors"
+                  title="拖拽排序"
+                >
+                  <GripVertical size={13} />
+                </button>
+                <button onClick={() => { setNewFileFolder(''); setShowNewFile(true) }} className="p-1.5 text-gray-400 hover:text-purple-400 rounded hover:bg-gray-700 transition-colors" title="新建文件">
+                  <Plus size={13} />
+                </button>
+                <button onClick={() => { setNewFolderParent(''); setShowNewFolder(true) }} className="p-1.5 text-gray-400 hover:text-yellow-400 rounded hover:bg-gray-700 transition-colors" title="新建文件夹">
+                  <FolderPlus size={13} />
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -568,6 +683,16 @@ export default function DocManagement() {
                 onDeleteFolder={item => setDeleteTarget({ item, type: 'dir' })}
                 expandedFolders={expandedFolders}
                 toggleFolder={toggleFolder}
+                sortMode={sortMode}
+                dragPath={dragPath}
+                onDragStart={path => setDragPath(path)}
+                onDropBefore={toPath => {
+                  if (dragPath && dragPath !== toPath) {
+                    setTree(prev => reorderTree(prev, dragPath, toPath))
+                    setOrderDirty(true)
+                  }
+                  setDragPath(null)
+                }}
               />
             ))
           )}
