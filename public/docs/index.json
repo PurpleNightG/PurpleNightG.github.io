@@ -28,7 +28,8 @@
   {
     "name": "模组管理器介绍",
     "path": "模组管理器介绍.md",
-    "type": "file"
+    "type": "file",
+    "visibility": "private"
   },
   {
     "name": "一些关于本游戏的小问题",
