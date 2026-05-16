@@ -87,7 +87,10 @@ function mergeIndexOrder(existing, auto) {
       if (ex.type === 'dir' && autoItem.type === 'dir') {
         result.push({ ...autoItem, children: mergeIndexOrder(ex.children || [], autoItem.children || []) })
       } else {
-        result.push(autoItem)
+        // Preserve visibility set by the admin
+        const merged = { ...autoItem }
+        if (ex.visibility) merged.visibility = ex.visibility
+        result.push(merged)
       }
     }
   }
@@ -335,6 +338,80 @@ router.post('/batch-rename', async (req, res) => {
     }
   } catch (error) {
     console.error('批量重命名失败:', error)
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
+
+// 读取当前 index.json（管理端用，保留 visibility 等自定义字段）
+router.get('/index', async (req, res) => {
+  try {
+    const response = await fetch(
+      `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DOCS_PATH}/index.json?ref=${BRANCH}`,
+      { headers: getHeaders() }
+    )
+    if (!response.ok) return res.json({ success: true, data: [] })
+    const data = await response.json()
+    const index = JSON.parse(Buffer.from(data.content.replace(/\n/g, ''), 'base64').toString('utf-8'))
+    res.json({ success: true, data: index })
+  } catch (error) {
+    console.error('读取 index.json 失败:', error)
+    res.json({ success: true, data: [] })
+  }
+})
+
+// 更新单个文件的可见性（public | private）
+router.put('/visibility', async (req, res) => {
+  try {
+    const { path: filePath, visibility } = req.body
+    if (!filePath || !['public', 'private'].includes(visibility)) {
+      return res.status(400).json({ success: false, message: '参数错误' })
+    }
+
+    // 读取现有 index.json
+    const getRes = await fetch(
+      `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DOCS_PATH}/index.json?ref=${BRANCH}`,
+      { headers: getHeaders() }
+    )
+    let index = []
+    let sha = null
+    if (getRes.ok) {
+      const data = await getRes.json()
+      sha = data.sha
+      index = JSON.parse(Buffer.from(data.content.replace(/\n/g, ''), 'base64').toString('utf-8'))
+    }
+
+    // 递归更新目标路径的 visibility
+    function setVisibility(items) {
+      return items.map(item => {
+        if (item.path === filePath) {
+          return visibility === 'public'
+            ? (({ visibility: _, ...rest }) => rest)(item)  // 公开则移除字段
+            : { ...item, visibility }
+        }
+        if (item.type === 'dir' && item.children) {
+          return { ...item, children: setVisibility(item.children) }
+        }
+        return item
+      })
+    }
+    const updated = setVisibility(index)
+
+    const encoded = Buffer.from(JSON.stringify(updated, null, 2), 'utf-8').toString('base64')
+    const putRes = await fetch(
+      `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DOCS_PATH}/index.json`,
+      {
+        method: 'PUT',
+        headers: getHeaders(),
+        body: JSON.stringify({ message: `docs: set ${filePath} visibility=${visibility}`, content: encoded, branch: BRANCH, ...(sha ? { sha } : {}) })
+      }
+    )
+    if (!putRes.ok) {
+      const err = await putRes.json()
+      throw new Error(err.message || '保存失败')
+    }
+    res.json({ success: true, message: '可见性已更新' })
+  } catch (error) {
+    console.error('更新可见性失败:', error)
     res.status(500).json({ success: false, message: error.message })
   }
 })

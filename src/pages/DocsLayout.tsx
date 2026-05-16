@@ -11,6 +11,29 @@ interface DocItem {
   path: string
   type?: 'file' | 'dir'
   children?: DocItem[]
+  visibility?: 'public' | 'private'
+}
+
+function filterPublicDocs(items: DocItem[]): DocItem[] {
+  return items
+    .filter(item => item.visibility !== 'private')
+    .map(item =>
+      item.type === 'dir' && item.children
+        ? { ...item, children: filterPublicDocs(item.children) }
+        : item
+    )
+}
+
+function isPrivateDoc(items: DocItem[], slug: string): boolean {
+  for (const item of items) {
+    if (item.type !== 'dir') {
+      const itemSlug = item.path.replace(/\.md$/, '')
+      if (itemSlug === slug) return item.visibility === 'private'
+    } else if (item.children) {
+      if (isPrivateDoc(item.children, slug)) return true
+    }
+  }
+  return false
 }
 
 // 使用 memo 包装 Markdown 内容，避免滚动时重新渲染导致 iframe 重新加载
@@ -112,6 +135,7 @@ export default function DocsLayout() {
   const docName = params['*'] || undefined
   const navigate = useNavigate()
   const [docs, setDocs] = useState<DocItem[]>([])
+  const [publicDocs, setPublicDocs] = useState<DocItem[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
   const [content, setContent] = useState('')
@@ -200,16 +224,25 @@ export default function DocsLayout() {
       const response = await fetch('/docs/index.json?t=' + Date.now())
       const data = await response.json()
       setDocs(data)
+      setPublicDocs(filterPublicDocs(data))
     } catch (error) {
       console.log('未找到文档索引，使用默认示例')
-      setDocs([
+      const fallback = [
         { name: '欢迎使用', path: '欢迎使用.md' },
         { name: '战术基础', path: '战术基础.md' },
-      ])
+      ]
+      setDocs(fallback)
+      setPublicDocs(fallback)
     }
   }
 
   const loadDocument = async (name: string) => {
+    // 检查是否是私密文档（docs 包含全局数据，包括私密）
+    if (docs.length > 0 && isPrivateDoc(docs, name)) {
+      setContent('# 权限不足\n\n该文档仅管理员可查看。')
+      setLoading(false)
+      return
+    }
     setLoading(true)
     try {
       // name 可能是 folder/docname 或 docname（均不含 .md 后缀）
@@ -353,7 +386,7 @@ export default function DocsLayout() {
     }, [])
   }
 
-  const filteredDocs = filterTree(docs, searchTerm)
+  const filteredDocs = filterTree(publicDocs, searchTerm)
 
   const toggleFolder = (path: string) => {
     setExpandedFolders(prev => {

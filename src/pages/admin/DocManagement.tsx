@@ -4,7 +4,8 @@ import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
 import {
   FileText, FolderOpen, Folder, Plus, Trash2, Save,
-  Eye, Edit3, Loader2, RefreshCw, AlertCircle, ChevronRight, ChevronDown, FolderPlus, Pencil, Type, GripVertical
+  Eye, Edit3, Loader2, RefreshCw, AlertCircle, ChevronRight, ChevronDown, FolderPlus, Pencil, Type, GripVertical,
+  Globe, Lock
 } from 'lucide-react'
 import { toast } from '../../utils/toast'
 import RichEditor from '../../components/RichEditor'
@@ -16,6 +17,7 @@ interface TreeItem {
   size?: number
   type: 'file' | 'dir'
   children?: TreeItem[]
+  visibility?: 'public' | 'private'
 }
 
 interface SelectedFile {
@@ -102,11 +104,13 @@ function reorderTree(items: TreeItem[], fromPath: string, beforePath: string): T
   })
 }
 
-// 构建干净的 index.json 结构（去掉 sha/size）
+// 构建干净的 index.json 结构（去掉 sha/size，保留 visibility）
 function buildCleanIndex(items: TreeItem[]): object[] {
   return items.map(item => {
     if (item.type === 'dir') return { name: item.name, path: item.path, type: 'dir', children: buildCleanIndex(item.children || []) }
-    return { name: item.name.replace(/\.md$/, ''), path: item.path, type: 'file' }
+    const base: any = { name: item.name.replace(/\.md$/, ''), path: item.path, type: 'file' }
+    if (item.visibility === 'private') base.visibility = 'private'
+    return base
   })
 }
 
@@ -185,6 +189,7 @@ function TreeNode({
   onSelectFile,
   onDeleteFile,
   onDeleteFolder,
+  onToggleVisibility,
   expandedFolders,
   toggleFolder,
   sortMode,
@@ -198,6 +203,7 @@ function TreeNode({
   onSelectFile: (item: TreeItem) => void
   onDeleteFile: (item: TreeItem) => void
   onDeleteFolder: (item: TreeItem) => void
+  onToggleVisibility?: (item: TreeItem) => void
   expandedFolders: Set<string>
   toggleFolder: (path: string) => void
   sortMode?: boolean
@@ -247,6 +253,7 @@ function TreeNode({
             onSelectFile={onSelectFile}
             onDeleteFile={onDeleteFile}
             onDeleteFolder={onDeleteFolder}
+            onToggleVisibility={onToggleVisibility}
             expandedFolders={expandedFolders}
             toggleFolder={toggleFolder}
             sortMode={sortMode}
@@ -260,6 +267,7 @@ function TreeNode({
   }
 
   const isActive = selectedPath === item.path
+  const isPrivate = item.visibility === 'private'
   return (
     <div
       draggable={!!sortMode}
@@ -278,13 +286,26 @@ function TreeNode({
         : <FileText size={13} className="flex-shrink-0" />
       }
       <span className="text-sm truncate flex-1">{item.name}</span>
-      {!sortMode && <button
-        onClick={e => { e.stopPropagation(); onDeleteFile(item) }}
-        className="opacity-0 group-hover:opacity-100 p-0.5 text-red-500 hover:text-red-400 transition-all flex-shrink-0"
-        title="删除文件"
-      >
-        <Trash2 size={12} />
-      </button>}
+      {!sortMode && (
+        <>
+          <button
+            onClick={e => { e.stopPropagation(); onToggleVisibility?.(item) }}
+            className={`opacity-0 group-hover:opacity-100 p-0.5 transition-all flex-shrink-0 ${
+              isPrivate ? 'text-amber-400 hover:text-amber-300' : 'text-gray-500 hover:text-blue-400'
+            }`}
+            title={isPrivate ? '私密（点击设为公开）' : '公开（点击设为私密）'}
+          >
+            {isPrivate ? <Lock size={12} /> : <Globe size={12} />}
+          </button>
+          <button
+            onClick={e => { e.stopPropagation(); onDeleteFile(item) }}
+            className="opacity-0 group-hover:opacity-100 p-0.5 text-red-500 hover:text-red-400 transition-all flex-shrink-0"
+            title="删除文件"
+          >
+            <Trash2 size={12} />
+          </button>
+        </>
+      )}
     </div>
   )
 }
@@ -358,12 +379,29 @@ export default function DocManagement() {
     return acc
   }
 
+  // 将 index.json 中的 visibility 字段合并到树节点中
+  function mergeVisibility(treeItems: TreeItem[], indexItems: any[]): TreeItem[] {
+    const indexMap = new Map(indexItems.map((i: any) => [i.path, i]))
+    return treeItems.map(item => {
+      const idx = indexMap.get(item.path)
+      if (item.type === 'file' && idx?.visibility) return { ...item, visibility: idx.visibility }
+      if (item.type === 'dir' && item.children && idx?.children) {
+        return { ...item, children: mergeVisibility(item.children, idx.children) }
+      }
+      return item
+    })
+  }
+
   const loadTree = async () => {
     setLoadingTree(true)
     try {
-      const res = await apiFetch('/docs/list')
-      const data: TreeItem[] = res.data || []
-      setTree(data)
+      const [treeRes, indexRes] = await Promise.all([
+        apiFetch('/docs/list'),
+        apiFetch('/docs/index').catch(() => ({ data: [] }))
+      ])
+      const data: TreeItem[] = treeRes.data || []
+      const withVis = mergeVisibility(data, indexRes.data || [])
+      setTree(withVis)
     } catch (err: any) {
       toast.error(err.message || '加载文件列表失败')
     } finally {
@@ -509,6 +547,27 @@ export default function DocManagement() {
     })
     setShowRename(false)
     toast.success(`已加入待提交队列：${selectedFile.path} → ${newPath}`)
+  }
+
+  const toggleVisibility = async (item: TreeItem) => {
+    const newVis: 'public' | 'private' = item.visibility === 'private' ? 'public' : 'private'
+    // Optimistic update
+    const updateVis = (items: TreeItem[]): TreeItem[] => items.map(t => {
+      if (t.path === item.path) return { ...t, visibility: newVis === 'public' ? undefined : newVis }
+      if (t.type === 'dir' && t.children) return { ...t, children: updateVis(t.children) }
+      return t
+    })
+    setTree(prev => updateVis(prev))
+    try {
+      await apiFetch('/docs/visibility', {
+        method: 'PUT',
+        body: JSON.stringify({ path: item.path, visibility: newVis }),
+      })
+      toast.success(newVis === 'private' ? `「${item.name}」已设为私密` : `「${item.name}」已设为公开`)
+    } catch (err: any) {
+      toast.error(err.message || '更新失败')
+      setTree(prev => updateVis(prev)) // revert on error
+    }
   }
 
   const saveOrder = async () => {
@@ -681,6 +740,7 @@ export default function DocManagement() {
                 onSelectFile={openFile}
                 onDeleteFile={item => setDeleteTarget({ item, type: 'file' })}
                 onDeleteFolder={item => setDeleteTarget({ item, type: 'dir' })}
+                onToggleVisibility={toggleVisibility}
                 expandedFolders={expandedFolders}
                 toggleFolder={toggleFolder}
                 sortMode={sortMode}
