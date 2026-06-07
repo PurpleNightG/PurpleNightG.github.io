@@ -3,7 +3,13 @@
     "name": "教学大纲",
     "path": "教学大纲/",
     "type": "dir",
-    "children": []
+    "children": [
+      {
+        "name": "SOP",
+        "path": "教学大纲/SOP.md",
+        "type": "file"
+      }
+    ]
   },
   {
     "name": "紫夜CQB战术公会",
