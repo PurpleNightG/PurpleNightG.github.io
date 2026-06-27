@@ -4,6 +4,7 @@ import {
   listRecursiveLocal,
   readLocalFile,
   readLocalIndex,
+  writeLocalIndex,
 } from '../utils/docsLocal.js'
 
 const router = express.Router()
@@ -500,6 +501,14 @@ router.put('/order', async (req, res) => {
     if (!response.ok) {
       const err = await response.json()
       throw new Error(err.message || '保存排序失败')
+    }
+    const localRoot = resolveLocalDocsRoot()
+    if (localRoot) {
+      try {
+        await writeLocalIndex(localRoot, index)
+      } catch (e) {
+        console.warn('同步本地 index.json 失败:', e.message)
+      }
     }
     await updateVersion()
     res.json({ success: true, message: '排序已保存，GitHub Pages 约1分钟后生效' })

@@ -13,7 +13,10 @@ import {
   copyFile,
   downloadFile,
   ensureDir,
+  extractNodeZip,
   fail,
+  isNodeZipValid,
+  isPortableNodeReady,
   log,
   removeDir,
   run,
@@ -44,18 +47,30 @@ function ensureServerEnv() {
 async function ensurePortableNode() {
   ensureDir(CACHE_DIR)
 
-  if (!fs.existsSync(NODE_CACHE_DIR)) {
-    if (!fs.existsSync(NODE_CACHE_ZIP)) {
+  if (!isPortableNodeReady(NODE_CACHE_DIR)) {
+    if (fs.existsSync(NODE_CACHE_DIR)) {
+      log('\n⚠️  Node 运行时不完整，清理后重新解压...')
+      removeDir(NODE_CACHE_DIR)
+    }
+
+    if (!isNodeZipValid(NODE_CACHE_ZIP)) {
+      if (fs.existsSync(NODE_CACHE_ZIP)) {
+        log('⚠️  Node 安装包不完整，重新下载...')
+        fs.unlinkSync(NODE_CACHE_ZIP)
+      }
       log(`\n⬇️  下载 Node.js 运行时 (${NODE_FOLDER})...`)
       await downloadFile(NODE_URL, NODE_CACHE_ZIP)
+      if (!isNodeZipValid(NODE_CACHE_ZIP)) {
+        fail('Node 下载失败或文件过小，请检查网络后删除 local-app/.cache 重试')
+      }
     }
 
     log('\n📦 解压 Node.js 运行时...')
-    run(`tar -xf "${NODE_CACHE_ZIP}" -C "${CACHE_DIR}"`, CACHE_DIR)
+    extractNodeZip(NODE_CACHE_ZIP, CACHE_DIR, NODE_FOLDER)
   }
 
-  if (!fs.existsSync(path.join(NODE_CACHE_DIR, 'node.exe'))) {
-    fail('Node.js 运行时解压失败')
+  if (!isPortableNodeReady(NODE_CACHE_DIR)) {
+    fail('Node.js 运行时解压失败，请删除 local-app/.cache 目录后重试')
   }
 }
 
@@ -162,8 +177,7 @@ async function main() {
   prepareServerRuntime(SERVER_TARGET, SERVER_ENV)
 
   const bundledNode = path.join(PORTABLE_DIR, 'runtime', 'node.exe')
-  const npmCli = path.join(NODE_CACHE_DIR, 'node_modules', 'npm', 'bin', 'npm-cli.js')
-  installNativeDependencies(bundledNode, SERVER_TARGET, npmCli)
+  installNativeDependencies(bundledNode, SERVER_TARGET, NODE_CACHE_DIR)
 
   const hasExe = compileLauncherExe(iconPath)
   cleanupBuildArtifacts()

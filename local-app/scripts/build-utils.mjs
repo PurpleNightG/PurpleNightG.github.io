@@ -9,6 +9,7 @@ export const NODE_VERSION = '22.20.0'
 export const NODE_ZIP = `node-v${NODE_VERSION}-win-x64.zip`
 export const NODE_URL = `https://nodejs.org/dist/v${NODE_VERSION}/${NODE_ZIP}`
 export const NODE_FOLDER = `node-v${NODE_VERSION}-win-x64`
+export const NODE_MIN_ZIP_BYTES = 30 * 1024 * 1024
 
 export const CACHE_DIR = path.join(ROOT_DIR, 'local-app', '.cache')
 export const RELEASE_DIR = path.join(ROOT_DIR, 'local-app', 'release')
@@ -111,4 +112,34 @@ export function copyFile(source, destination) {
 export function fileSizeMb(filePath) {
   const stats = fs.statSync(filePath)
   return (stats.size / 1024 / 1024).toFixed(1)
+}
+
+export function isNodeZipValid(zipPath) {
+  if (!fs.existsSync(zipPath)) return false
+  return fs.statSync(zipPath).size >= NODE_MIN_ZIP_BYTES
+}
+
+export function isPortableNodeReady(nodeDir) {
+  const nodeExe = path.join(nodeDir, 'node.exe')
+  const npmCli = path.join(nodeDir, 'node_modules', 'npm', 'bin', 'npm-cli.js')
+  return fs.existsSync(nodeExe) && fs.existsSync(npmCli)
+}
+
+export function extractNodeZip(zipPath, destinationDir, nodeFolder) {
+  const extractedDir = path.join(destinationDir, nodeFolder)
+  if (fs.existsSync(extractedDir)) {
+    removeDir(extractedDir)
+  }
+
+  if (process.platform === 'win32') {
+    const psZip = zipPath.replace(/'/g, "''")
+    const psDest = destinationDir.replace(/'/g, "''")
+    run(
+      `powershell -NoProfile -Command "Expand-Archive -LiteralPath '${psZip}' -DestinationPath '${psDest}' -Force"`,
+      destinationDir
+    )
+    return
+  }
+
+  run(`tar -xf "${zipPath}" -C "${destinationDir}"`, destinationDir)
 }

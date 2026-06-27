@@ -7,6 +7,8 @@ import { FileText, Search, FolderOpen, Folder, ChevronRight, ChevronDown } from 
 import UpdateNotification from '../components/UpdateNotification'
 import { DEFAULT_DOC_SLUG } from '../constants/docs'
 
+const DOCS_API = import.meta.env.VITE_API_URL || ''
+
 interface DocItem {
   name: string
   path: string
@@ -74,15 +76,9 @@ function DocTree({
   toggleFolder: (path: string) => void
   depth?: number
 }) {
-  const sorted = [...items].sort((a, b) => {
-    if (a.type === 'dir' && b.type !== 'dir') return -1
-    if (a.type !== 'dir' && b.type === 'dir') return 1
-    return 0
-  })
-
   return (
     <>
-      {sorted.map(item => {
+      {items.map(item => {
         if (item.type === 'dir') {
           const isOpen = expandedFolders.has(item.path) || searchTerm !== ''
           return (
@@ -180,9 +176,9 @@ export default function DocsLayout() {
         setCurrentVersion(data.version)
         localStorage.setItem('docVersion', data.version)
       } else if (data.version !== currentVersion && currentVersion !== '') {
-        // 用户停留期间检测到版本变化，显示更新提示
         setCurrentVersion(data.version)
         setShowUpdateNotification(true)
+        fetchDocs()
       }
     } catch (error) {
       console.log('版本检查失败，跳过更新提示')
@@ -207,7 +203,19 @@ export default function DocsLayout() {
 
   const fetchDocs = async () => {
     try {
-      const response = await fetch('/docs/index.json?t=' + Date.now())
+      if (DOCS_API) {
+        const apiRes = await fetch(`${DOCS_API}/docs/index?t=${Date.now()}`, { cache: 'no-store' })
+        if (apiRes.ok) {
+          const json = await apiRes.json()
+          if (json.success && Array.isArray(json.data)) {
+            setDocs(json.data)
+            setPublicDocs(filterPublicDocs(json.data))
+            return
+          }
+        }
+      }
+
+      const response = await fetch('/docs/index.json?t=' + Date.now(), { cache: 'no-store' })
       const data = await response.json()
       setDocs(data)
       setPublicDocs(filterPublicDocs(data))
