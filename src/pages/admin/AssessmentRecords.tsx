@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { assessmentAPI, memberAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
-import { Plus, Trash2, Edit, CheckCircle, XCircle, ChevronDown, ChevronUp, X, Search, Filter, CheckSquare, Square, Loader2 } from 'lucide-react'
+import { Plus, Trash2, Edit, CheckCircle, XCircle, ChevronDown, ChevronUp, X, Search, Filter, CheckSquare, Square, Loader2, Eye } from 'lucide-react'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import SearchableSelect from '../../components/SearchableSelect'
 import DateInput from '../../components/DateInput'
@@ -39,6 +39,36 @@ interface Member {
   nickname: string
 }
 
+function AssessmentVideoPreview({ url }: { url: string }) {
+  const trimmed = url.trim()
+  if (!trimmed) return null
+
+  return (
+    <div className="space-y-3">
+      <div className="bg-gray-900/50 rounded-lg overflow-hidden border border-gray-700">
+        <iframe
+          src={trimmed}
+          className="w-full aspect-video"
+          frameBorder="0"
+          scrolling="no"
+          allowFullScreen
+          title="考核视频"
+        />
+      </div>
+      <div className="text-center">
+        <a
+          href={trimmed}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-400 hover:text-blue-300 text-sm"
+        >
+          在新窗口中打开视频 →
+        </a>
+      </div>
+    </div>
+  )
+}
+
 // 扣分项配置
 const DEDUCTION_CATEGORIES = {
   'OODA和基本地形处理': [
@@ -68,6 +98,7 @@ export default function AssessmentRecords() {
   const [submitting, setSubmitting] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [editingAssessment, setEditingAssessment] = useState<Assessment | null>(null)
+  const [viewingAssessment, setViewingAssessment] = useState<Assessment | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [confirmDialog, setConfirmDialog] = useState<{show: boolean, type: string, data?: any}>({show: false, type: ''})
   
@@ -580,15 +611,20 @@ export default function AssessmentRecords() {
                     </td>
                     <td>
                       {assessment.has_video && assessment.video_url ? (
-                        <a 
-                          href={assessment.video_url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="text-blue-400 hover:text-blue-300 flex items-center gap-1"
-                        >
-                          <CheckCircle size={16} />
-                          已上传
-                        </a>
+                        <div className="flex flex-col items-start gap-1">
+                          <span className="text-green-400 flex items-center gap-1">
+                            <CheckCircle size={16} />
+                            已上传
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setViewingAssessment(assessment)}
+                            className="text-purple-400 hover:text-purple-300 text-sm flex items-center gap-1 transition-colors"
+                          >
+                            <Eye size={14} />
+                            查看
+                          </button>
+                        </div>
                       ) : (
                         <span className="text-gray-500 flex items-center gap-1">
                           <XCircle size={16} />
@@ -765,6 +801,12 @@ export default function AssessmentRecords() {
                 <p className="mt-2 text-xs text-yellow-400 bg-yellow-900/20 border border-yellow-700/30 rounded px-2 py-1.5">
                   ⚠️ 提示：首次播放Abyss短链视频会<strong>弹出两次</strong>新标签页，请关闭这两个新页面后返回，第三次点击播放即可正常观看。新页面与紫夜无关，提醒学员谨防上当受骗！
                 </p>
+                {formData.video_url.trim() && (
+                  <div className="mt-4">
+                    <div className="text-sm text-gray-400 mb-2">视频预览</div>
+                    <AssessmentVideoPreview url={formData.video_url} />
+                  </div>
+                )}
               </div>
 
               {/* 扣分记录 */}
@@ -918,6 +960,61 @@ export default function AssessmentRecords() {
               >
                 {submitting && <Loader2 size={16} className="animate-spin" />}
                 {editingAssessment ? (submitting ? '保存中...' : '保存') : (submitting ? '创建中...' : '创建')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 查看考核视频 */}
+      {viewingAssessment && viewingAssessment.video_url && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-gray-700 modal-scrollbar">
+            <div className="sticky top-0 bg-gray-800 border-b border-gray-700 px-6 py-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-white">考核视频</h2>
+                <p className="text-sm text-gray-400 mt-1">
+                  {viewingAssessment.member_name} · {formatDate(viewingAssessment.assessment_date)} · {viewingAssessment.custom_map || viewingAssessment.map}
+                </p>
+              </div>
+              <button
+                onClick={() => setViewingAssessment(null)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-xs text-yellow-400 bg-yellow-900/20 border border-yellow-700/30 rounded px-3 py-2">
+                ⚠️ 首次播放可能弹出两次新标签页，请关闭后返回本页再次点击播放。新页面与紫夜无关，谨防上当受骗！
+              </p>
+              <AssessmentVideoPreview url={viewingAssessment.video_url} />
+              {viewingAssessment.evaluation && (
+                <div>
+                  <div className="text-sm text-gray-400 mb-1">评价</div>
+                  <p className="text-gray-200 text-sm bg-gray-900/50 rounded-lg p-3 border border-gray-700 whitespace-pre-wrap">
+                    {viewingAssessment.evaluation}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="sticky bottom-0 bg-gray-800 border-t border-gray-700 px-6 py-4 flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  setViewingAssessment(null)
+                  handleEdit(viewingAssessment)
+                }}
+                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+              >
+                编辑记录
+              </button>
+              <button
+                onClick={() => setViewingAssessment(null)}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+              >
+                关闭
               </button>
             </div>
           </div>
