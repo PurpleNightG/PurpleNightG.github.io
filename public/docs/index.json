@@ -1,17 +1,7 @@
 [
   {
-    "name": "模组详细说明",
-    "path": "模组详细说明.md",
-    "type": "file"
-  },
-  {
-    "name": "模组管理器介绍",
-    "path": "模组管理器介绍.md",
-    "type": "file"
-  },
-  {
-    "name": "一些关于本游戏的小问题",
-    "path": "一些关于本游戏的小问题.md",
+    "name": "紫夜CQB战术公会",
+    "path": "紫夜CQB战术公会.md",
     "type": "file"
   },
   {
@@ -25,8 +15,18 @@
     "type": "file"
   },
   {
-    "name": "紫夜CQB战术公会",
-    "path": "紫夜CQB战术公会.md",
+    "name": "模组详细说明",
+    "path": "模组详细说明.md",
+    "type": "file"
+  },
+  {
+    "name": "模组管理器介绍",
+    "path": "模组管理器介绍.md",
+    "type": "file"
+  },
+  {
+    "name": "一些关于本游戏的小问题",
+    "path": "一些关于本游戏的小问题.md",
     "type": "file"
   },
   {
