@@ -26,7 +26,7 @@ interface SelectedFile {
   sha: string
 }
 
-const API = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000/api'
+const API = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3000/api'
 
 // --- 树转换工具 ---
 
@@ -379,18 +379,36 @@ export default function DocManagement() {
     return acc
   }
 
-  // 将 index.json 中的 visibility 字段合并到树节点中
-  function mergeVisibility(treeItems: TreeItem[], indexItems: any[]): TreeItem[] {
-    const indexMap = new Map(indexItems.map((i: any) => [i.path, i]))
-    return treeItems.map(item => {
-      const idx = indexMap.get(item.path)
-      if (item.type === 'file' && idx?.visibility) return { ...item, visibility: idx.visibility }
-      if (item.type === 'dir' && item.children && idx?.children) {
-        return { ...item, children: mergeVisibility(item.children, idx.children) }
-      }
-      return item
-    })
+// 将 index.json 中的自定义顺序与 visibility 应用到 GitHub 文件列表树
+function applyIndexOrder(listItems: TreeItem[], indexItems: any[]): TreeItem[] {
+  if (!indexItems.length) return listItems
+  const listMap = new Map(listItems.map(item => [item.path, item]))
+  const result: TreeItem[] = []
+  const used = new Set<string>()
+
+  for (const idx of indexItems) {
+    const listItem = listMap.get(idx.path)
+    if (!listItem) continue
+    used.add(idx.path)
+    if (listItem.type === 'dir') {
+      result.push({
+        ...listItem,
+        ...(idx.visibility ? { visibility: idx.visibility } : {}),
+        children: applyIndexOrder(listItem.children || [], idx.children || []),
+      })
+    } else {
+      result.push({
+        ...listItem,
+        ...(idx.visibility ? { visibility: idx.visibility } : {}),
+      })
+    }
   }
+
+  for (const item of listItems) {
+    if (!used.has(item.path)) result.push(item)
+  }
+  return result
+}
 
   const loadTree = async () => {
     setLoadingTree(true)
@@ -400,8 +418,7 @@ export default function DocManagement() {
         apiFetch('/docs/index').catch(() => ({ data: [] }))
       ])
       const data: TreeItem[] = treeRes.data || []
-      const withVis = mergeVisibility(data, indexRes.data || [])
-      setTree(withVis)
+      setTree(applyIndexOrder(data, indexRes.data || []))
     } catch (err: any) {
       toast.error(err.message || '加载文件列表失败')
     } finally {
@@ -578,6 +595,7 @@ export default function DocManagement() {
       toast.success('排序已保存，GitHub Pages 约1分钟后生效')
       setOrderDirty(false)
       setSortMode(false)
+      await loadTree()
     } catch (err: any) {
       toast.error(err.message || '保存排序失败')
     } finally {

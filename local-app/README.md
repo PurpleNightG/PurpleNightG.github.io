@@ -43,7 +43,7 @@ cd local-app
 npm run setup
 # 编辑 server/.env 填入 SQLPub 凭据
 
-# 2. 构建单文件直运行 EXE（推荐分发）
+# 2. 构建单文件直运行 EXE（推荐分发，会先完整构建最新前端与后端）
 npm run build:exe
 
 # 3. （可选）构建 Inno Setup 安装向导包

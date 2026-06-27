@@ -88,11 +88,8 @@ function appendPayload(stagingExe, zipPath, outputExe, bundleVersion) {
 }
 
 export async function buildSingleFileExe() {
-  const portableExe = path.join(PORTABLE_DIR, '紫夜官网.exe')
-  if (!fs.existsSync(portableExe)) {
-    log('未找到便携包，先执行 build:portable ...')
-    run('node scripts/build-portable.mjs', path.join(ROOT_DIR, 'local-app'))
-  }
+  log('先构建最新便携包（含前端与后端）...')
+  run('node scripts/build-portable.mjs', path.join(ROOT_DIR, 'local-app'))
 
   let iconPath = ICON_PATH
   if (!fs.existsSync(iconPath)) {

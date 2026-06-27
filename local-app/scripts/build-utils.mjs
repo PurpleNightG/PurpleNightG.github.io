@@ -5,7 +5,7 @@ import { pipeline } from 'node:stream/promises'
 import { createWriteStream } from 'node:fs'
 import { ROOT_DIR } from './paths.mjs'
 
-export const NODE_VERSION = '20.18.1'
+export const NODE_VERSION = '22.20.0'
 export const NODE_ZIP = `node-v${NODE_VERSION}-win-x64.zip`
 export const NODE_URL = `https://nodejs.org/dist/v${NODE_VERSION}/${NODE_ZIP}`
 export const NODE_FOLDER = `node-v${NODE_VERSION}-win-x64`

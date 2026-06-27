@@ -5,8 +5,8 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js"
+    "start": "node --use-system-ca index.js",
+    "dev": "node --use-system-ca ./node_modules/nodemon/bin/nodemon.js index.js"
   },
   "keywords": [],
   "author": "",

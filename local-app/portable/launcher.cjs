@@ -356,7 +356,7 @@ async function main() {
   }
   log('启动前检查通过\n')
 
-  spawnService('后端', ['server.cjs'], SERVER_DIR, {
+  spawnService('后端', ['--use-system-ca', 'server.cjs'], SERVER_DIR, {
     PORT: String(BACKEND_PORT),
     NODE_ENV: 'production',
   })

@@ -1,4 +1,10 @@
 import express from 'express'
+import {
+  resolveLocalDocsRoot,
+  listRecursiveLocal,
+  readLocalFile,
+  readLocalIndex,
+} from '../utils/docsLocal.js'
 
 const router = express.Router()
 
@@ -8,6 +14,35 @@ const REPO = process.env.GITHUB_REPO || 'PurpleNightG.github.io'
 const BRANCH = process.env.GITHUB_BRANCH || 'main'
 const DOCS_PATH = 'public/docs'
 const VERSION_PATH = 'public/version.json'
+
+function canUseGithub() {
+  return !!process.env.GITHUB_TOKEN
+}
+
+async function githubFetch(url, options = {}) {
+  let res
+  try {
+    res = await fetch(url, options)
+  } catch (error) {
+    throw new Error(`GitHub API 网络错误: ${error.message}`)
+  }
+  return res
+}
+
+async function readGithubOrLocal(githubFn, localFn) {
+  const localRoot = resolveLocalDocsRoot()
+  if (canUseGithub()) {
+    try {
+      return { source: 'github', data: await githubFn() }
+    } catch (error) {
+      console.warn('GitHub 文档 API 失败，回退本地副本:', error.message)
+      if (localRoot) return { source: 'local-fallback', data: await localFn(localRoot) }
+      throw error
+    }
+  }
+  if (localRoot) return { source: 'local-fallback', data: await localFn(localRoot) }
+  throw new Error('未配置 GITHUB_TOKEN，请在 server/.env 中设置')
+}
 
 function getHeaders() {
   return {
@@ -20,7 +55,7 @@ function getHeaders() {
 
 async function getFileSha(filePath) {
   try {
-    const res = await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${filePath}?ref=${BRANCH}`, {
+    const res = await githubFetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${filePath}?ref=${BRANCH}`, {
       headers: getHeaders()
     })
     if (!res.ok) return null
@@ -33,13 +68,18 @@ async function getFileSha(filePath) {
 
 // 递归列出目录内容，返回嵌套树结构
 async function listRecursive(dirPath) {
-  const res = await fetch(
+  const res = await githubFetch(
     `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${dirPath}?ref=${BRANCH}`,
     { headers: getHeaders() }
   )
-  if (!res.ok) return []
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.message || `GitHub API 错误 ${res.status}`)
+  }
   const items = await res.json()
-  if (!Array.isArray(items)) return []
+  if (!Array.isArray(items)) {
+    throw new Error('GitHub API 返回格式异常')
+  }
 
   const result = []
   for (const item of items) {
@@ -108,7 +148,7 @@ async function updateIndex() {
     // 尝试读取现有 index.json 以保留用户自定义排序
     let finalIndex = autoIndex
     try {
-      const existingRes = await fetch(
+      const existingRes = await githubFetch(
         `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DOCS_PATH}/index.json?ref=${BRANCH}`,
         { headers: getHeaders() }
       )
@@ -123,7 +163,7 @@ async function updateIndex() {
 
     const encoded = Buffer.from(JSON.stringify(finalIndex, null, 2), 'utf-8').toString('base64')
     const sha = await getFileSha(`${DOCS_PATH}/index.json`)
-    await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DOCS_PATH}/index.json`, {
+    await githubFetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DOCS_PATH}/index.json`, {
       method: 'PUT',
       headers: getHeaders(),
       body: JSON.stringify({ message: 'docs: update index', content: encoded, branch: BRANCH, ...(sha ? { sha } : {}) })
@@ -137,7 +177,7 @@ async function updateVersion() {
   try {
     const encoded = Buffer.from(JSON.stringify({ version: Date.now().toString() }, null, 2), 'utf-8').toString('base64')
     const sha = await getFileSha(VERSION_PATH)
-    await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${VERSION_PATH}`, {
+    await githubFetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${VERSION_PATH}`, {
       method: 'PUT',
       headers: getHeaders(),
       body: JSON.stringify({ message: 'docs: bump version', content: encoded, branch: BRANCH, ...(sha ? { sha } : {}) })
@@ -149,7 +189,7 @@ async function updateVersion() {
 
 // 递归删除目录下所有文件
 async function deleteDirectoryRecursive(dirPath) {
-  const res = await fetch(
+  const res = await githubFetch(
     `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${dirPath}?ref=${BRANCH}`,
     { headers: getHeaders() }
   )
@@ -160,7 +200,7 @@ async function deleteDirectoryRecursive(dirPath) {
     if (item.type === 'dir') {
       await deleteDirectoryRecursive(item.path)
     } else {
-      await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${item.path}`, {
+      await githubFetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${item.path}`, {
         method: 'DELETE',
         headers: getHeaders(),
         body: JSON.stringify({ message: `docs: delete ${item.name}`, sha: item.sha, branch: BRANCH })
@@ -172,14 +212,14 @@ async function deleteDirectoryRecursive(dirPath) {
 // 列出文件树（管理端用）
 router.get('/list', async (req, res) => {
   try {
-    if (!process.env.GITHUB_TOKEN) {
-      return res.status(503).json({ success: false, message: '未配置 GITHUB_TOKEN，请在服务器 .env 中设置' })
-    }
-    const tree = await listRecursive(DOCS_PATH)
-    res.json({ success: true, data: tree })
+    const { source, data } = await readGithubOrLocal(
+      () => listRecursive(DOCS_PATH),
+      (root) => listRecursiveLocal(root)
+    )
+    res.json({ success: true, data, source })
   } catch (error) {
     console.error('列出文档失败:', error)
-    res.status(500).json({ success: false, message: error.message })
+    res.status(error.message.includes('未配置') ? 503 : 500).json({ success: false, message: error.message })
   }
 })
 
@@ -188,14 +228,20 @@ router.get('/file', async (req, res) => {
   try {
     const { filename } = req.query
     if (!filename) return res.status(400).json({ success: false, message: '缺少 filename 参数' })
-    const response = await fetch(
-      `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DOCS_PATH}/${filename}?ref=${BRANCH}`,
-      { headers: getHeaders() }
+    const { source, data } = await readGithubOrLocal(
+      async () => {
+        const response = await githubFetch(
+          `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DOCS_PATH}/${filename}?ref=${BRANCH}`,
+          { headers: getHeaders() }
+        )
+        if (!response.ok) throw new Error('文件不存在')
+        const fileData = await response.json()
+        const content = Buffer.from(fileData.content.replace(/\n/g, ''), 'base64').toString('utf-8')
+        return { content, sha: fileData.sha, name: fileData.name }
+      },
+      (root) => readLocalFile(root, filename)
     )
-    if (!response.ok) throw new Error('文件不存在')
-    const data = await response.json()
-    const content = Buffer.from(data.content.replace(/\n/g, ''), 'base64').toString('utf-8')
-    res.json({ success: true, data: { content, sha: data.sha, name: data.name } })
+    res.json({ success: true, data, source })
   } catch (error) {
     console.error('获取文档内容失败:', error)
     res.status(500).json({ success: false, message: error.message })
@@ -209,8 +255,11 @@ router.put('/file', async (req, res) => {
     if (!filename || content === undefined) {
       return res.status(400).json({ success: false, message: '缺少 filename 或 content 参数' })
     }
+    if (!canUseGithub()) {
+      return res.status(503).json({ success: false, message: '未配置 GITHUB_TOKEN，无法保存到在线文档' })
+    }
     const encoded = Buffer.from(content, 'utf-8').toString('base64')
-    const response = await fetch(
+    const response = await githubFetch(
       `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DOCS_PATH}/${filename}`,
       {
         method: 'PUT',
@@ -238,7 +287,10 @@ router.delete('/file', async (req, res) => {
     if (!filename || !sha) {
       return res.status(400).json({ success: false, message: '缺少 filename 或 sha 参数' })
     }
-    const response = await fetch(
+    if (!canUseGithub()) {
+      return res.status(503).json({ success: false, message: '未配置 GITHUB_TOKEN，无法删除在线文档' })
+    }
+    const response = await githubFetch(
       `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DOCS_PATH}/${filename}`,
       {
         method: 'DELETE',
@@ -264,6 +316,9 @@ router.delete('/folder', async (req, res) => {
   try {
     const { folderPath } = req.body
     if (!folderPath) return res.status(400).json({ success: false, message: '缺少 folderPath 参数' })
+    if (!canUseGithub()) {
+      return res.status(503).json({ success: false, message: '未配置 GITHUB_TOKEN，无法删除在线文档' })
+    }
     await deleteDirectoryRecursive(`${DOCS_PATH}/${folderPath}`)
     await updateIndex()
     await updateVersion()
@@ -282,6 +337,9 @@ router.post('/batch-rename', async (req, res) => {
     if (!Array.isArray(operations) || operations.length === 0) {
       return res.status(400).json({ success: false, message: '缺少 operations 参数' })
     }
+    if (!canUseGithub()) {
+      return res.status(503).json({ success: false, message: '未配置 GITHUB_TOKEN，无法重命名在线文档' })
+    }
 
     const errors = []
     for (const op of operations) {
@@ -290,7 +348,7 @@ router.post('/batch-rename', async (req, res) => {
       if (oldPath === newPath) continue
       try {
         // 获取原文件内容
-        const getRes = await fetch(
+        const getRes = await githubFetch(
           `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DOCS_PATH}/${oldPath}?ref=${BRANCH}`,
           { headers: getHeaders() }
         )
@@ -299,7 +357,7 @@ router.post('/batch-rename', async (req, res) => {
         const rawContent = fileData.content.replace(/\n/g, '')
 
         // 创建新路径文件
-        const createRes = await fetch(
+        const createRes = await githubFetch(
           `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DOCS_PATH}/${newPath}`,
           {
             method: 'PUT',
@@ -314,7 +372,7 @@ router.post('/batch-rename', async (req, res) => {
         if (!createRes.ok) { const e = await createRes.json(); errors.push(`创建 ${newPath} 失败: ${e.message}`); continue }
 
         // 删除旧文件
-        await fetch(
+        await githubFetch(
           `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DOCS_PATH}/${oldPath}`,
           {
             method: 'DELETE',
@@ -345,14 +403,19 @@ router.post('/batch-rename', async (req, res) => {
 // 读取当前 index.json（管理端用，保留 visibility 等自定义字段）
 router.get('/index', async (req, res) => {
   try {
-    const response = await fetch(
-      `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DOCS_PATH}/index.json?ref=${BRANCH}`,
-      { headers: getHeaders() }
+    const { source, data } = await readGithubOrLocal(
+      async () => {
+        const response = await githubFetch(
+          `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DOCS_PATH}/index.json?ref=${BRANCH}`,
+          { headers: getHeaders() }
+        )
+        if (!response.ok) return []
+        const fileData = await response.json()
+        return JSON.parse(Buffer.from(fileData.content.replace(/\n/g, ''), 'base64').toString('utf-8'))
+      },
+      (root) => readLocalIndex(root)
     )
-    if (!response.ok) return res.json({ success: true, data: [] })
-    const data = await response.json()
-    const index = JSON.parse(Buffer.from(data.content.replace(/\n/g, ''), 'base64').toString('utf-8'))
-    res.json({ success: true, data: index })
+    res.json({ success: true, data, source })
   } catch (error) {
     console.error('读取 index.json 失败:', error)
     res.json({ success: true, data: [] })
@@ -366,9 +429,12 @@ router.put('/visibility', async (req, res) => {
     if (!filePath || !['public', 'private'].includes(visibility)) {
       return res.status(400).json({ success: false, message: '参数错误' })
     }
+    if (!canUseGithub()) {
+      return res.status(503).json({ success: false, message: '未配置 GITHUB_TOKEN，无法更新在线文档' })
+    }
 
     // 读取现有 index.json
-    const getRes = await fetch(
+    const getRes = await githubFetch(
       `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DOCS_PATH}/index.json?ref=${BRANCH}`,
       { headers: getHeaders() }
     )
@@ -397,7 +463,7 @@ router.put('/visibility', async (req, res) => {
     const updated = setVisibility(index)
 
     const encoded = Buffer.from(JSON.stringify(updated, null, 2), 'utf-8').toString('base64')
-    const putRes = await fetch(
+    const putRes = await githubFetch(
       `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DOCS_PATH}/index.json`,
       {
         method: 'PUT',
@@ -421,9 +487,12 @@ router.put('/order', async (req, res) => {
   try {
     const { index } = req.body
     if (!Array.isArray(index)) return res.status(400).json({ success: false, message: '缺少 index 参数' })
+    if (!canUseGithub()) {
+      return res.status(503).json({ success: false, message: '未配置 GITHUB_TOKEN，无法保存在线文档排序' })
+    }
     const encoded = Buffer.from(JSON.stringify(index, null, 2), 'utf-8').toString('base64')
     const sha = await getFileSha(`${DOCS_PATH}/index.json`)
-    const response = await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DOCS_PATH}/index.json`, {
+    const response = await githubFetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DOCS_PATH}/index.json`, {
       method: 'PUT',
       headers: getHeaders(),
       body: JSON.stringify({ message: 'docs: reorder index', content: encoded, branch: BRANCH, ...(sha ? { sha } : {}) })
@@ -432,6 +501,7 @@ router.put('/order', async (req, res) => {
       const err = await response.json()
       throw new Error(err.message || '保存排序失败')
     }
+    await updateVersion()
     res.json({ success: true, message: '排序已保存，GitHub Pages 约1分钟后生效' })
   } catch (error) {
     console.error('保存排序失败:', error)

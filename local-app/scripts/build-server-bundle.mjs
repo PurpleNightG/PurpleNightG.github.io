@@ -17,7 +17,7 @@ export async function bundleServer(outFile) {
       entryPoints: [path.join(SERVER_DIR, 'index.js')],
       bundle: true,
       platform: 'node',
-      target: 'node20',
+      target: 'node22',
       format: 'cjs',
       outfile: outFile,
       external: SERVER_EXTERNALS,

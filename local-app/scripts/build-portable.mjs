@@ -156,6 +156,8 @@ async function main() {
     excludeMaps: true,
   })
 
+  copyDirectory(path.join(ROOT_DIR, 'public', 'docs'), path.join(PORTABLE_DIR, 'app', 'docs'))
+
   await bundleServer(SERVER_BUNDLE)
   prepareServerRuntime(SERVER_TARGET, SERVER_ENV)
 
