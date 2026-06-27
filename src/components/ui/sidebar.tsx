@@ -151,7 +151,7 @@ export const SubNavItem = ({ path, label, badge }: SubNavItemProps) => {
         />
         <span className="text-sm flex-1">{label}</span>
         {!!badge && badge > 0 && (
-          <span className="ml-1 bg-purple-500 text-white text-xs font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 leading-none">
+          <span className="ml-1 bg-red-500 text-white text-xs font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 leading-none">
             {badge > 99 ? "99+" : badge}
           </span>
         )}
@@ -220,14 +220,15 @@ interface AdminNavProps {
 
 const AdminNav = ({ expandedMenus, toggleMenu }: AdminNavProps) => {
   const badges = useBadges();
+  const leaveBadge = badges.leavePending + badges.leaveEndPending;
   return (
   <nav className="flex-1 overflow-y-auto py-4 px-3">
     <NavItem path="/admin" icon={<Home size={20} />} label="首页" />
     <CollapsibleSection title="成员管理" icon={<Users size={20} />}
       isExpanded={expandedMenus.includes("成员管理")} onToggle={() => toggleMenu("成员管理")}
-      badge={badges.leavePending}>
+      badge={leaveBadge}>
       <SubNavItem path="/admin/members/list" label="成员列表" />
-      <SubNavItem path="/admin/members/leave" label="请假记录" badge={badges.leavePending} />
+      <SubNavItem path="/admin/members/leave" label="请假记录" badge={leaveBadge} />
       <SubNavItem path="/admin/members/violations" label="黑点记录" />
     </CollapsibleSection>
     <CollapsibleSection title="课程管理" icon={<BookOpen size={20} />}

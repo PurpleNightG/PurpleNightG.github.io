@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom'
 import { BookOpen, Home, LogIn, Smartphone, Download, Monitor, User, Shield } from 'lucide-react'
 import { useState, useEffect } from 'react'
+import { DEFAULT_DOC_SLUG, docPath } from '../constants/docs'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -120,7 +121,7 @@ export default function Layout({ children }: LayoutProps) {
                 <span>首页</span>
               </Link>
               <Link
-                to="/docs"
+                to={docPath(DEFAULT_DOC_SLUG)}
                 className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
                   isActive('/docs')
                     ? 'bg-purple-600 text-white'

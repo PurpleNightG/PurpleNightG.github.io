@@ -111,12 +111,6 @@ export const formatDateTime = (dateString: string | null | undefined): string =>
   }
 }
 
-/**
- * 将日期转换为用于input[type="date"]的格式 (YYYY-MM-DD)
- * 与 formatDate 保持一致的逻辑，避免时区问题
- * @param dateString - ISO日期字符串或Date对象
- * @returns YYYY-MM-DD 格式的字符串
- */
 export const toInputDate = (dateString: string | Date | null | undefined): string => {
   if (!dateString) return ''
   
@@ -164,6 +158,19 @@ export const toInputDate = (dateString: string | Date | null | undefined): strin
   } catch (error) {
     return ''
   }
+}
+
+/** 提交 API / 写入数据库用的纯日期（YYYY-MM-DD），避免 UTC 偏移 */
+export const formatDateForDB = (
+  dateString: string | Date | null | undefined
+): string | null => {
+  const value = toInputDate(dateString)
+  return value || null
+}
+
+/** 东八区当天日期 YYYY-MM-DD */
+export const getTodayDateString = (): string => {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(new Date())
 }
 
 /**

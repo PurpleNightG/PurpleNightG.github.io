@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
 import { FileText, Search, FolderOpen, Folder, ChevronRight, ChevronDown } from 'lucide-react'
 import UpdateNotification from '../components/UpdateNotification'
+import { DEFAULT_DOC_SLUG } from '../constants/docs'
 
 interface DocItem {
   name: string
@@ -132,7 +133,8 @@ function DocTree({
 
 export default function DocsLayout() {
   const params = useParams()
-  const docName = params['*'] || undefined
+  const rawDocName = params['*']
+  const docName = rawDocName?.trim() ? rawDocName.trim() : undefined
   const navigate = useNavigate()
   const [docs, setDocs] = useState<DocItem[]>([])
   const [publicDocs, setPublicDocs] = useState<DocItem[]>([])
@@ -158,27 +160,11 @@ export default function DocsLayout() {
     return () => clearInterval(versionCheckInterval)
   }, [])
 
-  // 从 docs 树中找第一个文件
-  const findFirstFile = (items: DocItem[]): DocItem | null => {
-    for (const item of items) {
-      if (!item.type || item.type === 'file') return item
-      if (item.type === 'dir' && item.children) {
-        const found = findFirstFile(item.children)
-        if (found) return found
-      }
-    }
-    return null
-  }
-
   useEffect(() => {
     if (docName) {
       loadDocument(docName)
     } else if (docs.length > 0) {
-      const first = findFirstFile(docs)
-      if (first) {
-        const pathWithoutExt = first.path.replace(/\.md$/, '')
-        navigate(`/docs/${pathWithoutExt}`, { replace: true })
-      }
+      navigate(`/docs/${DEFAULT_DOC_SLUG}`, { replace: true })
     }
   }, [docName, docs])
 

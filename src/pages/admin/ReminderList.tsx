@@ -14,6 +14,8 @@ interface ReminderItem {
   days_without_training: number
   custom_timeout_days: number | null
   days_until_timeout: number
+  is_leave_buffer?: number | boolean
+  buffer_remaining_days?: number | null
 }
 
 export default function ReminderList() {
@@ -616,7 +618,14 @@ export default function ReminderList() {
                         {selectedIds.has(item.id) ? <CheckSquare size={18} className="text-purple-400" /> : <Square size={18} className="text-gray-400" />}
                       </button>
                     </td>
-                    <td>{item.member_name}</td>
+                    <td>
+                      <div className="flex items-center gap-2">
+                        <span>{item.member_name}</span>
+                        {!!item.is_leave_buffer && (
+                          <span className="status-badge bg-cyan-600/20 text-cyan-300">请假缓冲</span>
+                        )}
+                      </div>
+                    </td>
                     <td>
                       <span className="status-badge bg-blue-600/20 text-blue-300">
                         {item.stage_role}
@@ -626,18 +635,26 @@ export default function ReminderList() {
                       {item.last_training_date ? formatDate(item.last_training_date) : '从未训练'}
                     </td>
                     <td>
-                      <span className={`status-badge ${
-                        item.days_without_training >= 30 
-                          ? 'bg-red-600/20 text-red-300'
-                          : item.days_without_training >= 14
-                          ? 'bg-orange-600/20 text-orange-300'
-                          : 'bg-yellow-600/20 text-yellow-300'
-                      }`}>
-                        {item.days_without_training} 天
-                      </span>
+                      {!!item.is_leave_buffer ? (
+                        <span className="status-badge bg-cyan-600/20 text-cyan-300">缓冲期</span>
+                      ) : (
+                        <span className={`status-badge ${
+                          item.days_without_training >= 30 
+                            ? 'bg-red-600/20 text-red-300'
+                            : item.days_without_training >= 14
+                            ? 'bg-orange-600/20 text-orange-300'
+                            : 'bg-yellow-600/20 text-yellow-300'
+                        }`}>
+                          {item.days_without_training} 天
+                        </span>
+                      )}
                     </td>
                     <td>
-                      {item.days_until_timeout > 0 ? (
+                      {!!item.is_leave_buffer ? (
+                        <span className="status-badge bg-cyan-600/20 text-cyan-300">
+                          剩余 {item.buffer_remaining_days ?? 0} 天
+                        </span>
+                      ) : item.days_until_timeout > 0 ? (
                         <span className={`status-badge ${
                           item.days_until_timeout >= 3
                             ? 'bg-green-600/20 text-green-300'

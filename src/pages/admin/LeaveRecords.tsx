@@ -17,7 +17,9 @@ interface LeaveRecord {
   end_date: string
   total_days: number
   remaining_days?: number
-  status: '请假中' | '已结束'
+  status: '请假中' | '待结束审批' | '已结束'
+  buffer_start_date?: string | null
+  end_approver_name?: string | null
 }
 
 interface LeaveApplication {
@@ -47,7 +49,7 @@ interface LeaveForm {
   reason: string
   start_date: string
   end_date: string
-  status: '请假中' | '已结束'
+  status: '请假中' | '待结束审批' | '已结束'
 }
 
 const defaultForm = (): LeaveForm => ({
@@ -63,11 +65,12 @@ export default function LeaveRecords() {
   const [members, setMembers] = useState<MemberOption[]>([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  const [activeTab, setActiveTab] = useState<'records' | 'applications'>('records')
+  const [activeTab, setActiveTab] = useState<'records' | 'applications' | 'endApproval'>('records')
   const [applications, setApplications] = useState<LeaveApplication[]>([])
   const [loadingApps, setLoadingApps] = useState(false)
   const [reviewModal, setReviewModal] = useState<{show: boolean, app: LeaveApplication | null, remark: string}>({show: false, app: null, remark: ''})
   const [reviewing, setReviewing] = useState(false)
+  const [endApproving, setEndApproving] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [editingRecord, setEditingRecord] = useState<LeaveRecord | null>(null)
   const [confirmDialog, setConfirmDialog] = useState<{show: boolean, type: string, data?: any}>({show: false, type: ''})
@@ -86,9 +89,14 @@ export default function LeaveRecords() {
     return saved ? JSON.parse(saved) : null
   })
 
-  const statuses = ['请假中', '已结束']
+  const statuses = ['请假中', '待结束审批', '已结束']
 
   useEffect(() => {
+    const savedTab = localStorage.getItem('leaveActiveTab')
+    if (savedTab === 'endApproval') {
+      setActiveTab('endApproval')
+      localStorage.removeItem('leaveActiveTab')
+    }
     const loadData = async () => {
       await Promise.all([loadRecords(), loadMembers(), loadApplications()])
     }
@@ -142,6 +150,22 @@ export default function LeaveRecords() {
       toast.error(error.message || '审批失败')
     } finally {
       setReviewing(false)
+    }
+  }
+
+  const handleEndApproval = async (record: LeaveRecord) => {
+    setEndApproving(true)
+    try {
+      const userStr = localStorage.getItem('user') || sessionStorage.getItem('user')
+      const userObj = userStr ? JSON.parse(userStr) : null
+      const reviewerName = userObj?.name || userObj?.username || '管理员'
+      await leaveAPI.approveEndApproval(record.id, { reviewer_name: reviewerName })
+      toast.success(`已确认 ${record.member_name} 请假结束，缓冲期 7 天已开始`)
+      await loadRecords()
+    } catch (error: any) {
+      toast.error(error.message || '审批失败')
+    } finally {
+      setEndApproving(false)
     }
   }
 
@@ -288,10 +312,10 @@ export default function LeaveRecords() {
           reason: record.reason,
           start_date: record.start_date.split('T')[0],
           end_date: record.end_date.split('T')[0],
-          status: '已结束'
+          status: '待结束审批'
         })
       }
-      toast.success(`已结束 ${selectedRecords.length} 个请假记录`)
+      toast.success(`已将 ${selectedRecords.length} 条记录提交结束审批`)
       clearSelection()
       await loadRecords()
     } catch (error: any) {
@@ -336,11 +360,11 @@ export default function LeaveRecords() {
         reason: formData.reason,
         start_date: formData.start_date,
         end_date: formData.end_date,
-        status: '已结束'
+        status: '待结束审批'
       })
       setShowModal(false)
       await loadRecords()
-      toast.success('请假已结束')
+      toast.success('已提交结束审批')
     } catch (error: any) {
       toast.error(error?.message || '操作失败')
     }
@@ -391,6 +415,8 @@ export default function LeaveRecords() {
   const activeFilterCount = filters.status.length
 
   const pendingCount = applications.filter(a => a.status === '待审批').length
+  const endApprovalRecords = records.filter(r => r.status === '待结束审批')
+  const endApprovalCount = endApprovalRecords.length
 
   return (
     <div className="p-6">
@@ -465,15 +491,28 @@ export default function LeaveRecords() {
             </span>
           )}
         </button>
+        <button
+          onClick={() => setActiveTab('endApproval')}
+          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors relative ${
+            activeTab === 'endApproval' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          结束审批
+          {endApprovalCount > 0 && (
+            <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-white text-xs flex items-center justify-center">
+              {endApprovalCount}
+            </span>
+          )}
+        </button>
       </div>
 
-      {selectedIds.size > 0 && (
+      {selectedIds.size > 0 && activeTab === 'records' && (
         <div className="bg-purple-900/20 border border-purple-700 rounded-lg p-4 mb-4">
           <div className="flex items-center justify-between">
             <span className="text-white font-semibold">批量操作</span>
             <div className="flex gap-2">
               <button onClick={batchEndLeave} className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded text-sm transition-colors">
-                批量结束请假
+                批量提交结束审批
               </button>
               <button onClick={batchDelete} className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded text-sm transition-colors">
                 批量删除
@@ -513,6 +552,61 @@ export default function LeaveRecords() {
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* 结束审批面板 */}
+      {activeTab === 'endApproval' && (
+        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 overflow-hidden">
+          {loading ? (
+            <div className="p-12 text-center text-gray-400">加载中...</div>
+          ) : endApprovalRecords.length === 0 ? (
+            <div className="p-12 text-center">
+              <Bell className="text-gray-600 mx-auto mb-3" size={48} />
+              <p className="text-gray-400">暂无待结束审批的请假</p>
+            </div>
+          ) : (
+            <div className="admin-table-container">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>成员</th>
+                    <th>QQ号</th>
+                    <th>请假原因</th>
+                    <th>开始日期</th>
+                    <th>结束日期</th>
+                    <th>天数</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {endApprovalRecords.map(record => (
+                    <tr key={record.id}>
+                      <td>{record.member_name}</td>
+                      <td>{record.qq}</td>
+                      <td className="max-w-[160px] truncate" title={record.reason}>{record.reason || '—'}</td>
+                      <td>{formatDate(record.start_date)}</td>
+                      <td>{formatDate(record.end_date)}</td>
+                      <td>{record.total_days} 天</td>
+                      <td>
+                        <span className="status-badge bg-orange-600/20 text-orange-300">待结束审批</span>
+                      </td>
+                      <td>
+                        <button
+                          onClick={() => handleEndApproval(record)}
+                          disabled={endApproving}
+                          className="text-green-400 hover:text-green-300 transition-colors text-sm disabled:opacity-50"
+                        >
+                          {endApproving ? '处理中...' : '确认结束'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
@@ -671,6 +765,8 @@ export default function LeaveRecords() {
                             />
                           </div>
                         </div>
+                      ) : record.status === '待结束审批' ? (
+                        <span className="text-orange-400 text-xs">待结束审批（共 {record.total_days} 天）</span>
                       ) : (
                         <span className="text-gray-400 text-xs">已结束（共 {record.total_days} 天）</span>
                       )}
@@ -680,6 +776,8 @@ export default function LeaveRecords() {
                         className={`status-badge ${
                           record.status === '请假中'
                             ? 'bg-yellow-600/20 text-yellow-300'
+                            : record.status === '待结束审批'
+                            ? 'bg-orange-600/20 text-orange-300'
                             : 'bg-gray-600/20 text-gray-300'
                         }`}
                       >
@@ -868,8 +966,8 @@ export default function LeaveRecords() {
       {confirmDialog.show && confirmDialog.type === 'endLeave' && editingRecord && (
         <ConfirmDialog
           title="提前结束请假"
-          message={`确认提前结束 ${editingRecord.member_name} 的请假吗？`}
-          confirmText="结束请假"
+          message={`确认将 ${editingRecord.member_name} 的请假提交结束审批吗？`}
+          confirmText="提交审批"
           cancelText="取消"
           type="warning"
           onConfirm={confirmEndLeave}
@@ -903,9 +1001,9 @@ export default function LeaveRecords() {
 
       {confirmDialog.show && confirmDialog.type === 'batchEndLeave' && (
         <ConfirmDialog
-          title="批量结束请假"
-          message={`确定要结束选中的请假记录吗？`}
-          confirmText="结束请假"
+          title="批量提交结束审批"
+          message="确定要将选中的进行中请假提交结束审批吗？"
+          confirmText="提交审批"
           cancelText="取消"
           type="warning"
           onConfirm={confirmBatchEndLeave}

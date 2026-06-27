@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Users, UserMinus, Award, Bell, FileText, BookOpen, GraduationCap, Clock, LogIn, LogOut } from 'lucide-react'
+import { Users, UserMinus, Award, Bell, FileText, BookOpen, GraduationCap, Clock, LogIn, LogOut, X, AlertCircle } from 'lucide-react'
 import { memberAPI, leaveAPI, blackPointAPI, reminderAPI } from '../../utils/api'
 import { useNavigate } from 'react-router-dom'
 import UserDropdown from '../../components/UserDropdown'
 import { formatDate } from '../../utils/dateFormat'
+import { useBadges } from '../../contexts/BadgeContext'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
@@ -24,6 +25,8 @@ interface ReminderMember {
   stage_role: string
   last_training_date: string | null
   days_without_training: number
+  is_leave_buffer?: number | boolean
+  buffer_remaining_days?: number | null
 }
 
 interface StageDistribution {
@@ -36,6 +39,8 @@ interface StageDistribution {
 
 export default function AdminHome() {
   const navigate = useNavigate()
+  const badges = useBadges()
+  const [dismissLeaveEndAlert, setDismissLeaveEndAlert] = useState(false)
   const [stats, setStats] = useState<Statistics>({
     totalMembers: 0,
     activeMembers: 0,
@@ -66,6 +71,12 @@ export default function AdminHome() {
     loadStatistics()
     if (username) loadDutyStatus(username)
   }, [])
+
+  useEffect(() => {
+    if (badges.leaveEndPending > 0) {
+      setDismissLeaveEndAlert(false)
+    }
+  }, [badges.leaveEndPending])
 
   const loadDutyStatus = async (username: string) => {
     try {
@@ -210,7 +221,40 @@ export default function AdminHome() {
   }
 
   return (
-    <div className="p-8 min-h-screen">
+    <div className="p-8 min-h-screen relative">
+      {badges.leaveEndPending > 0 && !dismissLeaveEndAlert && (
+        <div className="fixed top-6 right-6 z-50 max-w-sm">
+          <div className="bg-orange-900/90 backdrop-blur-md border border-orange-500/50 rounded-xl p-4 shadow-2xl shadow-orange-900/30">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-orange-600/30 rounded-lg flex-shrink-0">
+                <AlertCircle size={20} className="text-orange-300" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-white font-semibold text-sm">有新的请假结束待处理</p>
+                <p className="text-orange-200/80 text-xs mt-1">
+                  共 {badges.leaveEndPending} 人等待结束审批，请及时处理
+                </p>
+                <button
+                  onClick={() => {
+                    localStorage.setItem('leaveActiveTab', 'endApproval')
+                    navigate('/admin/members/leave')
+                  }}
+                  className="mt-2 text-xs text-orange-300 hover:text-orange-200 font-medium transition-colors"
+                >
+                  前往结束审批 →
+                </button>
+              </div>
+              <button
+                onClick={() => setDismissLeaveEndAlert(true)}
+                className="text-orange-300/60 hover:text-orange-200 transition-colors flex-shrink-0"
+                aria-label="关闭提示"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="max-w-7xl mx-auto">
         {/* 欢迎标题和用户菜单 */}
         <div className="mb-10 flex items-start justify-between">
@@ -416,6 +460,9 @@ export default function AdminHome() {
                             <div>
                               <div className="flex items-center gap-2">
                                 <span className="text-white font-medium">{member.nickname || member.member_name}</span>
+                                {!!member.is_leave_buffer && (
+                                  <span className="text-xs bg-cyan-600/20 text-cyan-300 px-2 py-0.5 rounded">请假缓冲</span>
+                                )}
                                 <span className="text-gray-500 text-sm">QQ: {member.qq}</span>
                               </div>
                               <div className="flex items-center gap-3 mt-1">
@@ -429,10 +476,21 @@ export default function AdminHome() {
                             </div>
                           </div>
                           <div className="flex-shrink-0 text-right">
-                            <div className="text-2xl font-bold text-orange-400">
-                              {member.days_without_training}
-                            </div>
-                            <div className="text-xs text-gray-500">天未训</div>
+                            {!!member.is_leave_buffer ? (
+                              <>
+                                <div className="text-2xl font-bold text-cyan-400">
+                                  {member.buffer_remaining_days ?? 0}
+                                </div>
+                                <div className="text-xs text-gray-500">天缓冲剩余</div>
+                              </>
+                            ) : (
+                              <>
+                                <div className="text-2xl font-bold text-orange-400">
+                                  {member.days_without_training}
+                                </div>
+                                <div className="text-xs text-gray-500">天未训</div>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>

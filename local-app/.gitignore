@@ -1,0 +1,4 @@
+.cache/
+release/
+portable-build/
+assets/app.ico

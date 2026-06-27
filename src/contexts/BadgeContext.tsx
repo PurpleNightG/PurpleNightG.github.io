@@ -4,11 +4,12 @@ const API = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000/api
 
 interface Badges {
   leavePending: number
+  leaveEndPending: number
   assessmentPending: number
   reminderCount: number
 }
 
-const defaultBadges: Badges = { leavePending: 0, assessmentPending: 0, reminderCount: 0 }
+const defaultBadges: Badges = { leavePending: 0, leaveEndPending: 0, assessmentPending: 0, reminderCount: 0 }
 
 const BadgeContext = createContext<Badges>(defaultBadges)
 

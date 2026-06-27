@@ -1,0 +1,22 @@
+{
+  "name": "ziye-local-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "紫夜公会官网 - 本地启动器（绕过 GitHub Pages / Vercel）",
+  "type": "module",
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "dev": "node scripts/launch.mjs --dev",
+    "start": "node scripts/launch.mjs --prod --open",
+    "launch": "node scripts/launch.mjs --dev --open",
+    "build:portable": "node scripts/build-portable.mjs",
+    "build:exe": "node scripts/build-sfx.mjs",
+    "build:installer": "node scripts/build-installer.mjs",
+    "build:all": "node scripts/build-all.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "png-to-ico": "^2.1.8",
+    "sharp": "^0.33.5"
+  }
+}

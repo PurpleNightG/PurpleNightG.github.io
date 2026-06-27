@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { BookOpen, Users, FileText, Shield, ChevronLeft, ChevronRight, Wrench } from 'lucide-react'
 import { useState, useEffect } from 'react'
+import { DOC_SLUGS, docPath } from '../constants/docs'
 
 const carouselImages = [
   'https://s41.ax1x.com/2026/01/27/pZR6Bzq.jpg',
@@ -78,14 +79,14 @@ export default function Home() {
               {/* 按钮组 */}
               <div className="flex flex-wrap gap-4">
                 <Link
-                  to="/docs"
+                  to={docPath(DOC_SLUGS.guild)}
                   className="bg-purple-600 hover:bg-purple-700 text-white font-semibold px-8 py-3 rounded-lg transition-all duration-300 flex items-center space-x-2 animate-slide-in-left animate-delay-200 hover:scale-105 hover:shadow-xl hover:shadow-purple-500/50"
                 >
                   <BookOpen size={20} />
                   <span>浏览文档</span>
                 </Link>
                 <Link
-                  to="/docs/HTJ"
+                  to={docPath(DOC_SLUGS.newTrainee)}
                   className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white font-semibold px-8 py-3 rounded-lg transition-all duration-300 shadow-lg hover:shadow-cyan-500/50 animate-slide-in-right animate-delay-200 hover:scale-105"
                 >
                   加入公会
@@ -167,7 +168,7 @@ export default function Home() {
             <div className="grid md:grid-cols-2 gap-6">
           {/* 新人入队 */}
           <Link
-            to="/docs/HTJ"
+            to={docPath(DOC_SLUGS.newTrainee)}
             className="bg-gradient-to-br from-cyan-600/20 to-blue-600/20 backdrop-blur-sm rounded-xl p-6 border border-cyan-700/50 hover:border-cyan-500 transition-all duration-300 group hover-lift animate-slide-in-up"
           >
             <div className="bg-gradient-to-br from-cyan-500 to-blue-600 w-14 h-14 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
@@ -183,7 +184,7 @@ export default function Home() {
 
           {/* 战术教学 */}
           <Link
-            to="/docs/PNG"
+            to={docPath(DOC_SLUGS.guild)}
             className="bg-gradient-to-br from-purple-600/20 to-pink-600/20 backdrop-blur-sm rounded-xl p-6 border border-purple-700/50 hover:border-purple-500 transition-all duration-300 group hover-lift animate-slide-in-up animate-delay-100"
           >
             <div className="bg-gradient-to-br from-purple-500 to-pink-600 w-14 h-14 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
@@ -199,7 +200,7 @@ export default function Home() {
 
           {/* 公会规定 */}
           <Link
-            to="/docs/PNGrule"
+            to={docPath(DOC_SLUGS.rules)}
             className="bg-gradient-to-br from-orange-600/20 to-red-600/20 backdrop-blur-sm rounded-xl p-6 border border-orange-700/50 hover:border-orange-500 transition-all duration-300 group hover-lift animate-slide-in-up animate-delay-200"
           >
             <div className="bg-gradient-to-br from-orange-500 to-red-600 w-14 h-14 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
@@ -215,7 +216,7 @@ export default function Home() {
 
           {/* MOD说明 */}
           <Link
-            to="/docs/mod-explan"
+            to={docPath(DOC_SLUGS.modGuide)}
             className="bg-gradient-to-br from-emerald-600/20 to-teal-600/20 backdrop-blur-sm rounded-xl p-6 border border-emerald-700/50 hover:border-emerald-500 transition-all duration-300 group hover-lift animate-slide-in-up animate-delay-300"
           >
             <div className="bg-gradient-to-br from-emerald-500 to-teal-600 w-14 h-14 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">

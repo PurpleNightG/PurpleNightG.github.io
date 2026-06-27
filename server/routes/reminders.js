@@ -1,9 +1,10 @@
 import express from 'express'
 import { pool } from '../config/database.js'
+import { TRAINING_STAGES, LEAVE_BUFFER_EXISTS, TRAINING_INACTIVITY_THRESHOLD_PER_MEMBER, DAYS_UNTIL_TIMEOUT_SQL, BUFFER_REMAINING_DAYS_SQL } from '../utils/reminderQuery.js'
 
 const router = express.Router()
 
-// 获取催促名单（实时从成员表计算）
+// 获取催促名单（实时从成员表计算，含请假缓冲成员）
 router.get('/', async (req, res) => {
   try {
     const [settingRows] = await pool.query(
@@ -13,53 +14,79 @@ router.get('/', async (req, res) => {
     const defaultTimeoutDays = settingRows.length > 0
       ? parseInt(settingRows[0].setting_value)
       : 7
-    const threshold = Math.max(defaultTimeoutDays - 7, 0)
 
-    const trainingStages = ['未新训', '新训初期', '新训一期', '新训二期', '新训三期', '新训准考']
+    const stagePlaceholders = TRAINING_STAGES.map(() => '?').join(', ')
 
     const [rows] = await pool.query(`
-      SELECT
-        m.id AS id,
-        m.id AS member_id,
-        m.nickname AS member_name,
-        m.qq,
-        m.stage_role,
-        m.last_training_date,
-        CASE
-          WHEN m.last_training_date IS NOT NULL THEN DATEDIFF(CURDATE(), m.last_training_date)
-          ELSE DATEDIFF(CURDATE(), m.join_date)
-        END AS days_without_training,
-        rl.custom_timeout_days,
-        CASE
-          WHEN rl.custom_timeout_days IS NOT NULL THEN
-            rl.custom_timeout_days - CASE
-              WHEN m.last_training_date IS NOT NULL THEN DATEDIFF(CURDATE(), m.last_training_date)
-              ELSE DATEDIFF(CURDATE(), m.join_date)
-            END
-          ELSE
-            ? - CASE
-              WHEN m.last_training_date IS NOT NULL THEN DATEDIFF(CURDATE(), m.last_training_date)
-              ELSE DATEDIFF(CURDATE(), m.join_date)
-            END
-        END AS days_until_timeout
-      FROM members m
-      LEFT JOIN reminder_list rl ON m.id = rl.member_id
-      LEFT JOIN retention_records ret ON m.id = ret.member_id
-      WHERE m.status NOT IN ('已退队', '请假中', '其他')
-        AND m.stage_role IN (?, ?, ?, ?, ?, ?)
-        AND (
-          (m.last_training_date IS NOT NULL AND DATEDIFF(CURDATE(), m.last_training_date) >= ?)
-          OR (m.last_training_date IS NULL AND m.join_date IS NOT NULL AND DATEDIFF(CURDATE(), m.join_date) >= ?)
+      SELECT * FROM (
+        SELECT
+          m.id AS id,
+          m.id AS member_id,
+          m.nickname AS member_name,
+          m.qq,
+          m.stage_role,
+          m.last_training_date,
+          CASE
+            WHEN m.last_training_date IS NOT NULL THEN DATEDIFF(CURDATE(), m.last_training_date)
+            ELSE DATEDIFF(CURDATE(), m.join_date)
+          END AS days_without_training,
+          rl.custom_timeout_days,
+          ${BUFFER_REMAINING_DAYS_SQL} AS days_until_timeout,
+          1 AS is_leave_buffer,
+          ${BUFFER_REMAINING_DAYS_SQL} AS buffer_remaining_days
+        FROM members m
+        INNER JOIN leave_records lr ON lr.id = (
+          SELECT id FROM leave_records
+          WHERE member_id = m.id
+            AND status = '已结束'
+            AND buffer_start_date IS NOT NULL
+            AND DATEDIFF(CURDATE(), buffer_start_date) < 7
+          ORDER BY buffer_start_date DESC
+          LIMIT 1
         )
-        AND ret.id IS NULL
-        AND NOT EXISTS (
-          SELECT 1 FROM leave_records lr
-          WHERE lr.member_id = m.id
-            AND lr.status = '已结束'
-            AND lr.end_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
-        )
-      ORDER BY days_without_training DESC
-    `, [defaultTimeoutDays, ...trainingStages, threshold, threshold])
+        LEFT JOIN reminder_list rl ON m.id = rl.member_id
+        LEFT JOIN retention_records ret ON m.id = ret.member_id
+        WHERE m.status NOT IN ('已退队', '请假中', '其他')
+          AND m.stage_role IN (${stagePlaceholders})
+          AND ret.id IS NULL
+          AND ${TRAINING_INACTIVITY_THRESHOLD_PER_MEMBER}
+
+        UNION ALL
+
+        SELECT
+          m.id AS id,
+          m.id AS member_id,
+          m.nickname AS member_name,
+          m.qq,
+          m.stage_role,
+          m.last_training_date,
+          CASE
+            WHEN m.last_training_date IS NOT NULL THEN DATEDIFF(CURDATE(), m.last_training_date)
+            ELSE DATEDIFF(CURDATE(), m.join_date)
+          END AS days_without_training,
+          rl.custom_timeout_days,
+          ${DAYS_UNTIL_TIMEOUT_SQL} AS days_until_timeout,
+          0 AS is_leave_buffer,
+          NULL AS buffer_remaining_days
+        FROM members m
+        LEFT JOIN reminder_list rl ON m.id = rl.member_id
+        LEFT JOIN retention_records ret ON m.id = ret.member_id
+        WHERE m.status NOT IN ('已退队', '请假中', '其他')
+          AND m.stage_role IN (${stagePlaceholders})
+          AND ${TRAINING_INACTIVITY_THRESHOLD_PER_MEMBER}
+          AND ret.id IS NULL
+          AND NOT EXISTS (${LEAVE_BUFFER_EXISTS})
+      ) combined
+      ORDER BY is_leave_buffer DESC, days_without_training DESC
+    `, [
+      ...TRAINING_STAGES,
+      defaultTimeoutDays,
+      defaultTimeoutDays,
+      defaultTimeoutDays,
+      ...TRAINING_STAGES,
+      defaultTimeoutDays,
+      defaultTimeoutDays,
+    ])
 
     res.json({ success: true, data: rows })
   } catch (error) {
@@ -73,27 +100,19 @@ router.post('/auto-update', async (req, res) => {
   try {
     const { timeoutDays = 7 } = req.body
     
-    // 定义需要检测的新训阶段
-    const trainingStages = ['未新训', '新训初期', '新训一期', '新训二期', '新训三期', '新训准考']
+    const trainingStages = TRAINING_STAGES
     
-    // 先保存现有的自定义超时天数设置
     const [existingSettings] = await pool.query(`
       SELECT member_id, custom_timeout_days 
       FROM reminder_list 
       WHERE custom_timeout_days IS NOT NULL
     `)
     
-    // 创建一个映射表：member_id -> custom_timeout_days
     const customTimeoutMap = new Map()
     existingSettings.forEach(setting => {
       customTimeoutMap.set(setting.member_id, setting.custom_timeout_days)
     })
     
-    // 获取所有符合条件的成员：
-    // 1. 状态不是"已退队"、"请假中"、"其他"
-    // 2. 阶段在新训范围内
-    // 3. 对于未新训成员：使用加入日期判断；其他成员：使用最后新训日期判断
-    // 4. 不在留队记录中
     const [members] = await pool.query(`
       SELECT 
         m.id,
@@ -116,10 +135,8 @@ router.post('/auto-update', async (req, res) => {
         AND r.id IS NULL
     `, [...trainingStages, timeoutDays, timeoutDays])
     
-    // 清空现有催促名单
     await pool.query('TRUNCATE TABLE reminder_list')
     
-    // 插入新的催促名单，并恢复之前的自定义超时天数设置
     for (const member of members) {
       const customTimeout = customTimeoutMap.get(member.id) || null
       
@@ -167,10 +184,8 @@ router.put('/batch/timeout', async (req, res) => {
       })
     }
     
-    // 如果为null或0，则清除自定义超时天数（使用全局设置）
     const timeoutValue = custom_timeout_days > 0 ? custom_timeout_days : null
     
-    // 批量 UPSERT（按 member_id）
     for (const memberId of ids) {
       if (timeoutValue !== null) {
         const [existing] = await pool.query('SELECT id FROM reminder_list WHERE member_id = ?', [memberId])
@@ -214,7 +229,6 @@ router.put('/:id/timeout', async (req, res) => {
     const { id } = req.params
     const { custom_timeout_days } = req.body
     
-    // 如果为null或0，则清除自定义超时天数（使用全局设置）
     const timeoutValue = custom_timeout_days > 0 ? custom_timeout_days : null
     
     if (timeoutValue !== null) {

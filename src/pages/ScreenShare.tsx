@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import Peer, { MediaConnection } from 'peerjs'
-import { Monitor, Users, Copy, Check, StopCircle, Play, Link2, X, Maximize2, Minimize2, Wifi, Zap, Globe, Lock, Clock, CheckCircle, XCircle, ChevronDown, Search, Trash2 } from 'lucide-react'
+import { Monitor, Users, Copy, Check, StopCircle, Play, Link2, X, Maximize2, Minimize2, Wifi, Zap, Globe, Lock, Clock, CheckCircle, XCircle, ChevronDown, Search, Trash2, GraduationCap } from 'lucide-react'
+import ScreenShareAssistantPanel, { type AssistantRow, type AssistantCandidate } from '../components/ScreenShareAssistantPanel'
 
 type Mode = 'select' | 'host' | 'viewer'
 type Status = 'idle' | 'connecting' | 'streaming' | 'watching' | 'error'
@@ -56,6 +57,17 @@ function getCurrentUsername(): string {
   return '未知用户'
 }
 
+function getStudentMemberId(): number | null {
+  try {
+    const studentUser = localStorage.getItem('studentUser') || sessionStorage.getItem('studentUser')
+    if (studentUser) {
+      const parsed = JSON.parse(studentUser)
+      return parsed.id ?? null
+    }
+  } catch {}
+  return null
+}
+
 function getUserType(): 'admin' | 'student' | null {
   if (localStorage.getItem('token') || sessionStorage.getItem('token')) return 'admin'
   if (localStorage.getItem('studentToken') || sessionStorage.getItem('studentToken')) return 'student'
@@ -80,7 +92,21 @@ export default function ScreenShare() {
   const [activeStreamMode, setActiveStreamMode] = useState<'peerjs' | 'agora' | 'volc'>('peerjs')
   const [latency, setLatency] = useState<number | null>(null)
   const [userType] = useState<'admin' | 'student' | null>(getUserType)
-  const [rtcPerm, setRtcPerm] = useState<{ agora: boolean; volc: boolean; agoraPending: boolean; volcPending: boolean }>({ agora: false, volc: false, agoraPending: false, volcPending: false })
+  const [rtcPerm, setRtcPerm] = useState<{
+    agora: boolean
+    volc: boolean
+    agoraPending: boolean
+    volcPending: boolean
+    isAssistant?: boolean
+    canUseRtc?: boolean
+    screenShareEnabled?: boolean
+    quotaRemaining?: number | null
+    screenShareUsed?: number
+    screenShareQuota?: number | null
+  }>({ agora: false, volc: false, agoraPending: false, volcPending: false })
+  const [assistants, setAssistants] = useState<AssistantRow[]>([])
+  const [assistantCandidates, setAssistantCandidates] = useState<AssistantCandidate[]>([])
+  const memberIdRef = useRef<number | null>(getStudentMemberId())
   const [pendingRequests, setPendingRequests] = useState<{ username: string; mode: string; requestedAt: number }[]>([])
   const [shareLogs, setShareLogs] = useState<{ id: number; room_id: string; host_name: string; mode: string; peak_viewers: number; viewers: string | null; started_at: string; ended_at: string | null }[]>([])
   const [logsOpen, setLogsOpen] = useState(false)
@@ -221,19 +247,24 @@ export default function ScreenShare() {
     const poll = async () => {
       try {
         if (userType === 'student') {
-          const r = await fetch(`${API_URL}/room/rtc-permission/${encodeURIComponent(myName.current)}`)
+          const q = memberIdRef.current ? `?memberId=${memberIdRef.current}` : ''
+          const r = await fetch(`${API_URL}/room/rtc-permission/${encodeURIComponent(myName.current)}${q}`)
           const d = await r.json()
           setRtcPerm(d)
         } else if (userType === 'admin') {
           const r = await fetch(`${API_URL}/room/rtc-requests`)
           const d = await r.json()
           setPendingRequests(d.requests || [])
+          const ar = await fetch(`${API_URL}/room/assistants`)
+          const ad = await ar.json()
+          setAssistants(ad.assistants || [])
+          setAssistantCandidates(ad.candidates || [])
           const lr = await fetch(`${API_URL}/room/share-logs`)
           const ld = await lr.json()
           setShareLogs(ld.logs || [])
-          const ar = await fetch(`${API_URL}/room/active-rooms`)
-          const ad = await ar.json()
-          setActiveRooms(ad.rooms || [])
+          const activeRes = await fetch(`${API_URL}/room/active-rooms`)
+          const activeData = await activeRes.json()
+          setActiveRooms(activeData.rooms || [])
         }
       } catch {}
     }
@@ -333,7 +364,7 @@ export default function ScreenShare() {
     setStatus('connecting')
     setErrorMsg('')
     setConnectStep('初始化火山引擎 SDK...')
-    await consumePermission('volc')
+    await consumePermission('volc', true)
     try {
       const code = generateRoomCode()
       setRoomCode(code)
@@ -424,7 +455,7 @@ export default function ScreenShare() {
     setStatus('connecting')
     setErrorMsg('')
     setConnectStep('初始化火山引擎 SDK...')
-    await consumePermission('volc')
+    await consumePermission('volc', false)
     try {
       const viewerUid = 'v' + Math.random().toString(36).slice(2, 8)
 
@@ -548,7 +579,7 @@ export default function ScreenShare() {
     setStatus('connecting')
     setErrorMsg('')
     setConnectStep('初始化声网SDK...')
-    await consumePermission('agora')
+    await consumePermission('agora', true)
     try {
       const { default: AgoraRTC } = await import('agora-rtc-sdk-ng')
       AgoraRTC.setLogLevel(4)
@@ -635,7 +666,7 @@ export default function ScreenShare() {
     setStatus('connecting')
     setErrorMsg('')
     setConnectStep('初始化声网SDK...')
-    await consumePermission('agora')
+    await consumePermission('agora', false)
     try {
       const { default: AgoraRTC } = await import('agora-rtc-sdk-ng')
       AgoraRTC.setLogLevel(4)
@@ -1178,9 +1209,17 @@ export default function ScreenShare() {
   const canHostMode = (m: 'peerjs' | 'agora' | 'volc'): boolean => {
     if (m === 'peerjs') return true
     if (userType === 'admin') return true
+    if (rtcPerm.canUseRtc) return true
     if (m === 'agora') return rtcPerm.agora
     if (m === 'volc') return rtcPerm.volc
     return false
+  }
+
+  const refreshAssistants = async () => {
+    const ar = await fetch(`${API_URL}/room/assistants`)
+    const ad = await ar.json()
+    setAssistants(ad.assistants || [])
+    setAssistantCandidates(ad.candidates || [])
   }
 
   const isPending = (m: 'agora' | 'volc'): boolean => {
@@ -1234,12 +1273,27 @@ export default function ScreenShare() {
   }
 
   // Consume permission when student starts using a non-webrtc mode
-  const consumePermission = async (m: 'agora' | 'volc') => {
-    if (userType !== 'student') return
-    await fetch(`${API_URL}/room/rtc-consume`, {
+  const consumePermission = async (m: 'agora' | 'volc', asHost = false) => {
+    if (userType === 'admin') return
+    if (rtcPerm.isAssistant) {
+      if (!asHost) return
+    }
+    const body: Record<string, unknown> = {
+      username: myName.current,
+      mode: m,
+      asHost,
+    }
+    if (memberIdRef.current) body.memberId = memberIdRef.current
+    const res = await fetch(`${API_URL}/room/rtc-consume`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: myName.current, mode: m }),
-    }).catch(() => {})
+      body: JSON.stringify(body),
+    }).catch(() => null)
+    if (asHost && rtcPerm.isAssistant && res?.ok) {
+      const q = memberIdRef.current ? `?memberId=${memberIdRef.current}` : ''
+      const r = await fetch(`${API_URL}/room/rtc-permission/${encodeURIComponent(myName.current)}${q}`)
+      const d = await r.json()
+      setRtcPerm(d)
+    }
   }
 
   const modeDescriptions = {
@@ -1605,6 +1659,34 @@ export default function ScreenShare() {
             </div>
           )}
 
+          {/* Student: assistant status */}
+          {userType === 'student' && rtcPerm.isAssistant && (
+            <div className={`mb-6 rounded-xl p-4 anim-reveal-2 border ${
+              rtcPerm.canUseRtc
+                ? 'bg-emerald-500/5 border-emerald-500/20'
+                : 'bg-gray-800/40 border-gray-700/40'
+            }`}>
+              <h3 className={`text-sm font-semibold mb-1 flex items-center gap-2 ${
+                rtcPerm.canUseRtc ? 'text-emerald-400' : 'text-gray-400'
+              }`}>
+                <GraduationCap size={16} />
+                助教身份
+              </h3>
+              {rtcPerm.canUseRtc ? (
+                <p className="text-gray-400 text-xs">
+                  可直接使用声网 / 火山引擎分享，无需审批。
+                  {rtcPerm.quotaRemaining == null
+                    ? ' 次数不限。'
+                    : ` 剩余 ${rtcPerm.quotaRemaining} 次（已用 ${rtcPerm.screenShareUsed ?? 0} 次）。`}
+                </p>
+              ) : !rtcPerm.screenShareEnabled ? (
+                <p className="text-gray-500 text-xs">管理员已关闭您的屏幕共享权限，请联系管理员。</p>
+              ) : (
+                <p className="text-gray-500 text-xs">声网 / 火山共享次数已用完，请联系管理员增加配额或清零次数。</p>
+              )}
+            </div>
+          )}
+
           {/* Host & Viewer cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {/* Host card */}
@@ -1624,6 +1706,12 @@ export default function ScreenShare() {
                   <button onClick={handleStartHost}
                     className="w-full py-2.5 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white rounded-lg font-medium transition-all text-sm hover:shadow-[0_0_20px_rgba(147,51,234,0.3)]">
                     开始共享
+                  </button>
+                ) : rtcPerm.isAssistant && (hostConnMode === 'agora' || hostConnMode === 'volc') ? (
+                  <button disabled
+                    className="w-full py-2.5 rounded-lg font-medium text-sm flex items-center justify-center gap-2 bg-gray-800/60 border border-gray-700/50 text-gray-500 cursor-not-allowed">
+                    <Lock size={14} />
+                    {!rtcPerm.screenShareEnabled ? '助教共享权限已关闭' : '助教共享次数已用完'}
                   </button>
                 ) : (
                   <button
@@ -1700,6 +1788,15 @@ export default function ScreenShare() {
               </div>
             </div>
           </div>
+
+          {/* Admin: assistant management */}
+          {userType === 'admin' && (
+            <ScreenShareAssistantPanel
+              assistants={assistants}
+              candidates={assistantCandidates}
+              onRefresh={refreshAssistants}
+            />
+          )}
 
           {/* Admin: share logs (collapsible) */}
           {userType === 'admin' && (() => {

@@ -311,7 +311,32 @@ router.put('/:id', async (req, res) => {
     )
     const total_days = dateDiff[0].total_days + 1
     
-    // 更新记录
+    // 提前结束请假 → 进入结束审批；已结束的记录允许直接编辑
+    const endingLeave = existing[0].status === '请假中' && (status === '已结束' || status === '待结束审批')
+    const finalStatus = endingLeave ? '待结束审批' : status
+
+    if (endingLeave) {
+      await pool.query(`
+        UPDATE leave_records SET
+          reason = ?,
+          start_date = ?,
+          end_date = ?,
+          total_days = ?,
+          status = ?
+        WHERE id = ?
+      `, [reason, start_date, end_date, total_days, finalStatus, id])
+
+      await pool.query(
+        'UPDATE members SET status = ? WHERE id = ?',
+        ['正常', existing[0].member_id]
+      )
+
+      return res.json({
+        success: true,
+        message: '已提交结束审批，请在「结束审批」中确认'
+      })
+    }
+
     await pool.query(`
       UPDATE leave_records SET
         reason = ?,
@@ -320,17 +345,9 @@ router.put('/:id', async (req, res) => {
         total_days = ?,
         status = ?
       WHERE id = ?
-    `, [
-      reason,
-      start_date,
-      end_date,
-      total_days,
-      status,
-      id
-    ])
-    
-    // 如果状态改为已结束，更新成员状态为正常
-    if (status === '已结束') {
+    `, [reason, start_date, end_date, total_days, finalStatus, id])
+
+    if (finalStatus === '已结束' && existing[0].status !== '已结束') {
       await pool.query(
         'UPDATE members SET status = ? WHERE id = ?',
         ['正常', existing[0].member_id]
@@ -369,13 +386,11 @@ router.delete('/:id', async (req, res) => {
     
     await pool.query('DELETE FROM leave_records WHERE id = ?', [id])
     
-    // 检查该成员是否还有其他请假中的记录
     const [activeLeaves] = await pool.query(
-      'SELECT COUNT(*) as count FROM leave_records WHERE member_id = ? AND status = ?',
-      [existing[0].member_id, '请假中']
+      "SELECT COUNT(*) as count FROM leave_records WHERE member_id = ? AND status = '请假中'",
+      [existing[0].member_id]
     )
-    
-    // 如果没有其他请假记录，将成员状态改为正常
+
     if (activeLeaves[0].count === 0) {
       await pool.query(
         'UPDATE members SET status = ? WHERE id = ?',
@@ -396,10 +411,44 @@ router.delete('/:id', async (req, res) => {
   }
 })
 
-// 自动更新过期的请假记录
+// 管理员审批请假结束（通过后开始 7 天缓冲期）
+router.put('/:id/end-approval', async (req, res) => {
+  try {
+    const { id } = req.params
+    const { reviewer_name } = req.body
+
+    const [existing] = await pool.query(
+      'SELECT * FROM leave_records WHERE id = ?',
+      [id]
+    )
+    if (existing.length === 0) {
+      return res.status(404).json({ success: false, message: '请假记录不存在' })
+    }
+    if (existing[0].status !== '待结束审批') {
+      return res.status(400).json({ success: false, message: '该记录不在待结束审批状态' })
+    }
+
+    await pool.query(`
+      UPDATE leave_records SET
+        status = '已结束',
+        buffer_start_date = CURDATE(),
+        end_approver_name = ?
+      WHERE id = ?
+    `, [reviewer_name || '管理员', id])
+
+    res.json({
+      success: true,
+      message: '请假结束已确认，成员进入 7 天缓冲期'
+    })
+  } catch (error) {
+    console.error('审批请假结束失败:', error)
+    res.status(500).json({ success: false, message: '审批失败' })
+  }
+})
+
+// 自动更新过期的请假记录 → 进入待结束审批
 router.post('/auto-update', async (req, res) => {
   try {
-    // 查找所有已过期但状态仍为请假中的记录
     const [expiredLeaves] = await pool.query(`
       SELECT id, member_id 
       FROM leave_records 
@@ -407,19 +456,16 @@ router.post('/auto-update', async (req, res) => {
     `)
     
     if (expiredLeaves.length > 0) {
-      // 更新状态为已结束
       await pool.query(`
         UPDATE leave_records 
-        SET status = '已结束' 
+        SET status = '待结束审批' 
         WHERE status = '请假中' AND end_date < CURDATE()
       `)
       
-      // 更新成员状态
       for (const leave of expiredLeaves) {
-        // 检查该成员是否还有其他请假中的记录
         const [activeLeaves] = await pool.query(
-          'SELECT COUNT(*) as count FROM leave_records WHERE member_id = ? AND status = ?',
-          [leave.member_id, '请假中']
+          "SELECT COUNT(*) as count FROM leave_records WHERE member_id = ? AND status = '请假中'",
+          [leave.member_id]
         )
         
         if (activeLeaves[0].count === 0) {
@@ -433,7 +479,7 @@ router.post('/auto-update', async (req, res) => {
     
     res.json({
       success: true,
-      message: `已更新 ${expiredLeaves.length} 条过期请假记录`
+      message: `已将 ${expiredLeaves.length} 条过期请假移入结束审批`
     })
   } catch (error) {
     console.error('自动更新请假记录失败:', error)

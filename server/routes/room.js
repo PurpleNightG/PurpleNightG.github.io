@@ -3,6 +3,64 @@ import { pool } from '../config/database.js'
 
 const router = express.Router()
 
+const ASSISTANT_FIELDS = 'id, username, nickname, qq, status, is_assistant, screen_share_enabled, screen_share_quota, screen_share_used'
+
+async function findMemberByDisplayName(name) {
+  const [rows] = await pool.execute(
+    `SELECT ${ASSISTANT_FIELDS} FROM members WHERE username = ? OR nickname = ? LIMIT 1`,
+    [name, name]
+  )
+  return rows[0] || null
+}
+
+async function findMemberById(id) {
+  const [rows] = await pool.execute(
+    `SELECT ${ASSISTANT_FIELDS} FROM members WHERE id = ? LIMIT 1`,
+    [id]
+  )
+  return rows[0] || null
+}
+
+function buildAssistantStatus(member) {
+  if (!member?.is_assistant) {
+    return {
+      isAssistant: false,
+      screenShareEnabled: false,
+      screenShareQuota: null,
+      screenShareUsed: 0,
+      quotaRemaining: null,
+      canUseRtc: false,
+    }
+  }
+  const quota = member.screen_share_quota
+  const used = Number(member.screen_share_used) || 0
+  const enabled = !!member.screen_share_enabled
+  const hasQuota = quota == null || used < quota
+  return {
+    isAssistant: true,
+    screenShareEnabled: enabled,
+    screenShareQuota: quota,
+    screenShareUsed: used,
+    quotaRemaining: quota == null ? null : Math.max(0, quota - used),
+    canUseRtc: enabled && hasQuota,
+  }
+}
+
+function formatAssistantRow(row) {
+  const status = buildAssistantStatus(row)
+  return {
+    id: row.id,
+    username: row.username,
+    nickname: row.nickname,
+    qq: row.qq,
+    status: row.status,
+    screen_share_enabled: !!row.screen_share_enabled,
+    screen_share_quota: row.screen_share_quota,
+    screen_share_used: Number(row.screen_share_used) || 0,
+    quotaRemaining: status.quotaRemaining,
+  }
+}
+
 // ---- RTC Permission System (MySQL, must be before /:roomId routes) ----
 // Auto-create table on first load
 ;(async () => {
@@ -80,10 +138,19 @@ router.post('/rtc-reject', async (req, res) => {
   }
 })
 
-// Student: check permission status
+// Student: check permission status (includes assistant bypass info)
 router.get('/rtc-permission/:username', async (req, res) => {
   try {
     const username = req.params.username
+    const memberId = req.query.memberId
+    let member = null
+    if (memberId) {
+      member = await findMemberById(memberId)
+    }
+    if (!member) {
+      member = await findMemberByDisplayName(username)
+    }
+
     const [rows] = await pool.execute(
       `SELECT mode, status FROM rtc_permissions WHERE username = ?`,
       [username]
@@ -99,21 +166,114 @@ router.get('/rtc-permission/:username', async (req, res) => {
         if (r.status === 'pending') result.volcPending = true
       }
     }
-    res.json(result)
+    res.json({ ...result, ...buildAssistantStatus(member) })
   } catch (e) {
-    res.json({ agora: false, volc: false, agoraPending: false, volcPending: false })
+    res.json({
+      agora: false, volc: false, agoraPending: false, volcPending: false,
+      isAssistant: false, canUseRtc: false, quotaRemaining: null,
+    })
   }
 })
 
-// Consume a one-time permission
+// Consume a one-time permission (student approval) or assistant quota (host only)
 router.post('/rtc-consume', async (req, res) => {
   try {
-    const { username, mode } = req.body
+    const { username, mode, memberId, asHost } = req.body
+    let member = null
+    if (memberId) {
+      member = await findMemberById(memberId)
+    }
+    if (!member && username) {
+      member = await findMemberByDisplayName(username)
+    }
+
+    if (member?.is_assistant && asHost) {
+      if (!member.screen_share_enabled) {
+        return res.status(403).json({ success: false, error: '助教屏幕共享权限已关闭' })
+      }
+      const used = Number(member.screen_share_used) || 0
+      if (member.screen_share_quota != null && used >= member.screen_share_quota) {
+        return res.status(403).json({ success: false, error: '助教屏幕共享次数已用完' })
+      }
+      await pool.execute(
+        'UPDATE members SET screen_share_used = screen_share_used + 1 WHERE id = ?',
+        [member.id]
+      )
+      return res.json({ success: true, type: 'assistant' })
+    }
+
+    if (!username || !['agora', 'volc'].includes(mode)) {
+      return res.status(400).json({ success: false, error: 'username and mode required' })
+    }
     await pool.execute(
       `DELETE FROM rtc_permissions WHERE username = ? AND mode = ?`,
       [username, mode]
     )
-    res.json({ success: true })
+    res.json({ success: true, type: 'approval' })
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message })
+  }
+})
+
+// Admin: list assistants and candidates
+router.get('/assistants', async (_req, res) => {
+  try {
+    const [assistants] = await pool.execute(
+      `SELECT ${ASSISTANT_FIELDS} FROM members WHERE is_assistant = 1 ORDER BY nickname ASC`
+    )
+    const [candidates] = await pool.execute(
+      `SELECT id, username, nickname, qq, status FROM members
+       WHERE is_assistant = 0 AND status != '已退队'
+       ORDER BY nickname ASC`
+    )
+    res.json({
+      assistants: assistants.map(formatAssistantRow),
+      candidates,
+    })
+  } catch (e) {
+    res.status(500).json({ assistants: [], candidates: [], error: e.message })
+  }
+})
+
+// Admin: update assistant settings
+router.put('/assistants/:memberId', async (req, res) => {
+  try {
+    const memberId = parseInt(req.params.memberId, 10)
+    const {
+      is_assistant,
+      screen_share_enabled,
+      screen_share_quota,
+      reset_used,
+    } = req.body
+
+    const member = await findMemberById(memberId)
+    if (!member) {
+      return res.status(404).json({ success: false, error: '成员不存在' })
+    }
+
+    const nextIsAssistant = is_assistant !== undefined ? !!is_assistant : !!member.is_assistant
+    const nextEnabled = screen_share_enabled !== undefined ? !!screen_share_enabled : !!member.screen_share_enabled
+    let nextQuota = member.screen_share_quota
+    if (screen_share_quota !== undefined) {
+      nextQuota = screen_share_quota === null || screen_share_quota === '' ? null : Math.max(0, parseInt(screen_share_quota, 10) || 0)
+    }
+    let nextUsed = Number(member.screen_share_used) || 0
+    if (reset_used) {
+      nextUsed = 0
+    }
+
+    await pool.execute(
+      `UPDATE members SET
+        is_assistant = ?,
+        screen_share_enabled = ?,
+        screen_share_quota = ?,
+        screen_share_used = ?
+      WHERE id = ?`,
+      [nextIsAssistant ? 1 : 0, nextEnabled ? 1 : 0, nextQuota, nextUsed, memberId]
+    )
+
+    const updated = await findMemberById(memberId)
+    res.json({ success: true, data: formatAssistantRow(updated) })
   } catch (e) {
     res.status(500).json({ success: false, error: e.message })
   }

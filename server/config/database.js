@@ -17,10 +17,11 @@ const pool = mysql.createPool({
   queueLimit: 0,
   enableKeepAlive: true,
   keepAliveInitialDelay: 0,
-  timezone: '+08:00'  // 设置时区为中国标准时间（东八区），确保所有环境时间一致
+  timezone: '+08:00',  // 设置时区为中国标准时间（东八区），确保所有环境时间一致
+  dateStrings: true,   // DATE/DATETIME 以字符串返回，避免 JSON 序列化时区偏移
 })
 
-// 自动创建缺失的表
+// 自动创建缺失的表与字段
 async function runMigrations() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS leave_applications (
@@ -43,6 +44,39 @@ async function runMigrations() {
       INDEX idx_status (status)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `)
+
+  const [cols] = await pool.query(`
+    SELECT COLUMN_NAME FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'leave_records'
+      AND COLUMN_NAME = 'buffer_start_date'
+  `)
+  if (cols.length === 0) {
+    await pool.query(`
+      ALTER TABLE leave_records
+        MODIFY COLUMN status ENUM('请假中', '待结束审批', '已结束') DEFAULT '请假中' COMMENT '状态',
+        ADD COLUMN buffer_start_date DATE NULL COMMENT '结束审批通过日期（缓冲期起点）' AFTER status,
+        ADD COLUMN end_approver_name VARCHAR(100) NULL COMMENT '结束审批人' AFTER buffer_start_date
+    `)
+    console.log('✅ leave_records 结束审批字段迁移完成')
+  }
+
+  const [assistantCol] = await pool.query(`
+    SELECT COLUMN_NAME FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'members'
+      AND COLUMN_NAME = 'is_assistant'
+  `)
+  if (assistantCol.length === 0) {
+    await pool.query(`
+      ALTER TABLE members
+        ADD COLUMN is_assistant TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否为屏幕共享助教' AFTER remarks,
+        ADD COLUMN screen_share_enabled TINYINT(1) NOT NULL DEFAULT 1 COMMENT '助教是否允许使用声网/火山共享' AFTER is_assistant,
+        ADD COLUMN screen_share_quota INT NULL COMMENT '助教声网/火山共享次数上限，NULL为不限' AFTER screen_share_enabled,
+        ADD COLUMN screen_share_used INT NOT NULL DEFAULT 0 COMMENT '助教已使用声网/火山共享次数' AFTER screen_share_quota
+    `)
+    console.log('✅ members 屏幕共享助教字段迁移完成')
+  }
 }
 
 // 测试数据库连接

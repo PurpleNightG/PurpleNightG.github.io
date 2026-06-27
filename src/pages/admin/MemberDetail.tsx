@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { X, Calendar, AlertCircle, UserMinus, LogOut, Save, Key, Loader2 } from 'lucide-react'
 import { memberAPI, blackPointAPI, leaveAPI, quitAPI, retentionAPI } from '../../utils/api'
-import { formatDate, formatDateTime } from '../../utils/dateFormat'
+import { formatDate, formatDateTime, toInputDate, formatDateForDB, getTodayDateString } from '../../utils/dateFormat'
 import { toast } from '../../utils/toast'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import DateInput from '../../components/DateInput'
@@ -68,7 +68,11 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
       // 加载成员信息
       const memberRes = await memberAPI.getById(memberId)
       setMember(memberRes.data)
-      setEditedMember(memberRes.data)
+      setEditedMember({
+        ...memberRes.data,
+        join_date: toInputDate(memberRes.data.join_date),
+        last_training_date: toInputDate(memberRes.data.last_training_date),
+      })
       setRemarks(memberRes.data.remarks || '')
 
       // 加载黑点记录
@@ -96,12 +100,6 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
   const handleSave = async () => {
     setSaving(true)
     try {
-      // 格式化日期为 YYYY-MM-DD
-      const formatDateForDB = (dateStr: string | null | undefined) => {
-        if (!dateStr) return null
-        return dateStr.split('T')[0]
-      }
-      
       await memberAPI.update(memberId, {
         nickname: editedMember.nickname,
         qq: editedMember.qq,
@@ -131,14 +129,8 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
   const confirmSetTodayTraining = async () => {
     setShowConfirm(false)
     try {
-      const today = new Date().toISOString().split('T')[0]
-      
-      // 格式化日期
-      const formatDateForDB = (dateStr: string | null | undefined) => {
-        if (!dateStr) return null
-        return dateStr.split('T')[0]
-      }
-      
+      const today = getTodayDateString()
+
       await memberAPI.update(memberId, {
         nickname: member.nickname,
         qq: member.qq,
@@ -253,11 +245,6 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
       
       // 更新成员状态为已退队
       try {
-        const formatDateForDB = (dateStr: string | null | undefined) => {
-          if (!dateStr) return null
-          return dateStr.split('T')[0]
-        }
-        
         await memberAPI.update(memberId, {
           nickname: member.nickname,
           qq: member.qq,
@@ -406,7 +393,7 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
                 {isEditing ? (
                   <input
                     type="date"
-                    value={editedMember.join_date?.split('T')[0] || ''}
+                    value={toInputDate(editedMember.join_date)}
                     onChange={(e) => setEditedMember({...editedMember, join_date: e.target.value})}
                     className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
                   />
@@ -419,7 +406,7 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
                 {isEditing ? (
                   <input
                     type="date"
-                    value={editedMember.last_training_date?.split('T')[0] || ''}
+                    value={toInputDate(editedMember.last_training_date)}
                     onChange={(e) => setEditedMember({...editedMember, last_training_date: e.target.value})}
                     className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
                   />
@@ -631,7 +618,11 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
               <button
                 onClick={() => {
                   setIsEditing(false)
-                  setEditedMember(member)
+                  setEditedMember({
+                    ...member,
+                    join_date: toInputDate(member.join_date),
+                    last_training_date: toInputDate(member.last_training_date),
+                  })
                 }}
                 className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
               >

@@ -203,6 +203,16 @@ export const leaveAPI = {
     clearCache('/members')
     return result
   },
+  approveEndApproval: async (id: number, data: { reviewer_name: string }) => {
+    const result = await request(`/leaves/${id}/end-approval`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+    clearCache('/leaves')
+    clearCache('/members')
+    clearCache('/reminders')
+    return result
+  },
 }
 
 // 黑点记录 API

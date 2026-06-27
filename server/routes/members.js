@@ -1,6 +1,7 @@
 import express from 'express'
 import { pool } from '../config/database.js'
 import bcrypt from 'bcryptjs'
+import { toMySQLDate } from '../utils/date.js'
 
 const router = express.Router()
 
@@ -205,10 +206,10 @@ router.post('/', async (req, res) => {
       nickname,
       qq,
       game_id || null,
-      join_date || new Date(),
+      toMySQLDate(join_date) || toMySQLDate(new Date()),
       stage_role || '未新训',
       status || '正常',
-      last_training_date || null
+      toMySQLDate(last_training_date)
     ])
     
     res.json({
@@ -271,10 +272,10 @@ router.put('/:id', async (req, res) => {
       nickname,
       qq,
       game_id,
-      join_date,
+      toMySQLDate(join_date),
       stage_role,
       status,
-      last_training_date,
+      toMySQLDate(last_training_date),
       remarks || null,
       id
     ])
