@@ -1,12 +1,24 @@
 [
   {
-    "name": "模组管理器介绍",
-    "path": "模组管理器介绍.md",
-    "type": "file"
+    "name": "教学大纲",
+    "path": "教学大纲/",
+    "type": "dir",
+    "children": [
+      {
+        "name": "SOP",
+        "path": "教学大纲/SOP.md",
+        "type": "file"
+      }
+    ]
   },
   {
     "name": "模组详细说明",
     "path": "模组详细说明.md",
+    "type": "file"
+  },
+  {
+    "name": "模组管理器介绍",
+    "path": "模组管理器介绍.md",
     "type": "file"
   },
   {
@@ -28,17 +40,5 @@
     "name": "紫夜CQB战术公会",
     "path": "紫夜CQB战术公会.md",
     "type": "file"
-  },
-  {
-    "name": "教学大纲",
-    "path": "教学大纲/",
-    "type": "dir",
-    "children": [
-      {
-        "name": "SOP",
-        "path": "教学大纲/SOP.md",
-        "type": "file"
-      }
-    ]
   }
 ]
