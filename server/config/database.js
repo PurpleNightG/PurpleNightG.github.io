@@ -77,6 +77,29 @@ async function runMigrations() {
     `)
     console.log('✅ members 屏幕共享助教字段迁移完成')
   }
+
+  const [assessmentIdCol] = await pool.query(`
+    SELECT COLUMN_NAME FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'public_videos'
+      AND COLUMN_NAME = 'assessment_id'
+  `)
+  if (assessmentIdCol.length === 0) {
+    await pool.query(`
+      ALTER TABLE public_videos
+        ADD COLUMN assessment_id INT NULL COMMENT '关联考核报告ID' AFTER created_by
+    `)
+    await pool.query(`
+      ALTER TABLE public_videos
+        ADD UNIQUE INDEX idx_public_videos_assessment_id (assessment_id)
+    `)
+    await pool.query(`
+      ALTER TABLE public_videos
+        ADD CONSTRAINT fk_public_videos_assessment
+        FOREIGN KEY (assessment_id) REFERENCES assessments(id) ON DELETE SET NULL
+    `)
+    console.log('✅ public_videos assessment_id 字段迁移完成')
+  }
 }
 
 // 测试数据库连接

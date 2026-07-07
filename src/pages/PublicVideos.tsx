@@ -1,18 +1,19 @@
 import { useState, useEffect } from 'react'
 import { publicVideoAPI } from '../utils/api'
 import { toast } from '../utils/toast'
-import { Video, Calendar, User, Clock, Play, Search, X } from 'lucide-react'
+import { FileText, Calendar, User, Search, X } from 'lucide-react'
+import PublicAssessmentReportDetail, { normalizePublicAssessment, PublicAssessment } from '../components/PublicAssessmentReportDetail'
+import FullscreenReportModal from '../components/FullscreenReportModal'
 
 interface PublicVideo {
   id: number
   title: string
-  participant_a: string
-  participant_b: string
-  assessment_date: string
   video_url: string
   description: string | null
   creator_name: string | null
   created_at: string
+  assessment_id: number | null
+  assessment: PublicAssessment | null
 }
 
 export default function PublicVideos() {
@@ -28,31 +29,27 @@ export default function PublicVideos() {
   const loadVideos = async () => {
     try {
       const response = await publicVideoAPI.getAll()
-      setVideos(response.data)
+      setVideos(response.data.map((v: any) => ({
+        ...v,
+        assessment: v.assessment ? normalizePublicAssessment(v.assessment) : null
+      })))
     } catch (error: any) {
-      toast.error('加载视频失败: ' + error.message)
+      toast.error('加载公开报告失败: ' + error.message)
     } finally {
       setLoading(false)
     }
   }
 
-  const handlePlayVideo = (video: PublicVideo) => {
-    setSelectedVideo(video)
-  }
-
-  const handleCloseVideo = () => {
-    setSelectedVideo(null)
-  }
-
-  // 过滤视频
   const filteredVideos = videos.filter(video => {
     if (!searchQuery) return true
     const query = searchQuery.toLowerCase()
+    const assessment = video.assessment
     return (
       video.title.toLowerCase().includes(query) ||
-      video.participant_a.toLowerCase().includes(query) ||
-      video.participant_b.toLowerCase().includes(query) ||
-      (video.creator_name && video.creator_name.toLowerCase().includes(query))
+      (video.description && video.description.toLowerCase().includes(query)) ||
+      (video.creator_name && video.creator_name.toLowerCase().includes(query)) ||
+      (assessment?.member_name && assessment.member_name.toLowerCase().includes(query)) ||
+      (assessment?.map && assessment.map.toLowerCase().includes(query))
     )
   })
 
@@ -68,15 +65,15 @@ export default function PublicVideos() {
     <div className="p-6">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white mb-2">公开视频</h1>
-          <p className="text-gray-400">查看学员公开的考核视频</p>
+          <h1 className="text-2xl font-bold text-white mb-2">公开考核报告</h1>
+          <p className="text-gray-400">查看学员公开的考核报告</p>
         </div>
         <div className="relative">
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="搜索标题、参与者..."
+            placeholder="搜索学员、地图、标题..."
             className="bg-gray-700 border border-gray-600 rounded-lg pl-10 pr-10 py-2 text-white placeholder-gray-400 w-64 focus:outline-none focus:border-purple-500 transition-colors"
           />
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
@@ -91,90 +88,92 @@ export default function PublicVideos() {
       {filteredVideos.length === 0 ? (
         <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 p-12">
           <div className="text-center text-gray-400">
-            <Video size={48} className="mx-auto mb-4 opacity-50" />
-            <p>{videos.length === 0 ? '暂无公开视频' : '未找到匹配的视频'}</p>
+            <FileText size={48} className="mx-auto mb-4 opacity-50" />
+            <p>{videos.length === 0 ? '暂无公开报告' : '未找到匹配的报告'}</p>
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {filteredVideos.map(video => (
-            <div key={video.id} className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 overflow-hidden hover:border-purple-500/50 transition-colors">
-              <div className="relative aspect-video bg-gray-900/50 flex items-center justify-center group cursor-pointer" onClick={() => handlePlayVideo(video)}>
-                <Video size={32} className="text-gray-600 group-hover:text-purple-400 transition-colors" />
-                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                  <Play size={48} className="text-white" />
-                </div>
-              </div>
-              
-              <div className="p-3">
-                <h3 className="text-white font-semibold mb-2 line-clamp-1 text-sm">{video.title}</h3>
-                
-                <div className="space-y-1.5 text-xs">
-                  <div className="flex items-center gap-1.5 text-gray-400">
-                    <User size={14} />
-                    <span className="line-clamp-1">{video.participant_a} vs {video.participant_b}</span>
-                  </div>
-                  
-                  <div className="flex items-center gap-1.5 text-gray-400">
-                    <Calendar size={14} />
-                    <span>{new Date(video.assessment_date).toLocaleDateString('zh-CN')}</span>
-                  </div>
-                  
-                  <div className="flex items-center gap-1.5 text-gray-400">
-                    <Clock size={14} />
-                    <span>{new Date(video.created_at).toLocaleDateString('zh-CN')}</span>
-                  </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredVideos.map(video => {
+            const assessment = video.assessment
+            return (
+              <button
+                key={video.id}
+                onClick={() => setSelectedVideo(video)}
+                className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 overflow-hidden hover:border-purple-500/50 transition-colors text-left"
+              >
+                <div className="p-4 border-b border-gray-700">
+                  <h3 className="text-white font-semibold mb-2 line-clamp-2">{video.title}</h3>
+                  {assessment ? (
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className={`px-2 py-0.5 rounded text-xs ${
+                        assessment.status === '已通过' ? 'bg-green-900/30 text-green-400' :
+                        assessment.status === '未通过' ? 'bg-red-900/30 text-red-400' :
+                        'bg-yellow-900/30 text-yellow-400'
+                      }`}>
+                        {assessment.status}
+                      </span>
+                      <span className="text-white font-bold">{assessment.total_score.toFixed(0)}分</span>
+                      <span className="text-purple-400">{assessment.rating}</span>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-500">仅视频内容</p>
+                  )}
                 </div>
 
-                <div className="mt-2 pt-2 border-t border-gray-700">
-                  <span className="text-xs text-gray-500 line-clamp-1">{video.creator_name || '未知'}</span>
+                <div className="p-4 space-y-2 text-xs text-gray-400">
+                  {assessment && (
+                    <>
+                      <div className="flex items-center gap-1.5">
+                        <User size={14} />
+                        <span>{assessment.member_name}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <FileText size={14} />
+                        <span>{assessment.custom_map || assessment.map}</span>
+                      </div>
+                    </>
+                  )}
+                  <div className="flex items-center gap-1.5">
+                    <Calendar size={14} />
+                    <span>{new Date(video.created_at).toLocaleDateString('zh-CN')}</span>
+                    {video.creator_name && <span>· {video.creator_name}</span>}
+                  </div>
                 </div>
-              </div>
-            </div>
-          ))}
+              </button>
+            )
+          })}
         </div>
       )}
 
-      {/* 视频播放器模态框 */}
       {selectedVideo && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={handleCloseVideo}>
-          <div className="bg-gray-800 rounded-xl max-w-5xl w-full overflow-hidden" onClick={(e) => e.stopPropagation()}>
-            <div className="p-4 border-b border-gray-700 flex items-center justify-between">
-              <h2 className="text-white font-semibold">{selectedVideo.title}</h2>
-              <button onClick={handleCloseVideo} className="text-gray-400 hover:text-white transition-colors">
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            
-            <div className="aspect-video bg-black">
-              <iframe
-                src={selectedVideo.video_url}
-                className="w-full h-full"
-                allowFullScreen
-                title={selectedVideo.title}
-              />
-            </div>
-            
-            <div className="p-4 bg-gray-900/50">
-              <div className="flex items-center gap-4 text-sm text-gray-400 mb-3">
-                <span className="flex items-center gap-1">
-                  <User size={16} />
-                  {selectedVideo.participant_a} vs {selectedVideo.participant_b}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Calendar size={16} />
-                  {new Date(selectedVideo.assessment_date).toLocaleDateString('zh-CN')}
-                </span>
-              </div>
-              
+        <FullscreenReportModal
+          title={selectedVideo.title}
+          onClose={() => setSelectedVideo(null)}
+        >
+          {selectedVideo.assessment ? (
+            <PublicAssessmentReportDetail
+              assessment={selectedVideo.assessment}
+              description={selectedVideo.description}
+            />
+          ) : (
+            <div className="space-y-4">
               {selectedVideo.description && (
                 <p className="text-gray-300 text-sm">{selectedVideo.description}</p>
               )}
+              {selectedVideo.video_url && (
+                <div className="aspect-video bg-black rounded-lg overflow-hidden">
+                  <iframe
+                    src={selectedVideo.video_url}
+                    className="w-full h-full"
+                    allowFullScreen
+                    title={selectedVideo.title}
+                  />
+                </div>
+              )}
             </div>
-          </div>
-        </div>
+          )}
+        </FullscreenReportModal>
       )}
     </div>
   )

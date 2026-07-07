@@ -242,7 +242,7 @@ const AdminNav = ({ expandedMenus, toggleMenu }: AdminNavProps) => {
       <SubNavItem path="/admin/assessments/records" label="考核记录" />
       <SubNavItem path="/admin/assessments/approval" label="考核审批" badge={badges.assessmentPending} />
       <SubNavItem path="/admin/assessments/guidelines" label="考核须知管理" />
-      <SubNavItem path="/admin/assessments/videos" label="视频公开管理" />
+      <SubNavItem path="/admin/assessments/videos" label="报告公开管理" />
       <SubNavItem path="/admin/assessments/upload" label="视频上传管理" />
     </CollapsibleSection>
     <CollapsibleSection title="退队管理" icon={<UserMinus size={20} />}
@@ -343,7 +343,7 @@ const studentMenuItems = [
   { path: '/student/assessment-report', icon: <FileText size={20} />, label: '新训考核报告' },
   { path: '/student/blackpoints', icon: <AlertTriangle size={20} />, label: '黑点记录' },
   { path: '/student/leave', icon: <Calendar size={20} />, label: '请假记录' },
-  { path: '/student/videos', icon: <Video size={20} />, label: '公开视频查看' },
+  { path: '/student/videos', icon: <Video size={20} />, label: '公开报告查看' },
 ];
 
 const StudentNav = () => (

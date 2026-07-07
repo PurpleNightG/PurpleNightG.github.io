@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
 import { assessmentAPI, memberAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
-import { Plus, Trash2, Edit, CheckCircle, XCircle, ChevronDown, ChevronUp, X, Search, Filter, CheckSquare, Square, Loader2, Eye } from 'lucide-react'
+import { Plus, Trash2, Edit, CheckCircle, XCircle, ChevronDown, ChevronUp, X, Search, Filter, CheckSquare, Square, Loader2, Eye, FileText } from 'lucide-react'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import SearchableSelect from '../../components/SearchableSelect'
 import DateInput from '../../components/DateInput'
 import { formatDate, formatDateTime, toInputDate } from '../../utils/dateFormat'
+import PublicAssessmentReportDetail, { normalizePublicAssessment } from '../../components/PublicAssessmentReportDetail'
+import FullscreenReportModal from '../../components/FullscreenReportModal'
 
 interface Assessment {
   id: number
@@ -99,6 +101,7 @@ export default function AssessmentRecords() {
   const [showModal, setShowModal] = useState(false)
   const [editingAssessment, setEditingAssessment] = useState<Assessment | null>(null)
   const [viewingAssessment, setViewingAssessment] = useState<Assessment | null>(null)
+  const [previewingReport, setPreviewingReport] = useState<Assessment | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [confirmDialog, setConfirmDialog] = useState<{show: boolean, type: string, data?: any}>({show: false, type: ''})
   
@@ -644,6 +647,13 @@ export default function AssessmentRecords() {
                     <td>
                       <div className="flex gap-2">
                         <button
+                          onClick={() => setPreviewingReport(assessment)}
+                          className="text-purple-400 hover:text-purple-300 transition-colors"
+                          title="预览报告"
+                        >
+                          <FileText size={18} />
+                        </button>
+                        <button
                           onClick={() => handleEdit(assessment)}
                           className="text-blue-400 hover:text-blue-300 transition-colors"
                           title="编辑"
@@ -964,6 +974,37 @@ export default function AssessmentRecords() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* 预览考核报告 */}
+      {previewingReport && (
+        <FullscreenReportModal
+          title={`${previewingReport.member_name} · 考核报告`}
+          subtitle={`${formatDate(previewingReport.assessment_date)} · ${previewingReport.custom_map || previewingReport.map}`}
+          onClose={() => setPreviewingReport(null)}
+          footer={
+            <>
+              <button
+                onClick={() => {
+                  const report = previewingReport
+                  setPreviewingReport(null)
+                  handleEdit(report)
+                }}
+                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+              >
+                编辑记录
+              </button>
+              <button
+                onClick={() => setPreviewingReport(null)}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+              >
+                关闭
+              </button>
+            </>
+          }
+        >
+          <PublicAssessmentReportDetail assessment={normalizePublicAssessment(previewingReport)} />
+        </FullscreenReportModal>
       )}
 
       {/* 查看考核视频 */}

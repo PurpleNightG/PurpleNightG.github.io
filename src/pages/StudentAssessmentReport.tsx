@@ -66,11 +66,9 @@ export default function StudentAssessmentReport() {
   const [loading, setLoading] = useState(true)
   const [selectedAssessment, setSelectedAssessment] = useState<Assessment | null>(null)
   const [showPublishModal, setShowPublishModal] = useState(false)
-  const [publishForm, setPublishForm] = useState({
-    title: '',
-    participant_b: '',
-    description: ''
-  })
+  const [publishForm, setPublishForm] = useState({ description: '' })
+  const [publishedAssessmentIds, setPublishedAssessmentIds] = useState<Set<number>>(new Set())
+  const [publishing, setPublishing] = useState(false)
 
   useEffect(() => {
     loadAssessments()
@@ -95,6 +93,19 @@ export default function StudentAssessmentReport() {
         deduction_records: Array.isArray(a.deduction_records) ? a.deduction_records : []
       }))
       setAssessments(assessments)
+
+      // 加载已公开的报告
+      try {
+        const publicRes = await publicVideoAPI.getAll()
+        const publishedIds = new Set<number>(
+          publicRes.data
+            .filter((v: any) => v.assessment_id)
+            .map((v: any) => v.assessment_id)
+        )
+        setPublishedAssessmentIds(publishedIds)
+      } catch {
+        // 忽略，不影响报告加载
+      }
 
       // 默认选中最新的一条记录
       if (assessments.length > 0) {
@@ -131,19 +142,16 @@ export default function StudentAssessmentReport() {
 
   const handleOpenPublishModal = () => {
     if (!selectedAssessment) return
-    setPublishForm({
-      title: `${selectedAssessment.member_name}的${selectedAssessment.map}考核`,
-      participant_b: '',
-      description: ''
-    })
+    if (publishedAssessmentIds.has(selectedAssessment.id)) {
+      toast.error('该考核报告已公开')
+      return
+    }
+    setPublishForm({ description: '' })
     setShowPublishModal(true)
   }
 
-  const handlePublishVideo = async () => {
-    if (!selectedAssessment || !publishForm.title || !publishForm.participant_b) {
-      toast.error('请填写所有必填字段')
-      return
-    }
+  const handlePublishReport = async () => {
+    if (!selectedAssessment) return
 
     try {
       const studentUserStr = localStorage.getItem('studentUser') || sessionStorage.getItem('studentUser')
@@ -153,21 +161,21 @@ export default function StudentAssessmentReport() {
       }
       const studentUser = JSON.parse(studentUserStr)
 
+      setPublishing(true)
       await publicVideoAPI.create({
-        title: publishForm.title,
-        participant_a: selectedAssessment.member_name,
-        participant_b: publishForm.participant_b,
-        assessment_date: selectedAssessment.assessment_date,
-        video_url: selectedAssessment.video_url,
-        description: publishForm.description,
+        assessment_id: selectedAssessment.id,
+        description: publishForm.description.trim() || undefined,
         created_by: studentUser.id
       })
 
-      toast.success('视频已公开！')
+      toast.success('考核报告已公开！')
+      setPublishedAssessmentIds(prev => new Set(prev).add(selectedAssessment.id))
       setShowPublishModal(false)
-      setPublishForm({ title: '', participant_b: '', description: '' })
+      setPublishForm({ description: '' })
     } catch (error: any) {
-      toast.error('公开视频失败: ' + error.message)
+      toast.error('公开报告失败: ' + error.message)
+    } finally {
+      setPublishing(false)
     }
   }
 
@@ -268,8 +276,18 @@ export default function StudentAssessmentReport() {
                     </p>
                   </div>
                 </div>
-                <div className={`px-4 py-2 rounded-lg border ${getStatusColor(selectedAssessment.status)}`}>
-                  {selectedAssessment.status}
+                <div className="flex items-center gap-3">
+                  <div className={`px-4 py-2 rounded-lg border ${getStatusColor(selectedAssessment.status)}`}>
+                    {selectedAssessment.status}
+                  </div>
+                  <button
+                    onClick={handleOpenPublishModal}
+                    disabled={publishedAssessmentIds.has(selectedAssessment.id)}
+                    className="flex items-center gap-2 px-3 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg text-sm transition-colors"
+                  >
+                    <Upload size={16} />
+                    {publishedAssessmentIds.has(selectedAssessment.id) ? '已公开' : '公开此报告'}
+                  </button>
                 </div>
               </div>
 
@@ -347,23 +365,14 @@ export default function StudentAssessmentReport() {
             {/* 视频和扣分记录 - 并排显示 */}
             {((!!selectedAssessment.has_video && !!selectedAssessment.video_url) || 
              (selectedAssessment.deduction_records && selectedAssessment.deduction_records.length > 0)) && (
-              <div className="grid lg:grid-cols-3 gap-6">
+              <div className="grid lg:grid-cols-3 gap-6 items-stretch">
                 {/* 左侧：考核视频 */}
                 {!!selectedAssessment.has_video && !!selectedAssessment.video_url && (
                   <div className="lg:col-span-2 bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                        <FileText size={20} className="text-purple-400" />
-                        考核视频
-                      </h3>
-                      <button
-                        onClick={handleOpenPublishModal}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm transition-colors"
-                      >
-                        <Upload size={16} />
-                        公开此视频
-                      </button>
-                    </div>
+                    <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                      <FileText size={20} className="text-purple-400" />
+                      考核视频
+                    </h3>
                     {/* 视频播放警告 */}
                     <div className="mb-3 bg-yellow-900/20 border border-yellow-700/50 rounded-lg p-3">
                       <div className="flex items-start gap-2">
@@ -405,33 +414,35 @@ export default function StudentAssessmentReport() {
 
                 {/* 右侧：扣分记录 */}
                 {selectedAssessment.deduction_records && selectedAssessment.deduction_records.length > 0 && (
-                  <div className={`bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 ${
-                    !(!!selectedAssessment.has_video && !!selectedAssessment.video_url) ? 'lg:col-span-3' : 'lg:col-span-1'
+                  <div className={`bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 flex flex-col h-full min-h-0 ${
+                    !(!!selectedAssessment.has_video && !!selectedAssessment.video_url) ? 'lg:col-span-3 max-h-[70vh]' : 'lg:col-span-1'
                   }`}>
-                    <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                    <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2 flex-shrink-0">
                       <Target size={20} className="text-red-400" />
                       扣分明细
                     </h3>
-                    <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
-                      {selectedAssessment.deduction_records.map((record, index) => (
-                        <div key={index} className="bg-gray-900/50 rounded-lg p-3 border border-gray-700">
-                          <div className="flex items-start justify-between mb-2">
-                            <div className="flex flex-col gap-2">
-                              <span className="text-xs font-mono bg-gray-800 px-2 py-1 rounded text-gray-400 inline-block w-fit">
-                                {record.time}
-                              </span>
-                              <span className="text-sm font-mono bg-red-900/30 text-red-400 px-2 py-1 rounded inline-block">
-                                {record.code} - {getDeductionName(record.code)}
-                              </span>
+                    <div className="flex flex-col flex-1 min-h-0">
+                      <div className="space-y-3 flex-1 overflow-y-auto pr-2 custom-scrollbar min-h-0">
+                        {selectedAssessment.deduction_records.map((record, index) => (
+                          <div key={index} className="bg-gray-900/50 rounded-lg p-3 border border-gray-700">
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex flex-col gap-2">
+                                <span className="text-xs font-mono bg-gray-800 px-2 py-1 rounded text-gray-400 inline-block w-fit">
+                                  {record.time}
+                                </span>
+                                <span className="text-sm font-mono bg-red-900/30 text-red-400 px-2 py-1 rounded inline-block">
+                                  {record.code} - {getDeductionName(record.code)}
+                                </span>
+                              </div>
+                              <span className="text-red-400 font-bold whitespace-nowrap">-{record.score} 分</span>
                             </div>
-                            <span className="text-red-400 font-bold whitespace-nowrap">-{record.score} 分</span>
+                            {record.description && (
+                              <p className="text-gray-300 text-sm">{record.description}</p>
+                            )}
                           </div>
-                          {record.description && (
-                            <p className="text-gray-300 text-sm">{record.description}</p>
-                          )}
-                        </div>
-                      ))}
-                      <div className="bg-red-900/20 rounded-lg p-4 border border-red-700/50 sticky bottom-0">
+                        ))}
+                      </div>
+                      <div className="bg-red-900/20 rounded-lg p-4 border border-red-700/50 mt-3 flex-shrink-0">
                         <div className="flex items-center justify-between">
                           <span className="text-gray-400">总扣分</span>
                           <span className="text-red-400 font-bold text-lg">
@@ -453,12 +464,12 @@ export default function StudentAssessmentReport() {
         )}
       </div>
 
-      {/* 公开视频模态框 */}
-      {showPublishModal && (
+      {/* 公开报告模态框 */}
+      {showPublishModal && selectedAssessment && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-800 rounded-xl max-w-xl w-full">
             <div className="px-6 py-4 border-b border-gray-700 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-white">添加公开视频</h2>
+              <h2 className="text-xl font-bold text-white">公开考核报告</h2>
               <button 
                 onClick={() => setShowPublishModal(false)} 
                 className="text-gray-400 hover:text-white transition-colors"
@@ -468,63 +479,25 @@ export default function StudentAssessmentReport() {
             </div>
 
             <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  视频标题 <span className="text-red-400">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={publishForm.title}
-                  onChange={(e) => setPublishForm({...publishForm, title: e.target.value})}
-                  placeholder="输入视频标题"
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-purple-500"
-                />
+              <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-3">
+                <p className="text-blue-300 text-xs">
+                  将公开完整考核报告，包括地图、分数、评级、教官评价、扣分明细及考核视频等所有内容。
+                </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    参与者A <span className="text-gray-500">(自动填充)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={selectedAssessment?.member_name || ''}
-                    disabled
-                    className="w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-2 text-gray-400 cursor-not-allowed"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    参与者B <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={publishForm.participant_b}
-                    onChange={(e) => setPublishForm({...publishForm, participant_b: e.target.value})}
-                    placeholder="参与者B姓名"
-                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-purple-500"
-                  />
-                </div>
+              <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-700 text-sm text-gray-300 space-y-1">
+                <p>学员：{selectedAssessment.member_name}</p>
+                <p>地图：{selectedAssessment.custom_map || selectedAssessment.map}</p>
+                <p>总分：{selectedAssessment.total_score.toFixed(2)} · {selectedAssessment.rating}</p>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">考核日期 <span className="text-gray-500">(自动填充)</span></label>
-                <input
-                  type="date"
-                  value={selectedAssessment?.assessment_date.split('T')[0] || ''}
-                  disabled
-                  className="w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-2 text-gray-400 cursor-not-allowed"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">视频描述</label>
+                <label className="block text-sm font-medium text-gray-300 mb-2">补充说明（可选）</label>
                 <textarea
                   value={publishForm.description}
-                  onChange={(e) => setPublishForm({...publishForm, description: e.target.value})}
-                  placeholder="输入视频描述（可选）"
-                  rows={4}
+                  onChange={(e) => setPublishForm({ description: e.target.value })}
+                  placeholder="可添加公开说明（可选）"
+                  rows={3}
                   className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-purple-500 resize-none"
                 />
               </div>
@@ -538,10 +511,11 @@ export default function StudentAssessmentReport() {
                 取消
               </button>
               <button
-                onClick={handlePublishVideo}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+                onClick={handlePublishReport}
+                disabled={publishing}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg transition-colors"
               >
-                创建
+                {publishing ? '公开中...' : '确认公开'}
               </button>
             </div>
           </div>

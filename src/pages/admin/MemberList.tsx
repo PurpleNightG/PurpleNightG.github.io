@@ -907,12 +907,7 @@ export default function MemberList() {
 
       {/* 添加/编辑模态框 */}
       {showModal && !viewingMemberId && (
-        <div 
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setShowModal(false)
-          }}
-        >
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
           <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700 max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-bold text-white mb-4">
               添加成员

@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
 import { publicVideoAPI } from '../../utils/api'
 import { toast } from 'react-hot-toast'
-import { Plus, Trash2, Edit, Search, X, CheckSquare, Square, ChevronUp, ChevronDown, Video, Play, Loader2 } from 'lucide-react'
+import { Plus, Trash2, Edit, Search, X, CheckSquare, Square, ChevronUp, ChevronDown, FileText, Eye, Loader2 } from 'lucide-react'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { formatDate, toInputDate } from '../../utils/dateFormat'
+import PublicAssessmentReportDetail, { normalizePublicAssessment, PublicAssessment } from '../../components/PublicAssessmentReportDetail'
+import FullscreenReportModal from '../../components/FullscreenReportModal'
 
 interface PublicVideo {
   id: number
@@ -16,6 +18,8 @@ interface PublicVideo {
   creator_name: string
   created_at: string
   created_by: number
+  assessment_id: number | null
+  assessment: PublicAssessment | null
 }
 
 export default function PublicVideosManagement() {
@@ -46,9 +50,12 @@ export default function PublicVideosManagement() {
   const loadVideos = async () => {
     try {
       const response = await publicVideoAPI.getAll()
-      setVideos(response.data)
+      setVideos(response.data.map((v: any) => ({
+        ...v,
+        assessment: v.assessment ? normalizePublicAssessment(v.assessment) : null
+      })))
     } catch (error: any) {
-      toast.error('加载视频失败: ' + error.message)
+      toast.error('加载失败: ' + error.message)
     } finally {
       setLoading(false)
     }
@@ -81,6 +88,11 @@ export default function PublicVideosManagement() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    if (!formData.title.trim() || !formData.participant_a.trim() || !formData.participant_b.trim() || !formData.video_url.trim()) {
+      toast.error('请填写所有必填字段')
+      return
+    }
     
     const userStr = localStorage.getItem('user') || sessionStorage.getItem('user')
     
@@ -186,10 +198,12 @@ export default function PublicVideosManagement() {
   let filteredVideos = videos.filter(video => {
     if (!searchQuery) return true
     const query = searchQuery.toLowerCase()
+    const assessment = video.assessment
     return (
       video.title.toLowerCase().includes(query) ||
-      video.participant_a.toLowerCase().includes(query) ||
-      video.participant_b.toLowerCase().includes(query)
+      (video.description && video.description.toLowerCase().includes(query)) ||
+      (video.creator_name && video.creator_name.toLowerCase().includes(query)) ||
+      (assessment?.member_name && assessment.member_name.toLowerCase().includes(query))
     )
   })
 
@@ -220,7 +234,7 @@ export default function PublicVideosManagement() {
     <div className="p-6">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold text-white">公开视频管理</h1>
+          <h1 className="text-2xl font-bold text-white">公开报告管理</h1>
           {selectedIds.size > 0 && (
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-400">
@@ -238,7 +252,7 @@ export default function PublicVideosManagement() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="搜索标题、参与者..."
+              placeholder="搜索标题、描述..."
               className="bg-gray-700 border border-gray-600 rounded-lg pl-10 pr-10 py-2 text-white placeholder-gray-400 w-64 focus:outline-none focus:border-purple-500 transition-colors"
             />
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
@@ -277,7 +291,7 @@ export default function PublicVideosManagement() {
       <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 overflow-hidden">
         {filteredVideos.length === 0 ? (
           <div className="p-12 text-center text-gray-400">
-            <p>暂无视频</p>
+            <p>暂无公开内容</p>
           </div>
         ) : (
           <div className="admin-table-container">
@@ -294,25 +308,14 @@ export default function PublicVideosManagement() {
                   </th>
                   <th>
                     <button onClick={() => handleSort('title')} className="flex items-center gap-1 hover:text-white transition-colors">
-                      <span>视频信息</span>
+                      <span>报告信息</span>
                       {sortConfig?.key === 'title' && (sortConfig.direction === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />)}
                     </button>
                   </th>
-                  <th>
-                    <button onClick={() => handleSort('participant_a')} className="flex items-center gap-1 hover:text-white transition-colors">
-                      <span>参与者</span>
-                      {sortConfig?.key === 'participant_a' && (sortConfig.direction === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />)}
-                    </button>
-                  </th>
-                  <th>
-                    <button onClick={() => handleSort('assessment_date')} className="flex items-center gap-1 hover:text-white transition-colors">
-                      <span>考核日期</span>
-                      {sortConfig?.key === 'assessment_date' && (sortConfig.direction === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />)}
-                    </button>
-                  </th>
+                  <th>考核摘要</th>
                   <th>
                     <button onClick={() => handleSort('created_at')} className="flex items-center gap-1 hover:text-white transition-colors">
-                      <span>创建时间</span>
+                      <span>发布信息</span>
                       {sortConfig?.key === 'created_at' && (sortConfig.direction === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />)}
                     </button>
                   </th>
@@ -333,28 +336,42 @@ export default function PublicVideosManagement() {
                     <td>
                       <div className="flex items-start gap-3">
                         <div className="w-16 h-10 bg-gray-700 rounded flex items-center justify-center flex-shrink-0">
-                          <Video size={20} className="text-gray-500" />
+                          <FileText size={20} className="text-gray-500" />
                         </div>
                         <div className="min-w-0">
                           <div className="font-medium text-white mb-1">{video.title}</div>
                           {video.description && (
                             <div className="text-xs text-gray-400 line-clamp-1">{video.description}</div>
                           )}
+                          {video.assessment_id && (
+                            <div className="text-xs text-purple-400 mt-1">完整考核报告</div>
+                          )}
                         </div>
                       </div>
                     </td>
                     <td>
-                      <div className="text-sm">
-                        <div className="text-white">{video.participant_a}</div>
-                        <div className="text-gray-400">vs</div>
-                        <div className="text-white">{video.participant_b}</div>
-                      </div>
+                      {video.assessment ? (
+                        <div className="text-sm space-y-1">
+                          <div className="text-white">{video.assessment.member_name}</div>
+                          <div className="text-gray-400">{video.assessment.custom_map || video.assessment.map}</div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-white font-semibold">{video.assessment.total_score.toFixed(0)}分</span>
+                            <span className="text-purple-400">{video.assessment.rating}</span>
+                            <span className={`text-xs px-1.5 py-0.5 rounded ${
+                              video.assessment.status === '已通过' ? 'bg-green-900/30 text-green-400' :
+                              video.assessment.status === '未通过' ? 'bg-red-900/30 text-red-400' :
+                              'bg-yellow-900/30 text-yellow-400'
+                            }`}>{video.assessment.status}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-gray-500 text-sm">仅视频</span>
+                      )}
                     </td>
-                    <td>{formatDate(video.assessment_date)}</td>
                     <td>
                       <div className="text-sm">
                         <div className="text-white">{formatDate(video.created_at)}</div>
-                        <div className="text-gray-400 text-xs">{video.creator_name}</div>
+                        <div className="text-gray-400 text-xs">{video.creator_name || '未知'}</div>
                       </div>
                     </td>
                     <td>
@@ -362,9 +379,9 @@ export default function PublicVideosManagement() {
                         <button
                           onClick={() => setViewingVideo(video)}
                           className="text-purple-400 hover:text-purple-300 transition-colors"
-                          title="查看视频"
+                          title="查看报告"
                         >
-                          <Play size={18} />
+                          <Eye size={18} />
                         </button>
                         <button
                           onClick={() => openEditModal(video)}
@@ -522,40 +539,35 @@ export default function PublicVideosManagement() {
         />
       )}
 
-      {/* 视频播放模态框 */}
+      {/* 查看报告模态框 */}
       {viewingVideo && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={() => setViewingVideo(null)}>
-          <div className="bg-gray-800 rounded-xl max-w-5xl w-full overflow-hidden" onClick={(e) => e.stopPropagation()}>
-            <div className="p-4 border-b border-gray-700 flex items-center justify-between">
-              <h2 className="text-white font-semibold">{viewingVideo.title}</h2>
-              <button onClick={() => setViewingVideo(null)} className="text-gray-400 hover:text-white transition-colors">
-                <X size={24} />
-              </button>
-            </div>
-            
-            <div className="aspect-video bg-black">
-              <iframe
-                src={viewingVideo.video_url}
-                className="w-full h-full"
-                allowFullScreen
-                title={viewingVideo.title}
-              />
-            </div>
-            
-            <div className="p-4 bg-gray-900/50">
-              <div className="flex items-center gap-4 text-sm text-gray-400 mb-3">
-                <span className="flex items-center gap-1">
-                  {viewingVideo.participant_a} vs {viewingVideo.participant_b}
-                </span>
-                <span>考核日期: {formatDate(viewingVideo.assessment_date)}</span>
-              </div>
-              
+        <FullscreenReportModal
+          title={viewingVideo.title}
+          onClose={() => setViewingVideo(null)}
+        >
+          {viewingVideo.assessment ? (
+            <PublicAssessmentReportDetail
+              assessment={viewingVideo.assessment}
+              description={viewingVideo.description}
+            />
+          ) : (
+            <div className="space-y-4">
               {viewingVideo.description && (
                 <p className="text-gray-300 text-sm">{viewingVideo.description}</p>
               )}
+              {viewingVideo.video_url && (
+                <div className="aspect-video bg-black rounded-lg overflow-hidden">
+                  <iframe
+                    src={viewingVideo.video_url}
+                    className="w-full h-full"
+                    allowFullScreen
+                    title={viewingVideo.title}
+                  />
+                </div>
+              )}
             </div>
-          </div>
-        </div>
+          )}
+        </FullscreenReportModal>
       )}
     </div>
   )

@@ -853,7 +853,7 @@ export default function StudentHome() {
                 <Video className="text-pink-400" size={20} />
               </div>
               <div>
-                <div className="text-white font-medium">查看公开视频</div>
+                <div className="text-white font-medium">查看公开报告</div>
                 <div className="text-sm text-gray-400">学习优秀案例</div>
               </div>
             </button>
