@@ -37,8 +37,7 @@
       {
         "name": "SOP",
         "path": "教学大纲/SOP.md",
-        "type": "file",
-        "visibility": "private"
+        "type": "file"
       }
     ]
   }
