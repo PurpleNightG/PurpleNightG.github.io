@@ -35,12 +35,6 @@
     "type": "dir",
     "children": [
       {
-        "name": "SOP",
-        "path": "教学大纲/SOP.md",
-        "type": "file",
-        "visibility": "private"
-      },
-      {
         "name": "紫夜标准作业流程【权威版】",
         "path": "教学大纲/紫夜标准作业流程【权威版】.md",
         "type": "file",
