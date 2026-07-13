@@ -43,7 +43,8 @@
       {
         "name": "紫夜标准作业流程【权威版】",
         "path": "教学大纲/紫夜标准作业流程【权威版】.md",
-        "type": "file"
+        "type": "file",
+        "visibility": "private"
       }
     ]
   }
