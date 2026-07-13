@@ -126,7 +126,12 @@ function mergeIndexOrder(existing, auto) {
       const autoItem = autoMap.get(ex.path)
       used.add(ex.path)
       if (ex.type === 'dir' && autoItem.type === 'dir') {
-        result.push({ ...autoItem, children: mergeIndexOrder(ex.children || [], autoItem.children || []) })
+        const merged = {
+          ...autoItem,
+          children: mergeIndexOrder(ex.children || [], autoItem.children || []),
+        }
+        if (ex.visibility) merged.visibility = ex.visibility
+        result.push(merged)
       } else {
         // Preserve visibility set by the admin
         const merged = { ...autoItem }

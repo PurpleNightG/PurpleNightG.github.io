@@ -23,6 +23,7 @@ import turnRoutes from './routes/turn.js'
 import agoraRoutes from './routes/agora.js'
 import volcRoutes from './routes/volc.js'
 import roomRoutes from './routes/room.js'
+import ziyeRoutes from './routes/ziye.js'
 import versionsRoutes from './routes/versions.js'
 import dutyRoutes from './routes/duty.js'
 import docsRoutes from './routes/docs.js'
@@ -37,6 +38,7 @@ const PORT = process.env.PORT || 8000
 const allowedOrigins = [
   'http://localhost:5173',       // 本地开发前端
   'http://localhost:3001',       // 本地开发前端备用端口
+  'http://localhost:3002',       // 本地开发前端备用端口
   'http://127.0.0.1:5173',
   'https://sh01.eu.org',         // 自定义域名
   'http://sh01.eu.org',
@@ -69,6 +71,8 @@ app.use(cors({
   },
   credentials: true
 }))
+// 紫夜流媒体代理（WHIP/WHEP）须在 json 解析之前，保留 SDP 原始 body
+app.use('/api/ziye', express.raw({ type: () => true, limit: '2mb' }), ziyeRoutes)
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 

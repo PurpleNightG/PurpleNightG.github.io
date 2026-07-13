@@ -34,6 +34,10 @@ jobs:
         env:
           NODE_ENV: production
           VITE_API_URL: https://api.sh01.eu.org/api
+          VITE_ZIYE_SERVER_URL: https://api.sh01.eu.org/api/ziye
+          VITE_ZIYE_TURN_HOST: 160.202.254.36
+          VITE_ZIYE_TURN_PORT: '10115'
+          VITE_ZIYE_USE_TURN: 'true'
         run: npm run build
 
       - name: Setup Pages

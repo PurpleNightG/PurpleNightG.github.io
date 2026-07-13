@@ -107,7 +107,11 @@ function reorderTree(items: TreeItem[], fromPath: string, beforePath: string): T
 // 构建干净的 index.json 结构（去掉 sha/size，保留 visibility）
 function buildCleanIndex(items: TreeItem[]): object[] {
   return items.map(item => {
-    if (item.type === 'dir') return { name: item.name, path: item.path, type: 'dir', children: buildCleanIndex(item.children || []) }
+    if (item.type === 'dir') {
+      const base: any = { name: item.name, path: item.path, type: 'dir', children: buildCleanIndex(item.children || []) }
+      if (item.visibility === 'private') base.visibility = 'private'
+      return base
+    }
     const base: any = { name: item.name.replace(/\.md$/, ''), path: item.path, type: 'file' }
     if (item.visibility === 'private') base.visibility = 'private'
     return base
@@ -236,13 +240,26 @@ function TreeNode({
           }
           {isOpen ? <FolderOpen size={14} className="text-yellow-400 flex-shrink-0" /> : <Folder size={14} className="text-yellow-400 flex-shrink-0" />}
           <span className="text-sm font-medium truncate flex-1">{item.name}</span>
-          {!sortMode && <button
-            onClick={e => { e.stopPropagation(); onDeleteFolder(item) }}
-            className="opacity-0 group-hover:opacity-100 p-0.5 text-red-500 hover:text-red-400 transition-all flex-shrink-0"
-            title="删除文件夹"
-          >
-            <Trash2 size={12} />
-          </button>}
+          {!sortMode && (
+            <>
+              <button
+                onClick={e => { e.stopPropagation(); onToggleVisibility?.(item) }}
+                className={`opacity-0 group-hover:opacity-100 p-0.5 transition-all flex-shrink-0 ${
+                  item.visibility === 'private' ? 'text-amber-400 hover:text-amber-300' : 'text-gray-500 hover:text-blue-400'
+                }`}
+                title={item.visibility === 'private' ? '私密文件夹（点击设为公开）' : '公开文件夹（点击设为私密）'}
+              >
+                {item.visibility === 'private' ? <Lock size={12} /> : <Globe size={12} />}
+              </button>
+              <button
+                onClick={e => { e.stopPropagation(); onDeleteFolder(item) }}
+                className="opacity-0 group-hover:opacity-100 p-0.5 text-red-500 hover:text-red-400 transition-all flex-shrink-0"
+                title="删除文件夹"
+              >
+                <Trash2 size={12} />
+              </button>
+            </>
+          )}
         </div>
         {isOpen && item.children?.map(child => (
           <TreeNode
@@ -580,7 +597,11 @@ function applyIndexOrder(listItems: TreeItem[], indexItems: any[]): TreeItem[] {
         method: 'PUT',
         body: JSON.stringify({ path: item.path, visibility: newVis }),
       })
-      toast.success(newVis === 'private' ? `「${item.name}」已设为私密` : `「${item.name}」已设为公开`)
+      toast.success(
+        newVis === 'private'
+          ? `「${item.name}」已设为私密（仅管理员可见）`
+          : `「${item.name}」已设为公开`
+      )
     } catch (err: any) {
       toast.error(err.message || '更新失败')
       setTree(prev => updateVis(prev)) // revert on error

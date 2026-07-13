@@ -3,7 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeRaw from 'rehype-raw'
-import { FileText, Search, FolderOpen, Folder, ChevronRight, ChevronDown } from 'lucide-react'
+import { FileText, Search, FolderOpen, Folder, ChevronRight, ChevronDown, Lock } from 'lucide-react'
 import UpdateNotification from '../components/UpdateNotification'
 import { DEFAULT_DOC_SLUG } from '../constants/docs'
 
@@ -17,6 +17,11 @@ interface DocItem {
   visibility?: 'public' | 'private'
 }
 
+function isAdminLoggedIn(): boolean {
+  return !!(localStorage.getItem('token') || sessionStorage.getItem('token'))
+}
+
+/** 游客/学员侧栏：隐藏私密文件与私密文件夹整棵子树 */
 function filterPublicDocs(items: DocItem[]): DocItem[] {
   return items
     .filter(item => item.visibility !== 'private')
@@ -27,13 +32,15 @@ function filterPublicDocs(items: DocItem[]): DocItem[] {
     )
 }
 
-function isPrivateDoc(items: DocItem[], slug: string): boolean {
+/** 文档自身或任一祖先文件夹为 private 即视为私密 */
+function isPrivateDoc(items: DocItem[], slug: string, ancestorPrivate = false): boolean {
   for (const item of items) {
+    const herePrivate = ancestorPrivate || item.visibility === 'private'
     if (item.type !== 'dir') {
       const itemSlug = item.path.replace(/\.md$/, '')
-      if (itemSlug === slug) return item.visibility === 'private'
-    } else if (item.children) {
-      if (isPrivateDoc(item.children, slug)) return true
+      if (itemSlug === slug) return herePrivate
+    } else if (item.children?.length) {
+      if (isPrivateDoc(item.children, slug, herePrivate)) return true
     }
   }
   return false
@@ -67,6 +74,7 @@ function DocTree({
   expandedFolders,
   searchTerm,
   toggleFolder,
+  showPrivateBadge = false,
   depth = 0,
 }: {
   items: DocItem[]
@@ -74,6 +82,7 @@ function DocTree({
   expandedFolders: Set<string>
   searchTerm: string
   toggleFolder: (path: string) => void
+  showPrivateBadge?: boolean
   depth?: number
 }) {
   return (
@@ -81,6 +90,7 @@ function DocTree({
       {items.map(item => {
         if (item.type === 'dir') {
           const isOpen = expandedFolders.has(item.path) || searchTerm !== ''
+          const isPrivate = item.visibility === 'private'
           return (
             <div key={item.path}>
               <button
@@ -90,7 +100,10 @@ function DocTree({
               >
                 {isOpen ? <ChevronDown size={13} className="flex-shrink-0 text-gray-500" /> : <ChevronRight size={13} className="flex-shrink-0 text-gray-500" />}
                 {isOpen ? <FolderOpen size={14} className="text-yellow-400 flex-shrink-0" /> : <Folder size={14} className="text-yellow-400 flex-shrink-0" />}
-                <span className="text-sm font-medium truncate">{item.name}</span>
+                <span className="text-sm font-medium truncate flex-1 text-left">{item.name}</span>
+                {showPrivateBadge && isPrivate && (
+                  <span title="私密文件夹"><Lock size={11} className="text-amber-400/80 flex-shrink-0" /></span>
+                )}
               </button>
               {isOpen && item.children && (
                 <DocTree
@@ -99,6 +112,7 @@ function DocTree({
                   expandedFolders={expandedFolders}
                   searchTerm={searchTerm}
                   toggleFolder={toggleFolder}
+                  showPrivateBadge={showPrivateBadge}
                   depth={depth + 1}
                 />
               )}
@@ -107,6 +121,7 @@ function DocTree({
         }
         const docPath = item.path.replace(/\.md$/, '')
         const isActive = currentDocName === docPath
+        const isPrivate = item.visibility === 'private'
         return (
           <Link
             key={item.path}
@@ -119,7 +134,10 @@ function DocTree({
             style={{ paddingLeft: `${20 + depth * 12}px` }}
           >
             <FileText size={14} className={`flex-shrink-0 ${isActive ? 'text-purple-400' : 'text-gray-600'}`} />
-            <span className="text-sm font-medium truncate">{item.name}</span>
+            <span className="text-sm font-medium truncate flex-1">{item.name}</span>
+            {showPrivateBadge && isPrivate && (
+              <span title="私密文档" className="mr-3 flex-shrink-0"><Lock size={11} className="text-amber-400/80" /></span>
+            )}
           </Link>
         )
       })}
@@ -145,6 +163,7 @@ export default function DocsLayout() {
   const [activeHeading, setActiveHeading] = useState('')
   const [showUpdateNotification, setShowUpdateNotification] = useState(false)
   const [currentVersion, setCurrentVersion] = useState<string>('')
+  const [isAdmin] = useState(() => isAdminLoggedIn())
   const isFirstCheck = useRef(true)
   const tocRef = useRef<HTMLDivElement>(null)
 
@@ -231,9 +250,9 @@ export default function DocsLayout() {
   }
 
   const loadDocument = async (name: string) => {
-    // 检查是否是私密文档（docs 包含全局数据，包括私密）
-    if (docs.length > 0 && isPrivateDoc(docs, name)) {
-      setContent('# 权限不足\n\n该文档仅管理员可查看。')
+    // 游客/学员不可看私密文档（含位于私密文件夹下的）；管理员在文档页仍可查看
+    if (!isAdmin && docs.length > 0 && isPrivateDoc(docs, name)) {
+      setContent('# 权限不足\n\n该文档未公开，仅管理员可查看。')
       setLoading(false)
       return
     }
@@ -380,7 +399,9 @@ export default function DocsLayout() {
     }, [])
   }
 
-  const filteredDocs = filterTree(publicDocs, searchTerm)
+  // 管理员看完整树；游客与学员只看公开内容
+  const visibleTree = isAdmin ? docs : publicDocs
+  const filteredDocs = filterTree(visibleTree, searchTerm)
 
   const toggleFolder = (path: string) => {
     setExpandedFolders(prev => {
@@ -488,6 +509,7 @@ export default function DocsLayout() {
                 expandedFolders={expandedFolders}
                 searchTerm={searchTerm}
                 toggleFolder={toggleFolder}
+                showPrivateBadge={isAdmin}
               />
             ) : (
               <div className="text-center py-8 px-4 text-gray-600 text-sm">

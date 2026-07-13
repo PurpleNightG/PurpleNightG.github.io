@@ -16,7 +16,12 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:3000',
         changeOrigin: true
-      }
+      },
+      '/ziye-api': {
+        target: 'http://160.202.254.36:10116',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/ziye-api/, ''),
+      },
     }
   }
 })

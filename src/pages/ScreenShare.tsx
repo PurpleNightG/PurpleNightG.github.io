@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import Peer, { MediaConnection } from 'peerjs'
-import { Monitor, Users, Copy, Check, StopCircle, Play, Link2, X, Maximize2, Minimize2, Wifi, Zap, Globe, Lock, Clock, CheckCircle, XCircle, ChevronDown, Search, Trash2, GraduationCap } from 'lucide-react'
+import { Monitor, Users, Copy, Check, StopCircle, Play, Link2, X, Maximize2, Minimize2, Wifi, Zap, Globe, Lock, Clock, CheckCircle, XCircle, ChevronDown, Search, Trash2, GraduationCap, Server } from 'lucide-react'
 import ScreenShareAssistantPanel, { type AssistantRow, type AssistantCandidate } from '../components/ScreenShareAssistantPanel'
 
 type Mode = 'select' | 'host' | 'viewer'
@@ -11,6 +11,188 @@ const PEER_PREFIX = 'ziye-share-'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 const AGORA_APP_ID: string = import.meta.env.VITE_AGORA_APP_ID || 'a51f2304cab54d86a883ab04b41840a6'
 const VOLC_APP_ID: string = import.meta.env.VITE_VOLC_APP_ID || '69a1d9e90340ba017226d5c0'
+
+// 紫夜自建服务器配置 - 在 .env 中设置 VITE_ZIYE_SERVER_URL
+const ZIYE_SERVER = import.meta.env.VITE_ZIYE_SERVER_URL || ''
+const ZIYE_TURN_PORT = import.meta.env.VITE_ZIYE_TURN_PORT || '10115'
+const ZIYE_TURN_HOST = import.meta.env.VITE_ZIYE_TURN_HOST || '160.202.254.36'
+// 设为 '0' / 'false' 时不走 TURN，仅 STUN + 直连 ZLM(10195)
+const ZIYE_USE_TURN = !['0', 'false', 'off', 'no'].includes(
+  String(import.meta.env.VITE_ZIYE_USE_TURN ?? 'true').toLowerCase()
+)
+const ZIYE_WHIP_URL = ZIYE_SERVER ? `${ZIYE_SERVER}/index/api/whip?app=live&stream=screen-` : ''
+const ZIYE_WHEP_URL = ZIYE_SERVER ? `${ZIYE_SERVER}/index/api/whep?app=live&stream=screen-` : ''
+const ZIYE_ICE_SERVERS: RTCIceServer[] = ZIYE_SERVER ? [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun.qq.com:3478' },
+  ...(ZIYE_USE_TURN
+    ? [{ urls: `turn:${ZIYE_TURN_HOST}:${ZIYE_TURN_PORT}`, username: 'screen123', credential: 'share666' } as RTCIceServer]
+    : []),
+] : []
+
+async function parseZlmSdpAnswer(res: Response): Promise<string> {
+  const text = await res.text()
+  const ct = res.headers.get('content-type') || ''
+  if (ct.includes('application/json') || text.trimStart().startsWith('{')) {
+    const data = JSON.parse(text)
+    if (data.code !== 0 && data.code !== undefined) throw new Error(data.msg || `服务器错误 code=${data.code}`)
+    if (!data.sdp) throw new Error('服务器未返回 SDP')
+    return data.sdp
+  }
+  return text
+}
+
+/** ICE 收集带超时，避免 TURN 不可达时无限卡住 */
+function waitIceGathering(pc: RTCPeerConnection, timeoutMs = 5000): Promise<void> {
+  return new Promise((resolve) => {
+    if (pc.iceGatheringState === 'complete') {
+      resolve()
+      return
+    }
+    const timer = window.setTimeout(resolve, timeoutMs)
+    pc.addEventListener('icegatheringstatechange', () => {
+      if (pc.iceGatheringState === 'complete') {
+        clearTimeout(timer)
+        resolve()
+      }
+    }, { once: true })
+  })
+}
+
+type ZiyeQuality = 240 | 480 | 720 | 1080
+type ZiyeFps = 30 | 60
+
+const ZIYE_QUALITY_OPTIONS: {
+  id: ZiyeQuality
+  label: string
+  height: number
+  scale: number
+  maxBitrate: number
+  minBitrate: number
+  startKbps: number
+}[] = [
+  { id: 240, label: '240p', height: 240, scale: 4.5, maxBitrate: 800_000, minBitrate: 200_000, startKbps: 500 },
+  { id: 480, label: '480p', height: 480, scale: 2.25, maxBitrate: 2_000_000, minBitrate: 500_000, startKbps: 1200 },
+  { id: 720, label: '720p', height: 720, scale: 1.5, maxBitrate: 4_500_000, minBitrate: 1_200_000, startKbps: 2500 },
+  { id: 1080, label: '1080p', height: 1080, scale: 1, maxBitrate: 10_000_000, minBitrate: 2_500_000, startKbps: 5000 },
+]
+
+const ZIYE_FPS_OPTIONS: { id: ZiyeFps; label: string }[] = [
+  { id: 30, label: '30fps' },
+  { id: 60, label: '60fps' },
+]
+
+const ZIYE_CONNECTION_LABEL = '鲶大禹服务器'
+
+function getZiyeQualityPreset(q: ZiyeQuality) {
+  return ZIYE_QUALITY_OPTIONS.find(o => o.id === q) || ZIYE_QUALITY_OPTIONS[3]
+}
+
+function applyZiyeVideoEncoding(pc: RTCPeerConnection, quality: ZiyeQuality = 1080, fps: ZiyeFps = 60) {
+  const preset = getZiyeQualityPreset(quality)
+  // 30fps 时码率适当降低
+  const brScale = fps === 30 ? 0.7 : 1
+  pc.getSenders().forEach(sender => {
+    if (sender.track?.kind !== 'video') return
+    try {
+      if ('contentHint' in sender.track) {
+        (sender.track as MediaStreamTrack & { contentHint?: string }).contentHint = 'detail'
+      }
+    } catch {}
+    const params = sender.getParameters()
+    if (!params.encodings?.length) params.encodings = [{}]
+    params.encodings[0].maxBitrate = Math.round(preset.maxBitrate * brScale)
+    ;(params.encodings[0] as RTCRtpEncodingParameters & { minBitrate?: number }).minBitrate = Math.round(preset.minBitrate * brScale)
+    params.encodings[0].maxFramerate = fps
+    params.encodings[0].scaleResolutionDownBy = preset.scale
+    if ('degradationPreference' in params) {
+      (params as RTCRtpSendParameters & { degradationPreference?: string }).degradationPreference = 'maintain-resolution'
+    }
+    sender.setParameters(params).catch(console.error)
+    const gen = (sender as RTCRtpSender & { generateKeyFrame?: () => Promise<void> }).generateKeyFrame
+    if (typeof gen === 'function') gen.call(sender).catch(() => {})
+  })
+}
+
+/** 监测推流码率塌陷 + 回报帧率/延迟 */
+function startZiyeStatsMonitor(
+  pc: RTCPeerConnection,
+  role: 'host' | 'viewer',
+  getEncode: () => { quality: ZiyeQuality; fps: ZiyeFps },
+  onStats: (s: { kbps?: number; fps?: number; latencyMs?: number }) => void,
+) {
+  let lastBytes = 0
+  let lastTs = 0
+  let lowStreak = 0
+  return window.setInterval(async () => {
+    try {
+      const stats = await pc.getStats()
+      let bytes = 0
+      let ts = 0
+      let fps: number | undefined
+      let latencyMs: number | undefined
+      stats.forEach(r => {
+        const any = r as any
+        if (role === 'host' && r.type === 'outbound-rtp' && any.kind === 'video' && !any.remoteSource) {
+          bytes = any.bytesSent || 0
+          ts = r.timestamp
+          if (typeof any.framesPerSecond === 'number') fps = Math.round(any.framesPerSecond)
+        }
+        if (role === 'viewer' && r.type === 'inbound-rtp' && any.kind === 'video') {
+          bytes = any.bytesReceived || 0
+          ts = r.timestamp
+          if (typeof any.framesPerSecond === 'number') fps = Math.round(any.framesPerSecond)
+        }
+        if (r.type === 'candidate-pair' && any.state === 'succeeded' && any.nominated && typeof any.currentRoundTripTime === 'number') {
+          latencyMs = Math.round(any.currentRoundTripTime * 1000)
+        }
+      })
+      const out: { kbps?: number; fps?: number; latencyMs?: number } = {}
+      if (typeof fps === 'number') out.fps = fps
+      if (typeof latencyMs === 'number') out.latencyMs = latencyMs
+      if (lastTs && ts > lastTs) {
+        const kbps = Math.round(((bytes - lastBytes) * 8) / (ts - lastTs))
+        out.kbps = kbps
+        if (role === 'host' && kbps < 200) {
+          lowStreak++
+          if (lowStreak >= 2) {
+            const e = getEncode()
+            applyZiyeVideoEncoding(pc, e.quality, e.fps)
+            lowStreak = 0
+          }
+        } else {
+          lowStreak = 0
+        }
+      }
+      lastBytes = bytes
+      lastTs = ts
+      onStats(out)
+    } catch {}
+  }, 2000)
+}
+
+/** Chrome/Chromium：注入起步码率，避免刚连上时从极低码率慢慢爬 */
+function injectZiyeBitrateHints(sdp: string, startKbps = 5000): string {
+  let out = sdp
+  const minKbps = Math.max(300, Math.floor(startKbps * 0.4))
+  const maxKbps = Math.max(startKbps, Math.floor(startKbps * 2))
+  if (!/b=AS:/.test(out)) {
+    out = out.replace(/(m=video .*\r?\n)/, `$1b=AS:${startKbps}\r\nb=TIAS:${startKbps * 1000}\r\n`)
+  }
+  out = out.replace(/a=fmtp:(\d+) ([^\r\n]*)/g, (full, pt, rest) => {
+    if (/apt=/i.test(rest)) return full
+    if (!/profile-level-id|packetization-mode|VP8|VP9|AV1|level-asymmetry/i.test(rest) && !/max-fs|max-fr/i.test(rest)) {
+      if (/minptime|useinbandfec|stereo|maxplaybackrate/i.test(rest)) return full
+    }
+    let next = rest
+      .replace(/;?x-google-start-bitrate=\d+/g, '')
+      .replace(/;?x-google-min-bitrate=\d+/g, '')
+      .replace(/;?x-google-max-bitrate=\d+/g, '')
+    next += `;x-google-start-bitrate=${startKbps};x-google-min-bitrate=${minKbps};x-google-max-bitrate=${maxKbps}`
+    return `a=fmtp:${pt} ${next}`
+  })
+  return out
+}
 
 const FALLBACK_ICE_SERVERS = [
   { urls: 'stun:stun.qq.com:3478' },
@@ -87,10 +269,16 @@ export default function ScreenShare() {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [connectionInfo, setConnectionInfo] = useState<string>('')
   const [connectStep, setConnectStep] = useState('')
-  const [connMode, setConnMode] = useState<'auto' | 'relay' | 'stun' | 'agora' | 'volc'>('auto')
-  const [hostConnMode, setHostConnMode] = useState<'peerjs' | 'agora' | 'volc'>('peerjs')
-  const [activeStreamMode, setActiveStreamMode] = useState<'peerjs' | 'agora' | 'volc'>('peerjs')
+  const [connMode, setConnMode] = useState<'auto' | 'relay' | 'stun' | 'agora' | 'volc' | 'ziye'>('auto')
+  const [hostConnMode, setHostConnMode] = useState<'peerjs' | 'agora' | 'volc' | 'ziye'>('peerjs')
+  const [activeStreamMode, setActiveStreamMode] = useState<'peerjs' | 'agora' | 'volc' | 'ziye'>('peerjs')
   const [latency, setLatency] = useState<number | null>(null)
+  const [ziyeQuality, setZiyeQuality] = useState<ZiyeQuality>(1080)
+  const [ziyeFpsChoice, setZiyeFpsChoice] = useState<ZiyeFps>(60)
+  const [ziyeHostQuality, setZiyeHostQuality] = useState<ZiyeQuality>(1080)
+  const [ziyeHostFps, setZiyeHostFps] = useState<ZiyeFps>(60)
+  const [ziyeFps, setZiyeFps] = useState<number | null>(null)
+  const [ziyeToast, setZiyeToast] = useState<{ text: string; kind: 'loading' | 'success' } | null>(null)
   const [userType] = useState<'admin' | 'student' | null>(getUserType)
   const [rtcPerm, setRtcPerm] = useState<{
     agora: boolean
@@ -131,6 +319,16 @@ export default function ScreenShare() {
   const volcEngineRef = useRef<any>(null)
   const volcContainerRef = useRef<HTMLDivElement>(null)
   const volcHostUserIdRef = useRef<string>('')
+  // 紫夜自建服务器相关ref
+  const ziyePeerConnRef = useRef<RTCPeerConnection | null>(null)
+  const ziyeStreamRef = useRef<MediaStream | null>(null)
+  const ziyeRoomIdRef = useRef<string>('')
+  const ziyeTimersRef = useRef<number[]>([])
+  const ziyeQualityRef = useRef<ZiyeQuality>(1080)
+  const ziyeFpsChoiceRef = useRef<ZiyeFps>(60)
+  const ziyeEncodeQualityRef = useRef<ZiyeQuality>(1080)
+  const ziyeEncodeFpsRef = useRef<ZiyeFps>(60)
+  const ziyeToastTimerRef = useRef<number | null>(null)
   const rtcRoomRef = useRef<string>('')
   const rtcRoleRef = useRef<'host' | 'viewer' | ''>('')
   const rtcUidRef = useRef<string>('')
@@ -293,6 +491,7 @@ export default function ScreenShare() {
     setViewerCount(0)
     setViewerNames([])
     setLatency(null)
+    setZiyeFps(null)
     if (latencyIntervalRef.current) {
       clearInterval(latencyIntervalRef.current)
       latencyIntervalRef.current = null
@@ -301,6 +500,13 @@ export default function ScreenShare() {
       clearInterval(heartbeatIntervalRef.current)
       heartbeatIntervalRef.current = null
     }
+    ziyeTimersRef.current.forEach(id => window.clearInterval(id))
+    ziyeTimersRef.current = []
+    if (ziyeToastTimerRef.current) {
+      window.clearTimeout(ziyeToastTimerRef.current)
+      ziyeToastTimerRef.current = null
+    }
+    setZiyeToast(null)
     if (agoraTrackRef.current) {
       const tracks = Array.isArray(agoraTrackRef.current) ? agoraTrackRef.current : [agoraTrackRef.current]
       tracks.forEach((t: any) => { try { t.close() } catch {} })
@@ -321,6 +527,16 @@ export default function ScreenShare() {
         try { _engine.destroy() } catch {}
       })
     }
+    // 清理紫夜自建服务器连接
+    if (ziyeStreamRef.current) {
+      ziyeStreamRef.current.getTracks().forEach(track => track.stop())
+      ziyeStreamRef.current = null
+    }
+    if (ziyePeerConnRef.current) {
+      try { ziyePeerConnRef.current.close() } catch {}
+      ziyePeerConnRef.current = null
+    }
+    ziyeRoomIdRef.current = ''
     if (rtcRoomRef.current) {
       const rid = rtcRoomRef.current
       const endpoint = rtcRoleRef.current === 'host' ? 'close' : 'leave'
@@ -763,6 +979,363 @@ export default function ScreenShare() {
     }
   }
 
+  // 紫夜自建服务器 - 主播推流 1080P60fps
+  const handleStartHostZiye = async () => {
+    setMode('host')
+    setStatus('connecting')
+    setErrorMsg('')
+    setConnectStep('初始化紫夜自建服务器连接...')
+    if (!ZIYE_SERVER) {
+      setErrorMsg('紫夜自建服务器未配置，请联系管理员设置 VITE_ZIYE_SERVER_URL')
+      setStatus('error')
+      setMode('select')
+      return
+    }
+    try {
+      const code = generateRoomCode()
+      setRoomCode(code)
+      ziyeRoomIdRef.current = code
+      const rawName = myName.current || '主播'
+      const userTypeVal = userType || 'student'
+
+      ziyeEncodeQualityRef.current = ziyeQualityRef.current
+      ziyeEncodeFpsRef.current = ziyeFpsChoiceRef.current
+      setZiyeHostQuality(ziyeQualityRef.current)
+      setZiyeHostFps(ziyeFpsChoiceRef.current)
+
+      setConnectStep('获取屏幕共享权限（1080P60fps）...')
+      // 强制1080P60fps采集，编码侧再按所选清晰度/帧率降级，不断流切换
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          width: { ideal: 1920, max: 1920 },
+          height: { ideal: 1080, max: 1080 },
+          frameRate: { ideal: 60, max: 60 },
+          cursor: 'always'
+        } as MediaTrackConstraints,
+        audio: true
+      })
+      ziyeStreamRef.current = screenStream
+      // 标记为屏幕内容（detail），减少画面糊块/马赛克倾向
+      screenStream.getVideoTracks().forEach(t => {
+        try { (t as MediaStreamTrack & { contentHint?: string }).contentHint = 'detail' } catch {}
+      })
+
+      setConnectStep('连接紫夜SFU服务器...')
+      // 创建PeerConnection
+      const pc = new RTCPeerConnection({
+        iceServers: ZIYE_ICE_SERVERS,
+        iceTransportPolicy: 'all',
+        bundlePolicy: 'max-bundle'
+      })
+      ziyePeerConnRef.current = pc
+
+      // 添加音视频轨
+      screenStream.getTracks().forEach(track => pc.addTrack(track, screenStream))
+      applyZiyeVideoEncoding(pc, ziyeEncodeQualityRef.current, ziyeEncodeFpsRef.current)
+      pc.addEventListener('connectionstatechange', () => {
+        if (pc.connectionState === 'connected') {
+          applyZiyeVideoEncoding(pc, ziyeEncodeQualityRef.current, ziyeEncodeFpsRef.current)
+        }
+      })
+
+      // 监听屏幕共享停止
+      screenStream.getVideoTracks()[0].addEventListener('ended', () => {
+        handleStop()
+      })
+
+      // 创建offer WHIP推流
+      const offer = await pc.createOffer({
+        offerToReceiveAudio: false,
+        offerToReceiveVideo: false
+      })
+      const startKbps = getZiyeQualityPreset(ziyeEncodeQualityRef.current).startKbps
+      offer.sdp = injectZiyeBitrateHints(offer.sdp || '', startKbps)
+      await pc.setLocalDescription(offer)
+
+      setConnectStep('收集网络信息...')
+      await waitIceGathering(pc)
+
+      // ICE 完成后再次注入码率提示（candidate 插入后 SDP 可能被改写）
+      if (pc.localDescription?.sdp) {
+        await pc.setLocalDescription({
+          type: 'offer',
+          sdp: injectZiyeBitrateHints(pc.localDescription.sdp, startKbps),
+        })
+      }
+
+      setConnectStep('推流到紫夜服务器...')
+      const whipRes = await fetch(ZIYE_WHIP_URL + code, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: pc.localDescription?.sdp
+      })
+      const whipText = await whipRes.text()
+      if (!whipRes.ok) throw new Error(`推流失败: ${whipRes.status} ${whipText.slice(0, 200)}`)
+      const answerSdp = await parseZlmSdpAnswer(new Response(whipText, {
+        headers: { 'content-type': whipRes.headers.get('content-type') || '' }
+      }))
+      await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp })
+      applyZiyeVideoEncoding(pc, ziyeEncodeQualityRef.current, ziyeEncodeFpsRef.current)
+
+      // 前 90 秒刷码率 + 统计帧率/延迟
+      ziyeTimersRef.current.forEach(id => window.clearInterval(id))
+      ziyeTimersRef.current = []
+      let boostTicks = 0
+      ziyeTimersRef.current.push(window.setInterval(() => {
+        if (!ziyePeerConnRef.current || boostTicks++ >= 30) return
+        applyZiyeVideoEncoding(ziyePeerConnRef.current, ziyeEncodeQualityRef.current, ziyeEncodeFpsRef.current)
+      }, 3000))
+      ziyeTimersRef.current.push(startZiyeStatsMonitor(pc, 'host', () => ({
+        quality: ziyeEncodeQualityRef.current,
+        fps: ziyeEncodeFpsRef.current,
+      }), (s) => {
+        if (typeof s.fps === 'number') setZiyeFps(s.fps)
+        if (typeof s.latencyMs === 'number') setLatency(s.latencyMs)
+      }))
+
+      // 注册房间到后端
+      const hostRes = await fetch(`${API_URL}/room/${code}/host`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ displayName: rawName, mode: 'ziye', userType: userTypeVal }),
+      })
+      if (hostRes.status === 409) {
+        const d = await hostRes.json()
+        throw new Error(d.error || '该账号已在其他房间中活跃')
+      }
+      if (!hostRes.ok) throw new Error('房间注册失败')
+      rtcRoomRef.current = code
+      rtcRoleRef.current = 'host'
+
+      // 注册主播清晰度/帧率上限与偏好
+      fetch(`${API_URL}/room/${code}/quality`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          quality: ziyeQualityRef.current,
+          fps: ziyeFpsChoiceRef.current,
+          userId: 'host',
+          role: 'host',
+        }),
+      }).catch(() => {})
+      setZiyeHostQuality(ziyeQualityRef.current)
+      setZiyeHostFps(ziyeFpsChoiceRef.current)
+
+      // 本地预览
+      streamRef.current = screenStream
+      if (videoRef.current) {
+        videoRef.current.srcObject = screenStream
+        videoRef.current.play().catch(() => {})
+      }
+
+      setActiveStreamMode('ziye')
+      setConnectionInfo(ZIYE_CONNECTION_LABEL)
+      setStatus('streaming')
+
+      // 心跳 + 观众列表 + 按房间目标清晰度/帧率重编码
+      if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current)
+      heartbeatIntervalRef.current = setInterval(async () => {
+        fetch(`${API_URL}/room/${code}/heartbeat`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ displayName: rawName, userType: userTypeVal }),
+        }).catch(() => {})
+        try {
+          const r = await fetch(`${API_URL}/room/${code}`)
+          const d = await r.json()
+          if (d.killed) { cleanup(); setErrorMsg(`已被管理员 ${d.killedBy || '管理员'} 强制关闭`); setStatus('error'); return }
+          if (d.viewers) { setViewerNames(d.viewers); setViewerCount(d.viewers.length) }
+          const tq = Number(d.targetQuality)
+          const tf = Number(d.targetFps)
+          const hq = Number(d.hostQuality)
+          const hf = Number(d.hostFps)
+          if ([240, 480, 720, 1080].includes(hq)) setZiyeHostQuality(hq as ZiyeQuality)
+          if ([30, 60].includes(hf)) setZiyeHostFps(hf as ZiyeFps)
+          const needQ = [240, 480, 720, 1080].includes(tq) && tq !== ziyeEncodeQualityRef.current
+          const needF = [30, 60].includes(tf) && tf !== ziyeEncodeFpsRef.current
+          if ((needQ || needF) && ziyePeerConnRef.current) {
+            if (needQ) ziyeEncodeQualityRef.current = tq as ZiyeQuality
+            if (needF) ziyeEncodeFpsRef.current = tf as ZiyeFps
+            applyZiyeVideoEncoding(ziyePeerConnRef.current, ziyeEncodeQualityRef.current, ziyeEncodeFpsRef.current)
+          }
+        } catch {}
+      }, 2000)
+
+    } catch (err: any) {
+      cleanup()
+      if (err.name === 'NotAllowedError') {
+        setErrorMsg('您取消了屏幕共享')
+      } else if (err.name === 'NotSupportedError' || /getDisplayMedia|constraints/i.test(err.message || '')) {
+        setErrorMsg(`屏幕共享失败: ${err.message}`)
+      } else {
+        setErrorMsg(`紫夜服务器连接失败: ${err.message}`)
+      }
+      setStatus('error')
+      setMode('select')
+    }
+  }
+
+  // 紫夜自建服务器 - 观众拉流
+  const handleJoinRoomZiye = async (code: string) => {
+    setMode('viewer')
+    setStatus('connecting')
+    setErrorMsg('')
+    setConnectStep('连接紫夜自建服务器...')
+    if (!ZIYE_SERVER) {
+      setErrorMsg('紫夜自建服务器未配置，请联系管理员设置 VITE_ZIYE_SERVER_URL')
+      setStatus('error')
+      setMode('select')
+      return
+    }
+    try {
+      const viewerUid = 'v' + Math.random().toString(36).slice(2, 8)
+      const viewerDisplayName = myName.current || viewerUid
+
+      // 创建PeerConnection
+      const pc = new RTCPeerConnection({
+        iceServers: ZIYE_ICE_SERVERS,
+        iceTransportPolicy: 'all',
+        bundlePolicy: 'max-bundle'
+      })
+      ziyePeerConnRef.current = pc
+
+      // 监听 track：收到轨道即进入观看（与改前行为一致，首帧可能稍晚出现）
+      const remoteStream = new MediaStream()
+      pc.ontrack = (event) => {
+        event.streams[0]?.getTracks().forEach(track => {
+          if (!remoteStream.getTracks().some(t => t.id === track.id)) {
+            remoteStream.addTrack(track)
+          }
+        })
+        if (event.track && !remoteStream.getTracks().some(t => t.id === event.track.id)) {
+          remoteStream.addTrack(event.track)
+        }
+        streamRef.current = remoteStream
+        if (videoRef.current) {
+          videoRef.current.srcObject = remoteStream
+          videoRef.current.play().catch(() => {})
+        }
+        setActiveStreamMode('ziye')
+        setConnectionInfo(ZIYE_CONNECTION_LABEL)
+        setStatus('watching')
+        setConnectStep('')
+      }
+
+      // 创建offer WHEP拉流
+      const offer = await pc.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true
+      })
+      await pc.setLocalDescription(offer)
+
+      setConnectStep('收集网络信息...')
+      await waitIceGathering(pc)
+
+      setConnectStep('从紫夜服务器拉流...')
+      const whepRes = await fetch(ZIYE_WHEP_URL + code, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: pc.localDescription?.sdp
+      })
+      const whepText = await whepRes.text()
+      if (!whepRes.ok) throw new Error(`拉流失败: ${whepRes.status} ${whepText.slice(0, 200)}`)
+      const answerSdp = await parseZlmSdpAnswer(new Response(whepText, {
+        headers: { 'content-type': whepRes.headers.get('content-type') || '' }
+      }))
+      await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp })
+
+      ziyeTimersRef.current.forEach(id => window.clearInterval(id))
+      ziyeTimersRef.current = []
+      ziyeTimersRef.current.push(startZiyeStatsMonitor(pc, 'viewer', () => ({
+        quality: ziyeQualityRef.current,
+        fps: ziyeFpsChoiceRef.current,
+      }), (s) => {
+        if (typeof s.fps === 'number') setZiyeFps(s.fps)
+        if (typeof s.latencyMs === 'number') setLatency(s.latencyMs)
+      }))
+
+      // 加入房间
+      const viewerRes = await fetch(`${API_URL}/room/${code}/viewer`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: viewerUid, displayName: viewerDisplayName, mode: 'ziye', userType }),
+      })
+      if (!viewerRes.ok) throw new Error('房间不存在或已关闭')
+      const roomData = await viewerRes.json()
+      if (roomData.hostName) setHostName(roomData.hostName)
+      const hq = Number(roomData.hostQuality)
+      const hf = Number(roomData.hostFps)
+      if ([240, 480, 720, 1080].includes(hq)) {
+        setZiyeHostQuality(hq as ZiyeQuality)
+        if (ziyeQualityRef.current > hq) {
+          const capped = hq as ZiyeQuality
+          setZiyeQuality(capped)
+          ziyeQualityRef.current = capped
+        }
+      }
+      if ([30, 60].includes(hf)) {
+        setZiyeHostFps(hf as ZiyeFps)
+        if (ziyeFpsChoiceRef.current > hf) {
+          const cappedF = hf as ZiyeFps
+          setZiyeFpsChoice(cappedF)
+          ziyeFpsChoiceRef.current = cappedF
+        }
+      }
+      rtcRoomRef.current = code
+      rtcRoleRef.current = 'viewer'
+      rtcUidRef.current = viewerUid
+
+      // 上报观众清晰度/帧率偏好（主播按最低偏好重编码，不断流）
+      fetch(`${API_URL}/room/${code}/quality`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          quality: ziyeQualityRef.current,
+          fps: ziyeFpsChoiceRef.current,
+          userId: viewerUid,
+          role: 'viewer',
+        }),
+      }).catch(() => {})
+
+      // 观众心跳 + 同步主播推流清晰度/帧率上限
+      if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current)
+      heartbeatIntervalRef.current = setInterval(async () => {
+        fetch(`${API_URL}/room/${code}/heartbeat`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: viewerUid, displayName: viewerDisplayName, userType }),
+        }).catch(() => {})
+        try {
+          const r = await fetch(`${API_URL}/room/${code}`)
+          const d = await r.json()
+          if (d.killed) { cleanup(); setErrorMsg(`已被管理员 ${d.killedBy || '管理员'} 强制关闭`); setStatus('error'); return }
+          const hq2 = Number(d.hostQuality)
+          const hf2 = Number(d.hostFps)
+          if ([240, 480, 720, 1080].includes(hq2)) {
+            setZiyeHostQuality(hq2 as ZiyeQuality)
+            if (ziyeQualityRef.current > hq2) {
+              const capped = hq2 as ZiyeQuality
+              setZiyeQuality(capped)
+              ziyeQualityRef.current = capped
+            }
+          }
+          if ([30, 60].includes(hf2)) {
+            setZiyeHostFps(hf2 as ZiyeFps)
+            if (ziyeFpsChoiceRef.current > hf2) {
+              const cappedF = hf2 as ZiyeFps
+              setZiyeFpsChoice(cappedF)
+              ziyeFpsChoiceRef.current = cappedF
+            }
+          }
+        } catch {}
+      }, 5000)
+
+    } catch (err: any) {
+      cleanup()
+      if (/502|代理失败|无法连接/i.test(err.message || '')) {
+        setErrorMsg(`紫夜服务器连接失败: ${err.message}（请确认 10116 端口 NAT 已映射，且线上 API 已配置 ZIYE_UPSTREAM_URL）`)
+      } else {
+        setErrorMsg(`紫夜服务器连接失败: ${err.message}`)
+      }
+      setStatus('error')
+      setMode('select')
+    }
+  }
+
   const checkAlreadyActive = async (): Promise<boolean> => {
     try {
       const r = await fetch(`${API_URL}/room/active-check/${encodeURIComponent(myName.current)}?userType=${userType || ''}`)
@@ -779,6 +1352,7 @@ export default function ScreenShare() {
     if (await checkAlreadyActive()) return
     if (hostConnMode === 'volc') return handleStartHostVolc()
     if (hostConnMode === 'agora') return handleStartHostAgora()
+    if (hostConnMode === 'ziye') return handleStartHostZiye()
 
     setMode('host')
     setStatus('connecting')
@@ -970,16 +1544,47 @@ export default function ScreenShare() {
 
     if (await checkAlreadyActive()) return
 
-    if (connMode === 'volc') return handleJoinRoomVolc(code)
-    if (connMode === 'agora') return handleJoinRoomAgora(code)
+    setErrorMsg('')
+    setConnectStep('识别房间类型...')
+    // 根据主播开房时登记的 mode 自动加入，观众无需手动选连接方式
+    let detected: 'peerjs' | 'agora' | 'volc' | 'ziye' = 'peerjs'
+    try {
+      const infoRes = await fetch(`${API_URL}/room/${code}`)
+      const info = await infoRes.json()
+      if (info.killed) {
+        setErrorMsg(`房间已被管理员 ${info.killedBy || '管理员'} 关闭`)
+        return
+      }
+      if (!info.exists || !info.hostName) {
+        setErrorMsg('房间不存在或已关闭')
+        return
+      }
+      if (info.mode === 'agora' || info.mode === 'volc' || info.mode === 'ziye' || info.mode === 'peerjs') {
+        detected = info.mode
+      }
+      if (info.hostName) setHostName(info.hostName)
+    } catch {
+      setErrorMsg('无法查询房间信息，请稍后重试')
+      return
+    }
+
+    setConnMode(detected === 'peerjs'
+      ? (connMode === 'relay' || connMode === 'stun' ? connMode : 'auto')
+      : detected)
+
+    if (detected === 'volc') return handleJoinRoomVolc(code)
+    if (detected === 'agora') return handleJoinRoomAgora(code)
+    if (detected === 'ziye') return handleJoinRoomZiye(code)
+
+    // peerjs / WebRTC P2P — 网络策略用当前已选的 auto/relay/stun
+    const icePref = connMode === 'relay' || connMode === 'stun' ? connMode : 'auto'
 
     setMode('viewer')
     setStatus('connecting')
-    setErrorMsg('')
     setConnectStep('获取连接配置...')
 
     const allIceServers = await fetchIceServers()
-    const iceServers = connMode === 'stun'
+    const iceServers = icePref === 'stun'
       ? allIceServers.filter((s: any) => {
           const urls = Array.isArray(s.urls) ? s.urls : [s.urls]
           return urls.every((u: string) => u.startsWith('stun:'))
@@ -1003,6 +1608,7 @@ export default function ScreenShare() {
     rtcRoomRef.current = code
     rtcRoleRef.current = 'viewer'
     rtcUidRef.current = viewerUid
+
     const roomResData = await viewerRes.json()
     if (roomResData.hostName) setHostName(roomResData.hostName)
 
@@ -1025,7 +1631,7 @@ export default function ScreenShare() {
       debug: 0,
       config: {
         iceServers,
-        iceTransportPolicy: connMode === 'relay' ? 'relay' : 'all',
+        iceTransportPolicy: icePref === 'relay' ? 'relay' : 'all',
       }
     })
 
@@ -1094,7 +1700,7 @@ export default function ScreenShare() {
                 })
               }
               // If STUN-only mode but local side uses relay, reject
-              if (connMode === 'stun' && localType === 'relay') {
+              if (icePref === 'stun' && localType === 'relay') {
                 cleanup()
                 setErrorMsg('STUN直连失败：当前网络环境无法建立P2P连接，连接已被阻止（未走TURN中继）')
                 setStatus('error')
@@ -1206,8 +1812,9 @@ export default function ScreenShare() {
   }
 
   // Check if student can HOST (share) with a mode - viewing is always allowed
-  const canHostMode = (m: 'peerjs' | 'agora' | 'volc'): boolean => {
+  const canHostMode = (m: 'peerjs' | 'agora' | 'volc' | 'ziye'): boolean => {
     if (m === 'peerjs') return true
+    if (m === 'ziye') return true // 自建服务器所有人都可以用，无权限限制
     if (userType === 'admin') return true
     if (rtcPerm.canUseRtc) return true
     if (m === 'agora') return rtcPerm.agora
@@ -1228,11 +1835,97 @@ export default function ScreenShare() {
   }
 
   // Unified mode change handler: syncs hostConnMode and connMode
-  const handleModeChange = (m: 'peerjs' | 'agora' | 'volc') => {
+  const handleModeChange = (m: 'peerjs' | 'agora' | 'volc' | 'ziye') => {
     setHostConnMode(m)
     if (m === 'agora') setConnMode('agora')
     else if (m === 'volc') setConnMode('volc')
+    else if (m === 'ziye') setConnMode('ziye')
     else setConnMode('auto')
+  }
+
+  const showZiyeToast = (text: string, kind: 'loading' | 'success') => {
+    if (ziyeToastTimerRef.current) {
+      window.clearTimeout(ziyeToastTimerRef.current)
+      ziyeToastTimerRef.current = null
+    }
+    setZiyeToast({ text, kind })
+    if (kind === 'success') {
+      ziyeToastTimerRef.current = window.setTimeout(() => {
+        setZiyeToast(null)
+        ziyeToastTimerRef.current = null
+      }, 2200)
+    }
+  }
+
+  const postZiyeMediaPrefs = async (patch: { quality?: ZiyeQuality; fps?: ZiyeFps }) => {
+    const roomId = rtcRoomRef.current || ziyeRoomIdRef.current
+    const uid = rtcRoleRef.current === 'host' ? 'host' : (rtcUidRef.current || 'viewer')
+    const role = rtcRoleRef.current || (mode === 'host' ? 'host' : 'viewer')
+    let targetQuality = patch.quality ?? ziyeQualityRef.current
+    let targetFps = patch.fps ?? ziyeFpsChoiceRef.current
+    let hostQ = ziyeHostQuality
+    let hostF = ziyeHostFps
+    if (!roomId) return { targetQuality, targetFps, hostQuality: hostQ, hostFps: hostF }
+    try {
+      const res = await fetch(`${API_URL}/room/${roomId}/quality`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...patch, userId: uid, role }),
+      })
+      const data = await res.json()
+      if ([240, 480, 720, 1080].includes(Number(data.targetQuality))) {
+        targetQuality = Number(data.targetQuality) as ZiyeQuality
+      }
+      if ([30, 60].includes(Number(data.targetFps))) {
+        targetFps = Number(data.targetFps) as ZiyeFps
+      }
+      if ([240, 480, 720, 1080].includes(Number(data.hostQuality))) {
+        hostQ = Number(data.hostQuality) as ZiyeQuality
+        setZiyeHostQuality(hostQ)
+      }
+      if ([30, 60].includes(Number(data.hostFps))) {
+        hostF = Number(data.hostFps) as ZiyeFps
+        setZiyeHostFps(hostF)
+      }
+    } catch {}
+    return { targetQuality, targetFps, hostQuality: hostQ, hostFps: hostF }
+  }
+
+  const handleZiyeQualityChange = async (q: ZiyeQuality) => {
+    if (rtcRoleRef.current === 'viewer' && q > ziyeHostQuality) return
+    if (q === ziyeQualityRef.current) return
+    const label = getZiyeQualityPreset(q).label
+    showZiyeToast(`正在切换至 ${label}…`, 'loading')
+    setZiyeQuality(q)
+    ziyeQualityRef.current = q
+    if (rtcRoleRef.current === 'host' || mode === 'host') {
+      setZiyeHostQuality(q)
+    }
+    const { targetQuality, targetFps } = await postZiyeMediaPrefs({ quality: q })
+    // 仅改编码参数，不重连，画面不中断
+    if ((rtcRoleRef.current === 'host' || mode === 'host') && ziyePeerConnRef.current) {
+      ziyeEncodeQualityRef.current = targetQuality
+      ziyeEncodeFpsRef.current = targetFps
+      applyZiyeVideoEncoding(ziyePeerConnRef.current, targetQuality, targetFps)
+    }
+    showZiyeToast(`已切换至 ${label}`, 'success')
+  }
+
+  const handleZiyeFpsChange = async (f: ZiyeFps) => {
+    if (rtcRoleRef.current === 'viewer' && f > ziyeHostFps) return
+    if (f === ziyeFpsChoiceRef.current) return
+    showZiyeToast(`正在切换至 ${f}fps…`, 'loading')
+    setZiyeFpsChoice(f)
+    ziyeFpsChoiceRef.current = f
+    if (rtcRoleRef.current === 'host' || mode === 'host') {
+      setZiyeHostFps(f)
+    }
+    const { targetQuality, targetFps } = await postZiyeMediaPrefs({ fps: f })
+    if ((rtcRoleRef.current === 'host' || mode === 'host') && ziyePeerConnRef.current) {
+      ziyeEncodeQualityRef.current = targetQuality
+      ziyeEncodeFpsRef.current = targetFps
+      applyZiyeVideoEncoding(ziyePeerConnRef.current, targetQuality, targetFps)
+    }
+    showZiyeToast(`已切换至 ${f}fps`, 'success')
   }
 
   // Student: request access to a mode
@@ -1300,6 +1993,7 @@ export default function ScreenShare() {
     peerjs: '基于 WebRTC 技术，数据在浏览器间直接传输，延迟最低，但需要网络环境支持',
     agora: '通过声网全球节点中转，连接稳定可靠，适合跨地区使用',
     volc: '通过火山引擎国内节点中转，针对国内网络优化，延迟极低',
+    ziye: '鲶大禹服务器：自建SFU。卡顿时可降低清晰度，带宽占用下降，画面区域大小不变',
   }
 
   // Canvas particle effect
@@ -1394,8 +2088,8 @@ export default function ScreenShare() {
                 </h3>
                 <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
                   {activeRooms.map((room) => {
-                    const modeLabel = room.mode === 'agora' ? '声网' : room.mode === 'volc' ? '火山' : 'P2P'
-                    const modeColor = room.mode === 'agora' ? 'text-blue-400' : room.mode === 'volc' ? 'text-orange-400' : 'text-emerald-400'
+                    const modeLabel = room.mode === 'agora' ? '声网' : room.mode === 'volc' ? '火山' : room.mode === 'ziye' ? '紫夜自建' : 'P2P'
+                    const modeColor = room.mode === 'agora' ? 'text-blue-400' : room.mode === 'volc' ? 'text-orange-400' : room.mode === 'ziye' ? 'text-purple-400' : 'text-emerald-400'
                     return (
                       <div key={room.roomId} className="bg-gray-800/70 rounded-lg p-3 space-y-2">
                         <div className="flex items-center gap-2 min-w-0">
@@ -1544,10 +2238,10 @@ export default function ScreenShare() {
           <div className="absolute w-[300px] h-[300px] top-1/3 right-1/4 rounded-full blur-[80px] bg-orange-500/[0.04]" />
         </div>
 
-        <div className="max-w-3xl w-full relative z-10">
+        <div className="max-w-4xl w-full relative z-10">
           {/* Header - cinematic entrance */}
-          <div className="text-center mb-10 anim-cinematic-in">
-            <div className="relative inline-flex items-center justify-center mb-6">
+          <div className="text-center mb-7 anim-cinematic-in">
+            <div className="relative inline-flex items-center justify-center mb-5">
               {/* Rotating hex frame */}
               <svg className="absolute w-28 h-28" viewBox="0 0 100 100" style={{ animation: 'hex-rotate 20s linear infinite' }}>
                 <polygon points="50,2 93,25 93,75 50,98 7,75 7,25" fill="none" stroke="rgba(147,51,234,0.15)" strokeWidth="0.5" />
@@ -1570,7 +2264,7 @@ export default function ScreenShare() {
                 </div>
               </div>
             </div>
-            <h1 className="text-4xl font-bold mb-3 tracking-wider" style={{
+            <h1 className="text-4xl font-bold mb-2 tracking-wider" style={{
               background: 'linear-gradient(135deg, #c084fc 0%, #e879f9 25%, #818cf8 50%, #c084fc 75%, #f0abfc 100%)',
               backgroundSize: '300% 300%',
               animation: 'gradient-shift 4s ease infinite',
@@ -1581,42 +2275,175 @@ export default function ScreenShare() {
             <p className="text-gray-400 text-sm tracking-widest uppercase" style={{ letterSpacing: '0.3em' }}>Screen Sharing System</p>
           </div>
 
-          {/* Unified mode selector */}
-          <div className="grid grid-cols-3 gap-3 mb-8 anim-reveal-1">
-            {([
-              { key: 'peerjs' as const, label: 'WebRTC P2P', desc: '浏览器直连', icon: Wifi, color: 'emerald' },
-              { key: 'agora' as const, label: '声网 Agora', desc: '全球节点中转', icon: Globe, color: 'blue' },
-              { key: 'volc' as const, label: '火山引擎', desc: '国内低延迟', icon: Zap, color: 'orange' },
-            ]).map(({ key, label, desc, icon: Icon, color }) => {
-              const isActive = hostConnMode === key
-              const colorMap: Record<string, { active: string; icon: string; glow: string }> = {
-                emerald: { active: 'border-emerald-500/60 bg-emerald-500/10', icon: 'text-emerald-400', glow: '0 0 20px rgba(16,185,129,0.15)' },
-                blue: { active: 'border-blue-500/60 bg-blue-500/10', icon: 'text-blue-400', glow: '0 0 20px rgba(59,130,246,0.15)' },
-                orange: { active: 'border-orange-500/60 bg-orange-500/10', icon: 'text-orange-400', glow: '0 0 20px rgba(249,115,22,0.15)' },
-              }
-              const c = colorMap[color]
-              return (
-                <button
-                  key={key}
-                  onClick={() => handleModeChange(key)}
-                  className={`relative flex flex-col items-center gap-1.5 py-4 px-3 rounded-xl border transition-all duration-300 ${
-                    isActive
-                      ? `${c.active}`
-                      : 'border-gray-700/50 bg-gray-800/30 hover:border-gray-600 hover:bg-gray-800/50'
-                  }`}
-                  style={isActive ? { boxShadow: c.glow } : {}}
-                >
-                  <Icon size={22} className={`transition-all duration-300 ${isActive ? c.icon : 'text-gray-500'}`} />
-                  <span className={`text-sm font-semibold transition-colors duration-300 ${isActive ? 'text-white' : 'text-gray-400'}`}>{label}</span>
-                  <span className={`text-xs transition-colors duration-300 ${isActive ? 'text-gray-300' : 'text-gray-600'}`}>{desc}</span>
-                </button>
-              )
-            })}
+          {/* 主操作台：左加入 / 右发起 */}
+          <div className="anim-reveal-1 rounded-2xl border border-gray-700/50 bg-gray-800/30 backdrop-blur-sm overflow-hidden">
+            <div className="grid grid-cols-1 md:grid-cols-5 md:min-h-[280px]">
+              {/* 左：加入 */}
+              <div className="md:col-span-3 p-6 sm:p-8 flex flex-col justify-center border-b md:border-b-0 md:border-r border-gray-700/50 relative">
+                <div className="absolute inset-0 bg-gradient-to-br from-blue-600/[0.06] to-transparent pointer-events-none" />
+                <div className="relative">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Link2 size={16} className="text-blue-400" />
+                    <h2 className="text-base font-bold text-white">加入房间</h2>
+                  </div>
+                  <p className="text-gray-500 text-xs mb-5">输入代码即可观看，自动识别连接方式</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={inputCode}
+                      onChange={(e) => setInputCode(e.target.value.toUpperCase().slice(0, 6))}
+                      onKeyDown={(e) => e.key === 'Enter' && handleJoinRoom()}
+                      placeholder="······"
+                      maxLength={6}
+                      autoComplete="off"
+                      className="flex-1 min-w-0 bg-gray-950/60 border border-gray-600/40 rounded-xl px-3 py-3.5 text-white placeholder-gray-600 focus:outline-none focus:border-blue-500/50 focus:shadow-[0_0_18px_rgba(59,130,246,0.12)] font-mono text-2xl tracking-[0.4em] text-center uppercase transition-all"
+                    />
+                    <button
+                      onClick={handleJoinRoom}
+                      disabled={inputCode.length !== 6}
+                      className="w-24 shrink-0 py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 text-white rounded-xl font-semibold transition-all text-sm"
+                    >
+                      加入
+                    </button>
+                  </div>
+                  <details className="mt-3 group">
+                    <summary className="cursor-pointer list-none text-gray-600 hover:text-gray-400 text-[11px] flex items-center gap-1 select-none w-fit">
+                      <ChevronDown size={11} className="transition-transform group-open:rotate-180" />
+                      高级选项
+                    </summary>
+                    <div className="flex gap-1 mt-2">
+                      {(['auto', 'relay', 'stun'] as const).map((m) => {
+                        const labels = { auto: '自动', relay: 'TURN', stun: 'STUN' }
+                        const hints = { auto: '优先直连，失败回退中继', relay: '强制中继', stun: '仅直连' }
+                        const active = connMode === m || (m === 'auto' && !['relay', 'stun'].includes(connMode))
+                        return (
+                          <button key={m} type="button" onClick={() => setConnMode(m)} title={hints[m]}
+                            className={`flex-1 py-1 rounded text-[11px] font-medium transition-all border ${
+                              active
+                                ? 'bg-blue-600/25 border-blue-500/45 text-blue-300'
+                                : 'bg-gray-900/40 border-gray-700/40 text-gray-500 hover:text-gray-300'
+                            }`}>{labels[m]}</button>
+                        )
+                      })}
+                    </div>
+                  </details>
+                  {errorMsg && mode === 'select' && (
+                    <p className="text-red-400 text-sm mt-3">{errorMsg}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* 右：发起共享 */}
+              <div className="md:col-span-2 p-6 sm:p-7 flex flex-col relative">
+                <div className="absolute inset-0 bg-gradient-to-bl from-purple-600/[0.06] to-transparent pointer-events-none" />
+                <div className="relative flex flex-col h-full">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Play size={16} className="text-purple-400" />
+                    <h2 className="text-base font-bold text-white">发起共享</h2>
+                  </div>
+                  <p className="text-gray-500 text-xs mb-4">选择方式后开始</p>
+
+                  <div className="grid grid-cols-2 gap-1.5 mb-3">
+                    {([
+                      { key: 'peerjs' as const, label: 'WebRTC', icon: Wifi, color: 'emerald' },
+                      { key: 'agora' as const, label: '声网', icon: Globe, color: 'blue' },
+                      { key: 'volc' as const, label: '火山', icon: Zap, color: 'orange' },
+                      { key: 'ziye' as const, label: '紫夜', icon: Server, color: 'purple' },
+                    ]).map(({ key, label, icon: Icon, color }) => {
+                      const isActive = hostConnMode === key
+                      const colorMap: Record<string, { active: string; icon: string }> = {
+                        emerald: { active: 'border-emerald-500/55 bg-emerald-500/10', icon: 'text-emerald-400' },
+                        blue: { active: 'border-blue-500/55 bg-blue-500/10', icon: 'text-blue-400' },
+                        orange: { active: 'border-orange-500/55 bg-orange-500/10', icon: 'text-orange-400' },
+                        purple: { active: 'border-purple-500/55 bg-purple-500/10', icon: 'text-purple-400' },
+                      }
+                      const c = colorMap[color]
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => handleModeChange(key)}
+                          title={modeDescriptions[key]}
+                          className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg border text-left transition-all ${
+                            isActive ? c.active : 'border-gray-700/45 bg-gray-900/25 hover:border-gray-600'
+                          }`}
+                        >
+                          <Icon size={14} className={isActive ? c.icon : 'text-gray-500'} />
+                          <span className={`text-xs font-medium ${isActive ? 'text-white' : 'text-gray-400'}`}>{label}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {hostConnMode === 'ziye' && (
+                    <div className="mb-3 space-y-1.5">
+                      <div className="flex items-center gap-0.5 bg-gray-900/50 border border-gray-700/45 rounded-lg p-0.5">
+                        {ZIYE_QUALITY_OPTIONS.map(o => (
+                          <button
+                            key={o.id}
+                            type="button"
+                            onClick={() => { setZiyeQuality(o.id); ziyeQualityRef.current = o.id }}
+                            className={`flex-1 px-1 py-1 rounded text-[11px] font-medium transition-colors ${
+                              ziyeQuality === o.id ? 'bg-purple-600/40 text-purple-200' : 'text-gray-500 hover:text-gray-300'
+                            }`}
+                          >
+                            {o.label}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-0.5 bg-gray-900/50 border border-gray-700/45 rounded-lg p-0.5">
+                        {ZIYE_FPS_OPTIONS.map(o => (
+                          <button
+                            key={o.id}
+                            type="button"
+                            onClick={() => { setZiyeFpsChoice(o.id); ziyeFpsChoiceRef.current = o.id }}
+                            className={`flex-1 px-1 py-1 rounded text-[11px] font-medium transition-colors ${
+                              ziyeFpsChoice === o.id ? 'bg-purple-600/40 text-purple-200' : 'text-gray-500 hover:text-gray-300'
+                            }`}
+                          >
+                            {o.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-auto pt-2">
+                    {canHostMode(hostConnMode) ? (
+                      <button onClick={handleStartHost}
+                        className="w-full py-2.5 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white rounded-lg font-medium transition-all text-sm hover:shadow-[0_0_18px_rgba(147,51,234,0.28)]">
+                        开始共享
+                      </button>
+                    ) : rtcPerm.isAssistant && (hostConnMode === 'agora' || hostConnMode === 'volc') ? (
+                      <button disabled
+                        className="w-full py-2.5 rounded-lg font-medium text-sm flex items-center justify-center gap-2 bg-gray-800/60 border border-gray-700/50 text-gray-500 cursor-not-allowed">
+                        <Lock size={14} />
+                        {!rtcPerm.screenShareEnabled ? '共享权限已关闭' : '共享次数已用完'}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => !isPending(hostConnMode as 'agora' | 'volc') && handleRequestAccess(hostConnMode as 'agora' | 'volc')}
+                        disabled={isPending(hostConnMode as 'agora' | 'volc')}
+                        className={`w-full py-2.5 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-colors ${
+                          isPending(hostConnMode as 'agora' | 'volc')
+                            ? 'bg-yellow-600/15 border border-yellow-500/30 text-yellow-400 cursor-wait'
+                            : 'bg-gray-700/60 hover:bg-gray-700 border border-gray-600/50 text-gray-300'
+                        }`}>
+                        {isPending(hostConnMode as 'agora' | 'volc')
+                          ? <><Clock size={14} />审批中...</>
+                          : <><Lock size={14} />申请{hostConnMode === 'agora' ? '声网' : '火山'}分享</>
+                        }
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Admin: pending RTC requests */}
           {userType === 'admin' && pendingRequests.length > 0 && (
-            <div className="mb-6 bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 anim-reveal-2">
+            <div className="mt-5 bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 anim-reveal-2">
               <h3 className="text-amber-400 text-sm font-semibold mb-3 flex items-center gap-2">
                 <Clock size={16} />
                 待审批的连接方式申请 ({pendingRequests.length})
@@ -1661,7 +2488,7 @@ export default function ScreenShare() {
 
           {/* Student: assistant status */}
           {userType === 'student' && rtcPerm.isAssistant && (
-            <div className={`mb-6 rounded-xl p-4 anim-reveal-2 border ${
+            <div className={`mt-5 rounded-xl p-4 anim-reveal-2 border ${
               rtcPerm.canUseRtc
                 ? 'bg-emerald-500/5 border-emerald-500/20'
                 : 'bg-gray-800/40 border-gray-700/40'
@@ -1686,108 +2513,6 @@ export default function ScreenShare() {
               )}
             </div>
           )}
-
-          {/* Host & Viewer cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {/* Host card */}
-            <div className="group relative bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-7 hover:border-purple-500/40 transition-all duration-300 hover:shadow-[0_0_30px_rgba(147,51,234,0.1)] anim-slide-l">
-              <div className="absolute inset-0 bg-gradient-to-br from-purple-600/5 to-transparent rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
-              <div className="relative flex items-center gap-3 mb-4">
-                <div className="w-11 h-11 rounded-xl bg-purple-600/20 flex items-center justify-center group-hover:bg-purple-600/30 group-hover:shadow-[0_0_15px_rgba(147,51,234,0.2)] transition-all duration-300">
-                  <Play size={22} className="text-purple-400" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-bold text-white">分享屏幕</h2>
-                  <p className="text-gray-500 text-xs">生成房间代码给观看者</p>
-                </div>
-              </div>
-              <div className="relative">
-                {canHostMode(hostConnMode) ? (
-                  <button onClick={handleStartHost}
-                    className="w-full py-2.5 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white rounded-lg font-medium transition-all text-sm hover:shadow-[0_0_20px_rgba(147,51,234,0.3)]">
-                    开始共享
-                  </button>
-                ) : rtcPerm.isAssistant && (hostConnMode === 'agora' || hostConnMode === 'volc') ? (
-                  <button disabled
-                    className="w-full py-2.5 rounded-lg font-medium text-sm flex items-center justify-center gap-2 bg-gray-800/60 border border-gray-700/50 text-gray-500 cursor-not-allowed">
-                    <Lock size={14} />
-                    {!rtcPerm.screenShareEnabled ? '助教共享权限已关闭' : '助教共享次数已用完'}
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => !isPending(hostConnMode as 'agora' | 'volc') && handleRequestAccess(hostConnMode as 'agora' | 'volc')}
-                    disabled={isPending(hostConnMode as 'agora' | 'volc')}
-                    className={`w-full py-2.5 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-colors ${
-                      isPending(hostConnMode as 'agora' | 'volc')
-                        ? 'bg-yellow-600/15 border border-yellow-500/30 text-yellow-400 cursor-wait'
-                        : 'bg-gray-700/60 hover:bg-gray-700 border border-gray-600/50 text-gray-300'
-                    }`}>
-                    {isPending(hostConnMode as 'agora' | 'volc')
-                      ? <><Clock size={14} />等待管理员审批中...</>
-                      : <><Lock size={14} />申请使用{hostConnMode === 'agora' ? '声网' : '火山引擎'}分享</>
-                    }
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Viewer card */}
-            <div className="group relative bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-7 hover:border-blue-500/40 transition-all duration-300 hover:shadow-[0_0_30px_rgba(59,130,246,0.1)] anim-slide-r">
-              <div className="absolute inset-0 bg-gradient-to-br from-blue-600/5 to-transparent rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
-              <div className="relative flex items-center gap-3 mb-4">
-                <div className="w-11 h-11 rounded-xl bg-blue-600/20 flex items-center justify-center group-hover:bg-blue-600/30 group-hover:shadow-[0_0_15px_rgba(59,130,246,0.2)] transition-all duration-300">
-                  <Link2 size={22} className="text-blue-400" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-bold text-white">观看屏幕</h2>
-                  <p className="text-gray-500 text-xs">输入6位房间代码加入</p>
-                </div>
-              </div>
-              <div className="relative">
-                <div className="flex gap-2 mb-3">
-                  <input
-                    type="text"
-                    value={inputCode}
-                    onChange={(e) => setInputCode(e.target.value.toUpperCase().slice(0, 6))}
-                    onKeyDown={(e) => e.key === 'Enter' && handleJoinRoom()}
-                    placeholder="房间代码"
-                    maxLength={6}
-                    className="flex-[3] min-w-0 bg-gray-900/60 border border-gray-600/50 rounded-lg px-3 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50 focus:shadow-[0_0_10px_rgba(147,51,234,0.15)] font-mono text-base tracking-widest text-center uppercase transition-all"
-                  />
-                  <button
-                    onClick={handleJoinRoom}
-                    disabled={inputCode.length !== 6}
-                    className="flex-[1] bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 text-white rounded-lg font-medium transition-all text-sm hover:shadow-[0_0_20px_rgba(147,51,234,0.3)]"
-                  >
-                    加入
-                  </button>
-                </div>
-                {/* WebRTC sub-options */}
-                {hostConnMode === 'peerjs' && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-600 text-xs shrink-0">网络策略</span>
-                    <div className="flex gap-1.5 flex-1">
-                      {(['auto', 'relay', 'stun'] as const).map((m) => {
-                        const labels = { auto: '自动', relay: 'TURN中继', stun: '仅STUN' }
-                        const hints = { auto: '优先直连，失败自动回退中继', relay: '强制服务器中继，穿透性最强', stun: '纯P2P直连，不走中继' }
-                        return (
-                          <button key={m} onClick={() => setConnMode(m)} title={hints[m]}
-                            className={`flex-1 py-1 rounded-md text-xs font-medium transition-all duration-200 border ${
-                              connMode === m
-                                ? 'bg-purple-600/30 border-purple-500/60 text-purple-300 shadow-[0_0_8px_rgba(147,51,234,0.15)]'
-                                : 'bg-gray-900/40 border-gray-700/40 text-gray-500 hover:text-gray-300 hover:border-gray-600'
-                            }`}>{labels[m]}</button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-                {errorMsg && mode === 'select' && (
-                  <p className="text-red-400 text-sm mt-3">{errorMsg}</p>
-                )}
-              </div>
-            </div>
-          </div>
 
           {/* Admin: assistant management */}
           {userType === 'admin' && (
@@ -1991,9 +2716,8 @@ export default function ScreenShare() {
             )
           })()}
 
-          {/* Mode description + Author */}
+          {/* Author */}
           <div className="mt-6 text-center anim-fade-last">
-            <p className="text-gray-500 text-sm mb-4">{modeDescriptions[hostConnMode]}</p>
             <div className="flex items-center justify-center gap-2 text-gray-600 text-xs">
               <div className="h-px w-8 bg-gradient-to-r from-transparent to-gray-700" />
               <span>技术开发：鲶大禹</span>
@@ -2006,34 +2730,105 @@ export default function ScreenShare() {
   }
 
   // Streaming / Watching screen
+  const ziyeStatsChip = activeStreamMode === 'ziye' && (ziyeFps !== null || latency !== null) ? (
+    <div className="flex items-center gap-1.5 bg-gray-800/60 border border-gray-700/50 rounded-lg px-2.5 py-1 font-mono text-xs tabular-nums">
+      {ziyeFps !== null && <span className="text-cyan-300">{ziyeFps}fps</span>}
+      {ziyeFps !== null && latency !== null && <span className="text-gray-600">·</span>}
+      {latency !== null && (
+        <span className={latency < 50 ? 'text-green-400' : latency < 150 ? 'text-yellow-400' : 'text-red-400'}>
+          {latency}ms
+        </span>
+      )}
+    </div>
+  ) : null
+
+  const ziyeMediaControls = activeStreamMode === 'ziye' ? (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      <span
+        className="text-gray-500 text-[11px] px-1 hidden sm:inline"
+        title="主播当前推流清晰度与帧率上限"
+      >
+        上限 {getZiyeQualityPreset(ziyeHostQuality).label}/{ziyeHostFps}
+      </span>
+      <div className="flex items-center bg-gray-800/60 border border-gray-700/50 rounded-lg p-0.5" title="清晰度">
+        {ZIYE_QUALITY_OPTIONS.map(o => {
+          const disabled = mode === 'viewer' && o.id > ziyeHostQuality
+          return (
+            <button
+              key={o.id}
+              type="button"
+              disabled={disabled}
+              title={disabled ? `主播最高 ${getZiyeQualityPreset(ziyeHostQuality).label}` : o.label}
+              onClick={() => handleZiyeQualityChange(o.id)}
+              className={`min-w-[2.5rem] px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+                disabled
+                  ? 'text-gray-600 cursor-not-allowed'
+                  : ziyeQuality === o.id
+                  ? 'bg-purple-600/45 text-purple-100'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-700/40'
+              }`}
+            >
+              {o.id}
+            </button>
+          )
+        })}
+      </div>
+      <div className="flex items-center bg-gray-800/60 border border-gray-700/50 rounded-lg p-0.5" title="帧率">
+        {ZIYE_FPS_OPTIONS.map(o => {
+          const disabled = mode === 'viewer' && o.id > ziyeHostFps
+          return (
+            <button
+              key={o.id}
+              type="button"
+              disabled={disabled}
+              title={disabled ? `主播最高 ${ziyeHostFps}fps` : o.label}
+              onClick={() => handleZiyeFpsChange(o.id)}
+              className={`min-w-[2.75rem] px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+                disabled
+                  ? 'text-gray-600 cursor-not-allowed'
+                  : ziyeFpsChoice === o.id
+                  ? 'bg-purple-600/45 text-purple-100'
+                  : 'text-gray-400 hover:text-white hover:bg-gray-700/40'
+              }`}
+            >
+              {o.id}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  ) : null
+
   return (
     <div className={`flex flex-col ${isFullscreen ? 'h-screen bg-black' : 'min-h-[calc(100vh-8rem)] px-6 py-4 max-w-[1600px] mx-auto w-full'}`} ref={containerRef}>
       {/* Top bar */}
-      <div className={`flex items-center justify-between flex-wrap gap-3 ${isFullscreen ? 'absolute top-0 left-0 right-0 z-10 p-3 bg-gradient-to-b from-black/80 to-transparent opacity-0 hover:opacity-100 transition-opacity duration-300' : 'mb-4'}`}>
-        <div className="flex items-center gap-4 flex-wrap">
+      <div className={`flex items-center justify-between gap-3 ${isFullscreen ? 'absolute top-0 left-0 right-0 z-10 p-3 bg-gradient-to-b from-black/80 to-transparent opacity-0 hover:opacity-100 transition-opacity duration-300' : 'mb-3'}`}>
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap min-w-0 flex-1">
           {mode === 'host' && status === 'streaming' && (
             <>
-              <div className="flex items-center gap-2 bg-red-600/20 border border-red-500/30 rounded-lg px-3 py-1.5">
-                <div className="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"></div>
-                <span className="text-red-400 text-sm font-medium">正在共享</span>
+              <div className="flex items-center gap-2 bg-red-600/20 border border-red-500/30 rounded-lg px-2.5 py-1.5">
+                <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                <span className="text-red-400 text-sm font-medium">共享中</span>
+                {activeStreamMode === 'ziye' && (
+                  <span className="text-red-400/50 text-xs hidden sm:inline">· {ZIYE_CONNECTION_LABEL}</span>
+                )}
               </div>
-              <div className="flex items-center gap-2 bg-gray-800/60 border border-gray-700/50 rounded-lg px-4 py-1.5">
-                <span className="text-gray-400 text-sm">房间代码:</span>
-                <span className="text-white font-mono text-lg tracking-widest font-bold">{roomCode}</span>
-                <button onClick={handleCopy} className="ml-1 text-gray-400 hover:text-white transition-colors">
-                  {copied ? <Check size={16} className="text-green-400" /> : <Copy size={16} />}
+              <div className="flex items-center gap-1.5 bg-gray-800/60 border border-gray-700/50 rounded-lg px-2.5 py-1.5">
+                <span className="text-white font-mono text-base tracking-widest font-bold">{roomCode}</span>
+                <button onClick={handleCopy} className="text-gray-400 hover:text-white transition-colors" title="复制房间号">
+                  {copied ? <Check size={15} className="text-green-400" /> : <Copy size={15} />}
                 </button>
               </div>
-              <div className="relative group flex items-center gap-1.5 text-gray-400 text-sm cursor-default">
-                <Users size={16} />
-                <span>{viewerCount} 人观看</span>
+              <div className="relative group flex items-center gap-1 text-gray-400 text-sm cursor-default">
+                <Users size={15} />
+                <span>{viewerCount}</span>
                 {viewerNames.length > 0 && (
                   <div className="absolute top-full left-0 mt-2 hidden group-hover:block z-20">
                     <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-xl py-2 px-1 min-w-[140px]">
                       <p className="text-gray-500 text-xs px-3 pb-1.5 border-b border-gray-700 mb-1">观看成员</p>
                       {viewerNames.map((name, i) => (
                         <div key={i} className="flex items-center gap-2 px-3 py-1.5">
-                          <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                          <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
                           <span className="text-gray-300 text-sm whitespace-nowrap">{name}</span>
                         </div>
                       ))}
@@ -2041,27 +2836,31 @@ export default function ScreenShare() {
                   </div>
                 )}
               </div>
+              {ziyeStatsChip}
+              {ziyeMediaControls}
             </>
           )}
           {mode === 'viewer' && status === 'watching' && (
             <>
-              <div className="flex items-center gap-2 bg-green-600/20 border border-green-500/30 rounded-lg px-3 py-1.5">
-                <div className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse"></div>
-                <span className="text-green-400 text-sm font-medium">正在观看</span>
+              <div className="flex items-center gap-2 bg-green-600/20 border border-green-500/30 rounded-lg px-2.5 py-1.5">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                <span className="text-green-400 text-sm font-medium">观看中</span>
+                {activeStreamMode === 'ziye' && (
+                  <span className="text-green-400/50 text-xs hidden sm:inline">· {ZIYE_CONNECTION_LABEL}</span>
+                )}
               </div>
               {hostName && (
-                <div className="flex items-center gap-2 bg-gray-800/60 border border-gray-700/50 rounded-lg px-3 py-1.5">
-                  <span className="text-gray-400 text-sm">分享者:</span>
-                  <span className="text-white text-sm font-medium">{hostName}</span>
-                </div>
+                <span className="text-gray-300 text-sm truncate max-w-[9rem]" title={hostName}>
+                  {hostName}
+                </span>
               )}
-              {connectionInfo && (
+              {activeStreamMode !== 'ziye' && connectionInfo && (
                 <div className="flex items-center gap-2 bg-gray-800/60 border border-gray-700/50 rounded-lg px-3 py-1.5">
                   <span className="text-gray-500 text-xs">连接:</span>
                   <span className="text-gray-300 text-xs font-mono">{connectionInfo}</span>
                 </div>
               )}
-              {latency !== null && (
+              {activeStreamMode !== 'ziye' && latency !== null && (
                 <div className="flex items-center gap-1.5 bg-gray-800/60 border border-gray-700/50 rounded-lg px-3 py-1.5">
                   <span className="text-gray-500 text-xs">延迟:</span>
                   <span className={`text-xs font-mono font-medium ${
@@ -2069,16 +2868,18 @@ export default function ScreenShare() {
                   }`}>{latency} ms</span>
                 </div>
               )}
-              <div className="relative group flex items-center gap-1.5 text-gray-400 text-sm cursor-default select-none">
+              {ziyeStatsChip}
+              {ziyeMediaControls}
+              <div className="relative group flex items-center gap-1 text-gray-400 text-sm cursor-default select-none">
                 <Users size={15} />
-                <span>{viewerCount} 人同看</span>
+                <span>{viewerCount}</span>
                 {viewerNames.length > 0 && (
                   <div className="absolute top-full left-0 mt-2 hidden group-hover:block z-20">
                     <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-xl py-2 px-1 min-w-[140px]">
                       <p className="text-gray-500 text-xs px-3 pb-1.5 border-b border-gray-700 mb-1">观看成员</p>
                       {viewerNames.map((name, i) => (
                         <div key={i} className="flex items-center gap-2 px-3 py-1.5">
-                          <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                          <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
                           <span className="text-gray-300 text-sm whitespace-nowrap">{name}</span>
                         </div>
                       ))}
@@ -2090,12 +2891,12 @@ export default function ScreenShare() {
           )}
           {status === 'connecting' && (
             <div className="flex items-center gap-3">
-              <div className="w-5 h-5 border-2 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+              <div className="w-5 h-5 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
               <span className="text-gray-400">{connectStep || '正在连接...'}</span>
             </div>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {(status === 'streaming' || status === 'watching') && (
             <button
               onClick={toggleFullscreen}
@@ -2107,10 +2908,10 @@ export default function ScreenShare() {
           )}
           <button
             onClick={handleStop}
-            className="flex items-center gap-2 px-4 py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-400 rounded-lg transition-colors"
+            className="flex items-center gap-2 px-3 py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-400 rounded-lg transition-colors"
           >
             {mode === 'host' ? <StopCircle size={18} /> : <X size={18} />}
-            <span className="text-sm font-medium">{mode === 'host' ? '停止共享' : '断开连接'}</span>
+            <span className="text-sm font-medium hidden sm:inline">{mode === 'host' ? '停止共享' : '断开'}</span>
           </button>
         </div>
       </div>
@@ -2150,6 +2951,20 @@ export default function ScreenShare() {
               ref={volcContainerRef}
               className={`absolute inset-0 ${activeStreamMode !== 'volc' ? 'hidden' : ''}`}
             />
+            {activeStreamMode === 'ziye' && ziyeToast && (
+              <div
+                className={`absolute bottom-4 left-4 z-30 pointer-events-none flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium shadow-lg backdrop-blur-sm transition-opacity ${
+                  ziyeToast.kind === 'loading'
+                    ? 'bg-black/70 text-white border border-white/10'
+                    : 'bg-emerald-600/90 text-white border border-emerald-400/30'
+                }`}
+              >
+                {ziyeToast.kind === 'loading' && (
+                  <span className="w-3.5 h-3.5 border-2 border-white/80 border-t-transparent rounded-full animate-spin shrink-0" />
+                )}
+                {ziyeToast.text}
+              </div>
+            )}
           </>
         )}
       </div>

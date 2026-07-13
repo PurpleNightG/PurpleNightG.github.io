@@ -287,7 +287,7 @@ router.put('/assistants/:memberId', async (req, res) => {
         id INT AUTO_INCREMENT PRIMARY KEY,
         room_id VARCHAR(16) NOT NULL,
         host_name VARCHAR(128) NOT NULL,
-        mode ENUM('peerjs', 'agora', 'volc') NOT NULL DEFAULT 'peerjs',
+        mode ENUM('peerjs', 'agora', 'volc', 'ziye') NOT NULL DEFAULT 'peerjs',
         peak_viewers INT NOT NULL DEFAULT 0,
         viewers TEXT,
         started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -296,6 +296,7 @@ router.put('/assistants/:memberId', async (req, res) => {
     `)
     // Add viewers column if table already existed without it
     try { await pool.execute(`ALTER TABLE share_logs ADD COLUMN viewers TEXT AFTER peak_viewers`) } catch {}
+    try { await pool.execute(`ALTER TABLE share_logs MODIFY COLUMN mode ENUM('peerjs', 'agora', 'volc', 'ziye') NOT NULL DEFAULT 'peerjs'`) } catch {}
     // Note: we no longer auto-close stale records on startup because RTC connections
     // (Volcengine/Agora) may still be alive. Admin can manually close via active-rooms panel.
   } catch (e) {
@@ -365,8 +366,32 @@ setInterval(() => {
 }, 30000) // Run every 30 seconds
 
 function getRoom(roomId) {
-  if (!rooms.has(roomId)) rooms.set(roomId, { hostName: '', hostKey: '', viewers: new Map(), viewerKeys: new Map(), viewerHeartbeats: new Map(), mode: 'peerjs', peakViewers: 0, allViewerNames: new Set() })
-  return rooms.get(roomId)
+  if (!rooms.has(roomId)) {
+    rooms.set(roomId, {
+      hostName: '', hostKey: '', viewers: new Map(), viewerKeys: new Map(),
+      viewerHeartbeats: new Map(), mode: 'peerjs', peakViewers: 0, allViewerNames: new Set(),
+      qualityPrefs: new Map(), fpsPrefs: new Map(),
+      hostQuality: 1080, hostFps: 60,
+    })
+  }
+  const room = rooms.get(roomId)
+  if (!room.qualityPrefs) room.qualityPrefs = new Map()
+  if (!room.fpsPrefs) room.fpsPrefs = new Map()
+  if (!room.hostQuality) room.hostQuality = 1080
+  if (!room.hostFps) room.hostFps = 60
+  return room
+}
+
+function getTargetQuality(room) {
+  const cap = room?.hostQuality || 1080
+  if (!room?.qualityPrefs || room.qualityPrefs.size === 0) return cap
+  return Math.min(cap, ...room.qualityPrefs.values())
+}
+
+function getTargetFps(room) {
+  const cap = room?.hostFps || 60
+  if (!room?.fpsPrefs || room.fpsPrefs.size === 0) return cap
+  return Math.min(cap, ...room.fpsPrefs.values())
 }
 
 function getActiveViewers(room) {
@@ -550,7 +575,14 @@ router.post('/:roomId/viewer', async (req, res) => {
     }
   }
 
-  res.json({ success: true, hostName: room.hostName })
+  res.json({
+    success: true,
+    hostName: room.hostName,
+    targetQuality: getTargetQuality(room),
+    targetFps: getTargetFps(room),
+    hostQuality: room.hostQuality || 1080,
+    hostFps: room.hostFps || 60,
+  })
 })
 
 // Viewer heartbeat - keeps viewer in active list
@@ -561,14 +593,96 @@ router.post('/:roomId/heartbeat', (req, res) => {
   res.json({ success: true })
 })
 
-// Get room info (host name + viewer list)
-router.get('/:roomId', (req, res) => {
+// Get room info (host name + viewer list + mode)
+router.get('/:roomId', async (req, res) => {
   if (killedRooms.has(req.params.roomId)) {
-    return res.json({ hostName: '', viewers: [], killed: true, killedBy: killedRooms.get(req.params.roomId) })
+    return res.json({ exists: false, hostName: '', viewers: [], killed: true, killedBy: killedRooms.get(req.params.roomId) })
   }
   const room = rooms.get(req.params.roomId)
-  if (!room) return res.json({ hostName: '', viewers: [] })
-  res.json({ hostName: room.hostName, viewers: getActiveViewers(room) })
+  if (room?.hostName) {
+    return res.json({
+      exists: true,
+      mode: room.mode || 'peerjs',
+      hostName: room.hostName,
+      viewers: getActiveViewers(room),
+      targetQuality: getTargetQuality(room),
+      targetFps: getTargetFps(room),
+      hostQuality: room.hostQuality || 1080,
+      hostFps: room.hostFps || 60,
+    })
+  }
+  // Serverless 多实例：内存没有时用进行中的 share_logs 兜底
+  try {
+    const [rows] = await pool.execute(
+      `SELECT host_name, mode FROM share_logs WHERE room_id = ? AND ended_at IS NULL LIMIT 1`,
+      [req.params.roomId]
+    )
+    if (rows.length > 0) {
+      return res.json({
+        exists: true,
+        mode: rows[0].mode || 'peerjs',
+        hostName: rows[0].host_name || '',
+        viewers: [],
+        targetQuality: 1080,
+        targetFps: 60,
+        hostQuality: 1080,
+        hostFps: 60,
+      })
+    }
+  } catch {}
+  res.json({ exists: false, hostName: '', viewers: [] })
+})
+
+// 紫夜自建：清晰度/帧率偏好。主播设置 = 上限；全员按最低偏好编码。
+router.post('/:roomId/quality', (req, res) => {
+  const room = rooms.get(req.params.roomId)
+  if (!room) return res.status(404).json({ success: false, error: '房间不存在' })
+  if (!room.qualityPrefs) room.qualityPrefs = new Map()
+  if (!room.fpsPrefs) room.fpsPrefs = new Map()
+  if (!room.hostQuality) room.hostQuality = 1080
+  if (!room.hostFps) room.hostFps = 60
+
+  const key = String(req.body?.userId || req.body?.role || 'anon')
+  const isHost = req.body?.role === 'host' || key === 'host'
+
+  if (req.body?.quality !== undefined) {
+    const allowedQ = [240, 480, 720, 1080]
+    let q = Number(req.body.quality)
+    if (!allowedQ.includes(q)) q = 1080
+    if (isHost) {
+      room.hostQuality = q
+      // 观众偏好若超过新上限，截断
+      for (const [k, v] of room.qualityPrefs.entries()) {
+        if (k !== 'host' && v > q) room.qualityPrefs.set(k, q)
+      }
+    } else {
+      q = Math.min(q, room.hostQuality)
+    }
+    room.qualityPrefs.set(key, q)
+  }
+
+  if (req.body?.fps !== undefined) {
+    const allowedF = [30, 60]
+    let f = Number(req.body.fps)
+    if (!allowedF.includes(f)) f = 60
+    if (isHost) {
+      room.hostFps = f
+      for (const [k, v] of room.fpsPrefs.entries()) {
+        if (k !== 'host' && v > f) room.fpsPrefs.set(k, f)
+      }
+    } else {
+      f = Math.min(f, room.hostFps)
+    }
+    room.fpsPrefs.set(key, f)
+  }
+
+  res.json({
+    success: true,
+    targetQuality: getTargetQuality(room),
+    targetFps: getTargetFps(room),
+    hostQuality: room.hostQuality,
+    hostFps: room.hostFps,
+  })
 })
 
 // Viewer leaves
@@ -580,6 +694,8 @@ router.post('/:roomId/leave', (req, res) => {
     room.viewerHeartbeats.delete(userId)
     const storedKey = room.viewerKeys.get(userId)
     if (storedKey) { activeUsers.delete(storedKey); room.viewerKeys.delete(userId) }
+    if (room.qualityPrefs) room.qualityPrefs.delete(userId)
+    if (room.fpsPrefs) room.fpsPrefs.delete(userId)
   }
   // Fallback: try key from params
   if (displayName) {

@@ -1,0 +1,25 @@
+services:
+  zlmediakit:
+    image: zlmediakit/zlmediakit:master
+    container_name: ziye-zlm
+    restart: unless-stopped
+    # 宿主机 8080 -> 容器内 80（官方默认 HTTP 端口）
+    ports:
+      - "8080:80"
+      - "8443:443"
+      - "8000:8000/udp"
+      - "8000:8000/tcp"
+    volumes:
+      - zlm_data:/opt/media/www
+
+  coturn:
+    image: coturn/coturn:4.6.2-r8
+    container_name: ziye-coturn
+    restart: unless-stopped
+    network_mode: host
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+    volumes:
+      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+
+volumes:
+  zlm_data:
