@@ -182,7 +182,7 @@ export default function ScreenShareAssistantPanel({ assistants, candidates, onRe
                           }))}
                           className="rounded border-gray-600"
                         />
-                        允许使用声网/火山
+                        允许使用声网/火山/紫夜
                       </label>
 
                       <label className="flex items-center gap-2 text-gray-300 cursor-pointer">
@@ -235,7 +235,7 @@ export default function ScreenShareAssistantPanel({ assistants, candidates, onRe
           )}
 
           <p className="text-gray-600 text-xs leading-relaxed">
-            助教可使用声网/火山引擎分享屏幕，无需管理员逐次审批。PeerJS 模式所有人可用。次数仅在<strong className="text-gray-500">发起共享</strong>时扣除。
+            助教可使用声网/火山引擎/紫夜自建分享屏幕，无需管理员逐次审批。PeerJS 模式所有人可用。次数仅在<strong className="text-gray-500">发起共享</strong>时扣除。
           </p>
           </div>
         </div>

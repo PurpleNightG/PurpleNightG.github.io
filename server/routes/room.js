@@ -69,23 +69,28 @@ function formatAssistantRow(row) {
       CREATE TABLE IF NOT EXISTS rtc_permissions (
         id INT AUTO_INCREMENT PRIMARY KEY,
         username VARCHAR(128) NOT NULL,
-        mode ENUM('agora', 'volc') NOT NULL,
+        mode ENUM('agora', 'volc', 'ziye') NOT NULL,
         status ENUM('pending', 'approved') NOT NULL DEFAULT 'pending',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE KEY uk_user_mode (username, mode)
       )
     `)
+    try {
+      await pool.execute(`ALTER TABLE rtc_permissions MODIFY COLUMN mode ENUM('agora', 'volc', 'ziye') NOT NULL`)
+    } catch {}
   } catch (e) {
     console.error('Failed to create rtc_permissions table:', e.message)
   }
 })()
 
-// Student requests access to agora/volc
+const RTC_MODES = ['agora', 'volc', 'ziye']
+
+// Student requests access to agora/volc/ziye
 router.post('/rtc-request', async (req, res) => {
   try {
     const { username, mode } = req.body
-    if (!username || !['agora', 'volc'].includes(mode)) {
-      return res.status(400).json({ success: false, error: 'username and mode (agora/volc) required' })
+    if (!username || !RTC_MODES.includes(mode)) {
+      return res.status(400).json({ success: false, error: 'username and mode (agora/volc/ziye) required' })
     }
     await pool.execute(
       `INSERT INTO rtc_permissions (username, mode, status) VALUES (?, ?, 'pending')
@@ -155,7 +160,7 @@ router.get('/rtc-permission/:username', async (req, res) => {
       `SELECT mode, status FROM rtc_permissions WHERE username = ?`,
       [username]
     )
-    const result = { agora: false, volc: false, agoraPending: false, volcPending: false }
+    const result = { agora: false, volc: false, ziye: false, agoraPending: false, volcPending: false, ziyePending: false }
     for (const r of rows) {
       if (r.mode === 'agora') {
         if (r.status === 'approved') result.agora = true
@@ -165,11 +170,15 @@ router.get('/rtc-permission/:username', async (req, res) => {
         if (r.status === 'approved') result.volc = true
         if (r.status === 'pending') result.volcPending = true
       }
+      if (r.mode === 'ziye') {
+        if (r.status === 'approved') result.ziye = true
+        if (r.status === 'pending') result.ziyePending = true
+      }
     }
     res.json({ ...result, ...buildAssistantStatus(member) })
   } catch (e) {
     res.json({
-      agora: false, volc: false, agoraPending: false, volcPending: false,
+      agora: false, volc: false, ziye: false, agoraPending: false, volcPending: false, ziyePending: false,
       isAssistant: false, canUseRtc: false, quotaRemaining: null,
     })
   }
@@ -202,7 +211,7 @@ router.post('/rtc-consume', async (req, res) => {
       return res.json({ success: true, type: 'assistant' })
     }
 
-    if (!username || !['agora', 'volc'].includes(mode)) {
+    if (!username || !RTC_MODES.includes(mode)) {
       return res.status(400).json({ success: false, error: 'username and mode required' })
     }
     await pool.execute(

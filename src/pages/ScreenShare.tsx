@@ -283,15 +283,17 @@ export default function ScreenShare() {
   const [rtcPerm, setRtcPerm] = useState<{
     agora: boolean
     volc: boolean
+    ziye: boolean
     agoraPending: boolean
     volcPending: boolean
+    ziyePending: boolean
     isAssistant?: boolean
     canUseRtc?: boolean
     screenShareEnabled?: boolean
     quotaRemaining?: number | null
     screenShareUsed?: number
     screenShareQuota?: number | null
-  }>({ agora: false, volc: false, agoraPending: false, volcPending: false })
+  }>({ agora: false, volc: false, ziye: false, agoraPending: false, volcPending: false, ziyePending: false })
   const [assistants, setAssistants] = useState<AssistantRow[]>([])
   const [assistantCandidates, setAssistantCandidates] = useState<AssistantCandidate[]>([])
   const memberIdRef = useRef<number | null>(getStudentMemberId())
@@ -985,6 +987,7 @@ export default function ScreenShare() {
     setStatus('connecting')
     setErrorMsg('')
     setConnectStep('初始化紫夜自建服务器连接...')
+    await consumePermission('ziye', true)
     if (!ZIYE_SERVER) {
       setErrorMsg('紫夜自建服务器未配置，请联系管理员设置 VITE_ZIYE_SERVER_URL')
       setStatus('error')
@@ -1814,11 +1817,11 @@ export default function ScreenShare() {
   // Check if student can HOST (share) with a mode - viewing is always allowed
   const canHostMode = (m: 'peerjs' | 'agora' | 'volc' | 'ziye'): boolean => {
     if (m === 'peerjs') return true
-    if (m === 'ziye') return true // 自建服务器所有人都可以用，无权限限制
     if (userType === 'admin') return true
     if (rtcPerm.canUseRtc) return true
     if (m === 'agora') return rtcPerm.agora
     if (m === 'volc') return rtcPerm.volc
+    if (m === 'ziye') return rtcPerm.ziye
     return false
   }
 
@@ -1829,10 +1832,17 @@ export default function ScreenShare() {
     setAssistantCandidates(ad.candidates || [])
   }
 
-  const isPending = (m: 'agora' | 'volc'): boolean => {
+  const isPending = (m: 'agora' | 'volc' | 'ziye'): boolean => {
     if (m === 'agora') return rtcPerm.agoraPending
-    return rtcPerm.volcPending
+    if (m === 'volc') return rtcPerm.volcPending
+    return rtcPerm.ziyePending
   }
+
+  const rtcModeLabel = (m: string) =>
+    m === 'agora' ? '声网 Agora' : m === 'volc' ? '火山引擎' : m === 'ziye' ? '紫夜自建' : m
+
+  const rtcModeColor = (m: string) =>
+    m === 'agora' ? '#60a5fa' : m === 'volc' ? '#fb923c' : m === 'ziye' ? '#c084fc' : '#9ca3af'
 
   // Unified mode change handler: syncs hostConnMode and connMode
   const handleModeChange = (m: 'peerjs' | 'agora' | 'volc' | 'ziye') => {
@@ -1929,13 +1939,14 @@ export default function ScreenShare() {
   }
 
   // Student: request access to a mode
-  const handleRequestAccess = async (m: 'agora' | 'volc') => {
+  const handleRequestAccess = async (m: 'agora' | 'volc' | 'ziye') => {
     try {
       await fetch(`${API_URL}/room/rtc-request`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: myName.current, mode: m }),
       })
-      setRtcPerm(prev => ({ ...prev, [m === 'agora' ? 'agoraPending' : 'volcPending']: true }))
+      const pendingKey = m === 'agora' ? 'agoraPending' : m === 'volc' ? 'volcPending' : 'ziyePending'
+      setRtcPerm(prev => ({ ...prev, [pendingKey]: true }))
     } catch {}
   }
 
@@ -1966,7 +1977,7 @@ export default function ScreenShare() {
   }
 
   // Consume permission when student starts using a non-webrtc mode
-  const consumePermission = async (m: 'agora' | 'volc', asHost = false) => {
+  const consumePermission = async (m: 'agora' | 'volc' | 'ziye', asHost = false) => {
     if (userType === 'admin') return
     if (rtcPerm.isAssistant) {
       if (!asHost) return
@@ -2414,27 +2425,27 @@ export default function ScreenShare() {
                         className="w-full py-2.5 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white rounded-lg font-medium transition-all text-sm hover:shadow-[0_0_18px_rgba(147,51,234,0.28)]">
                         开始共享
                       </button>
-                    ) : rtcPerm.isAssistant && (hostConnMode === 'agora' || hostConnMode === 'volc') ? (
+                    ) : rtcPerm.isAssistant && (hostConnMode === 'agora' || hostConnMode === 'volc' || hostConnMode === 'ziye') ? (
                       <button disabled
                         className="w-full py-2.5 rounded-lg font-medium text-sm flex items-center justify-center gap-2 bg-gray-800/60 border border-gray-700/50 text-gray-500 cursor-not-allowed">
                         <Lock size={14} />
                         {!rtcPerm.screenShareEnabled ? '共享权限已关闭' : '共享次数已用完'}
                       </button>
-                    ) : (
+                    ) : hostConnMode !== 'peerjs' ? (
                       <button
-                        onClick={() => !isPending(hostConnMode as 'agora' | 'volc') && handleRequestAccess(hostConnMode as 'agora' | 'volc')}
-                        disabled={isPending(hostConnMode as 'agora' | 'volc')}
+                        onClick={() => !isPending(hostConnMode) && handleRequestAccess(hostConnMode)}
+                        disabled={isPending(hostConnMode)}
                         className={`w-full py-2.5 rounded-lg font-medium text-sm flex items-center justify-center gap-2 transition-colors ${
-                          isPending(hostConnMode as 'agora' | 'volc')
+                          isPending(hostConnMode)
                             ? 'bg-yellow-600/15 border border-yellow-500/30 text-yellow-400 cursor-wait'
                             : 'bg-gray-700/60 hover:bg-gray-700 border border-gray-600/50 text-gray-300'
                         }`}>
-                        {isPending(hostConnMode as 'agora' | 'volc')
+                        {isPending(hostConnMode)
                           ? <><Clock size={14} />审批中...</>
-                          : <><Lock size={14} />申请{hostConnMode === 'agora' ? '声网' : '火山'}分享</>
+                          : <><Lock size={14} />申请{rtcModeLabel(hostConnMode)}分享</>
                         }
                       </button>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -2454,8 +2465,8 @@ export default function ScreenShare() {
                     <div>
                       <span className="text-white text-sm font-medium">{req.username}</span>
                       <span className="text-gray-400 text-sm mx-2">申请使用</span>
-                      <span className="text-sm font-medium" style={{ color: req.mode === 'agora' ? '#60a5fa' : '#fb923c' }}>
-                        {req.mode === 'agora' ? '声网 Agora' : '火山引擎'}
+                      <span className="text-sm font-medium" style={{ color: rtcModeColor(req.mode) }}>
+                        {rtcModeLabel(req.mode)}
                       </span>
                     </div>
                     <div className="flex gap-2">
@@ -2501,7 +2512,7 @@ export default function ScreenShare() {
               </h3>
               {rtcPerm.canUseRtc ? (
                 <p className="text-gray-400 text-xs">
-                  可直接使用声网 / 火山引擎分享，无需审批。
+                  可直接使用声网 / 火山引擎 / 紫夜自建分享，无需逐次审批。
                   {rtcPerm.quotaRemaining == null
                     ? ' 次数不限。'
                     : ` 剩余 ${rtcPerm.quotaRemaining} 次（已用 ${rtcPerm.screenShareUsed ?? 0} 次）。`}
@@ -2509,7 +2520,7 @@ export default function ScreenShare() {
               ) : !rtcPerm.screenShareEnabled ? (
                 <p className="text-gray-500 text-xs">管理员已关闭您的屏幕共享权限，请联系管理员。</p>
               ) : (
-                <p className="text-gray-500 text-xs">声网 / 火山共享次数已用完，请联系管理员增加配额或清零次数。</p>
+                <p className="text-gray-500 text-xs">声网 / 火山 / 紫夜共享次数已用完，请联系管理员增加配额或清零次数。</p>
               )}
             </div>
           )}
