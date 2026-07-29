@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { surveyAPI } from '../utils/api'
 import { toast } from '../utils/toast'
-import { formatDateTime } from '../utils/dateFormat'
 import { isFieldVisible, NOT_ATTENDED } from '../utils/surveyHelpers'
 import {
   Loader2,
