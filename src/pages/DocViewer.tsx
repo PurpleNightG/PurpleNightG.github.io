@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import { ArrowLeft, AlertCircle } from 'lucide-react'
+import { docRemarkPlugins, docRehypePlugins } from '../utils/markdown'
 
 export default function DocViewer() {
   const { docName } = useParams<{ docName: string }>()
@@ -84,7 +84,7 @@ export default function DocViewer() {
 
       <article className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-8 border border-gray-700">
         <div className="markdown-content">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          <ReactMarkdown remarkPlugins={docRemarkPlugins} rehypePlugins={docRehypePlugins}>
             {content}
           </ReactMarkdown>
         </div>

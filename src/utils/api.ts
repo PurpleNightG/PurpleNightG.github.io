@@ -683,3 +683,256 @@ export const assessmentGuidelinesAPI = {
     return result
   },
 }
+
+// 反作弊管理 API
+export const anticheatAPI = {
+  getAvailableTickets: () => request('/anticheat/tickets/available'),
+  importTicket: async (data: {
+    admission_ticket: string
+    member_id: number
+    member_name: string
+    valid_days?: number
+  }) => {
+    const result = await request('/anticheat/tickets/import', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+    clearCache('/anticheat')
+    return result
+  },
+  importTicketsBatch: async (tickets: any[], valid_days = 7) => {
+    const result = await request('/anticheat/tickets/import/batch', {
+      method: 'POST',
+      body: JSON.stringify({ tickets, valid_days }),
+    })
+    clearCache('/anticheat')
+    return result
+  },
+
+  getConfigs: () => request('/anticheat/configs'),
+  getConfig: (id: number) => request(`/anticheat/configs/${id}`),
+  updateConfig: async (id: number, data: Record<string, unknown>) => {
+    const result = await request(`/anticheat/configs/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
+    clearCache('/anticheat')
+    return result
+  },
+  reactivateConfig: async (id: number, extend_days = 7) => {
+    const result = await request(`/anticheat/configs/${id}/reactivate`, {
+      method: 'POST',
+      body: JSON.stringify({ extend_days }),
+    })
+    clearCache('/anticheat')
+    return result
+  },
+  deleteConfig: async (id: number) => {
+    const result = await request(`/anticheat/configs/${id}`, { method: 'DELETE' })
+    clearCache('/anticheat')
+    return result
+  },
+  batchDeleteConfigs: async (ids: number[]) => {
+    const result = await request('/anticheat/configs/batch-delete', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    })
+    clearCache('/anticheat')
+    return result
+  },
+
+  getMods: (configId: number) => request(`/anticheat/configs/${configId}/mods`),
+  addMods: async (
+    configId: number,
+    mods: Array<{ filename: string; hash: string; size: number; path?: string; relativePath?: string }>
+  ) => {
+    const result = await request(`/anticheat/configs/${configId}/mods`, {
+      method: 'POST',
+      body: JSON.stringify({ mods }),
+    })
+    clearCache('/anticheat')
+    return result
+  },
+  deleteMod: async (id: number) => {
+    const result = await request(`/anticheat/mods/${id}`, { method: 'DELETE' })
+    clearCache('/anticheat')
+    return result
+  },
+  batchDeleteMods: async (ids: number[]) => {
+    const result = await request('/anticheat/mods/batch-delete', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    })
+    clearCache('/anticheat')
+    return result
+  },
+
+  getSessions: (limit = 100) => request(`/anticheat/sessions?limit=${limit}`),
+  getSession: (id: number) => request(`/anticheat/sessions/${id}`),
+  endSession: async (id: number, reason?: string) => {
+    const result = await request(`/anticheat/sessions/${id}/end`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    })
+    clearCache('/anticheat')
+    return result
+  },
+  terminateSession: async (id: number, reason?: string) => {
+    const result = await request(`/anticheat/sessions/${id}/terminate`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    })
+    clearCache('/anticheat')
+    return result
+  },
+  deleteSession: async (id: number) => {
+    const result = await request(`/anticheat/sessions/${id}`, { method: 'DELETE' })
+    clearCache('/anticheat')
+    return result
+  },
+  batchEndSessions: async (ids: number[]) => {
+    const result = await request('/anticheat/sessions/batch-end', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    })
+    clearCache('/anticheat')
+    return result
+  },
+  batchTerminateSessions: async (ids: number[]) => {
+    const result = await request('/anticheat/sessions/batch-terminate', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    })
+    clearCache('/anticheat')
+    return result
+  },
+  batchDeleteSessions: async (ids: number[]) => {
+    const result = await request('/anticheat/sessions/batch-delete', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    })
+    clearCache('/anticheat')
+    return result
+  },
+  requestScreenshot: (id: number) =>
+    request(`/anticheat/sessions/${id}/request-screenshot`, { method: 'POST' }),
+  batchRequestScreenshot: (ids: number[]) =>
+    request('/anticheat/sessions/batch-request-screenshot', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
+
+  getSessionLogs: (id: number, params: { page?: number; limit?: number; log_type?: string } = {}) => {
+    const q = new URLSearchParams()
+    if (params.page) q.set('page', String(params.page))
+    if (params.limit) q.set('limit', String(params.limit))
+    if (params.log_type) q.set('log_type', params.log_type)
+    const qs = q.toString()
+    return request(`/anticheat/sessions/${id}/logs${qs ? `?${qs}` : ''}`)
+  },
+  getSessionScreenshots: (id: number) => request(`/anticheat/sessions/${id}/screenshots`),
+  getScreenshot: (id: number) => request(`/anticheat/screenshots/${id}`),
+  getSessionSnapshots: (id: number, file_type?: string) =>
+    request(`/anticheat/sessions/${id}/snapshots${file_type ? `?file_type=${encodeURIComponent(file_type)}` : ''}`),
+  getSessionProcesses: (id: number, page = 1, limit = 50) =>
+    request(`/anticheat/sessions/${id}/processes?page=${page}&limit=${limit}`),
+  getClientLogs: (id: number, page = 1, limit = 50) =>
+    request(`/anticheat/sessions/${id}/client-logs?page=${page}&limit=${limit}`),
+
+  getSettings: () => request('/anticheat/settings'),
+  updateSettings: (data: { client_version?: string; map_pack_password?: string }) =>
+    request('/anticheat/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  getDllWhitelist: (memberId: number) =>
+    request(`/anticheat/dll-whitelist?member_id=${memberId}`),
+  addDllWhitelist: async (data: {
+    member_id: number
+    dll_name: string
+    dll_path?: string
+    note?: string
+  }) => {
+    const result = await request('/anticheat/dll-whitelist', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+    clearCache('/anticheat')
+    return result
+  },
+  deleteDllWhitelist: async (id: number) => {
+    const result = await request(`/anticheat/dll-whitelist/${id}`, { method: 'DELETE' })
+    clearCache('/anticheat')
+    return result
+  },
+  getSessionInjectionDlls: (sessionId: number) =>
+    request(`/anticheat/sessions/${sessionId}/injection-dlls`),
+}
+
+function getStudentAuthToken() {
+  return localStorage.getItem('studentToken') || sessionStorage.getItem('studentToken') || ''
+}
+
+// 填表 / 调查问卷 API
+export const surveyAPI = {
+  // 管理端（使用 admin token）
+  list: () => request('/surveys'),
+  get: (id: number) => request(`/surveys/${id}`),
+  create: async (data: any) => {
+    const result = await request('/surveys', { method: 'POST', body: JSON.stringify(data) })
+    clearCache('/surveys')
+    return result
+  },
+  update: async (id: number, data: any) => {
+    const result = await request(`/surveys/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+    clearCache('/surveys')
+    return result
+  },
+  delete: async (id: number) => {
+    const result = await request(`/surveys/${id}`, { method: 'DELETE' })
+    clearCache('/surveys')
+    return result
+  },
+  deleteResponse: async (surveyId: number, responseId: number) => {
+    const result = await request(`/surveys/${surveyId}/responses/${responseId}`, {
+      method: 'DELETE',
+    })
+    clearCache('/surveys')
+    return result
+  },
+  results: (id: number) => request(`/surveys/${id}/results`),
+
+  // 学员端（显式带 studentToken）
+  available: () =>
+    request('/surveys/available', {
+      headers: { Authorization: `Bearer ${getStudentAuthToken()}` },
+    }),
+  availableDetail: (id: number) =>
+    request(`/surveys/available/${id}`, {
+      headers: { Authorization: `Bearer ${getStudentAuthToken()}` },
+    }),
+  claim: (id: number) =>
+    request(`/surveys/${id}/claim`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${getStudentAuthToken()}` },
+      body: JSON.stringify({}),
+    }),
+  /** 匿名交卷：不带 Authorization，仅 token + answers */
+  submitAnonymous: async (id: number, token: string, answers: Record<string, unknown>) => {
+    const base = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000/api'
+    const response = await fetch(`${base}/surveys/${id}/submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, answers }),
+    })
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.message || '提交失败')
+    return data
+  },
+  submitNamed: (id: number, answers: Record<string, unknown>) =>
+    request(`/surveys/${id}/submit`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${getStudentAuthToken()}` },
+      body: JSON.stringify({ answers }),
+    }),
+}

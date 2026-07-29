@@ -100,6 +100,67 @@ async function runMigrations() {
     `)
     console.log('✅ public_videos assessment_id 字段迁移完成')
   }
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS surveys (
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      title VARCHAR(200) NOT NULL COMMENT '标题',
+      description TEXT NULL COMMENT '说明',
+      fields_json JSON NOT NULL COMMENT '题目定义',
+      is_anonymous TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否匿名',
+      start_at DATETIME NULL COMMENT '开始时间',
+      end_at DATETIME NULL COMMENT '结束时间',
+      status ENUM('draft','published','closed') NOT NULL DEFAULT 'draft' COMMENT '状态',
+      audience_roles_json JSON NULL COMMENT '可填阶段角色，空=全体',
+      created_by VARCHAR(100) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_survey_status (status),
+      INDEX idx_survey_time (start_at, end_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='填表/调查问卷'
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS survey_claims (
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      survey_id INT NOT NULL,
+      member_id INT NOT NULL,
+      token_hash VARCHAR(64) NOT NULL,
+      claimed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      submitted_at DATETIME NULL,
+      UNIQUE KEY uk_survey_member (survey_id, member_id),
+      UNIQUE KEY uk_token_hash (token_hash),
+      INDEX idx_survey_claim (survey_id),
+      CONSTRAINT fk_survey_claims_survey FOREIGN KEY (survey_id) REFERENCES surveys(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='匿名填表领取凭证'
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS survey_responses (
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      survey_id INT NOT NULL,
+      answers_json JSON NOT NULL,
+      member_id INT NULL COMMENT '实名时填写，匿名必须为空',
+      token_hash VARCHAR(64) NULL COMMENT '匿名防重复，管理端不展示',
+      submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_survey_resp (survey_id),
+      UNIQUE KEY uk_survey_member_resp (survey_id, member_id),
+      UNIQUE KEY uk_survey_token_resp (survey_id, token_hash),
+      CONSTRAINT fk_survey_responses_survey FOREIGN KEY (survey_id) REFERENCES surveys(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='填表答卷'
+  `)
+
+  try {
+    await pool.query(`
+      ALTER TABLE surveys
+      ADD COLUMN subjects_json JSON NULL COMMENT '满意度评价对象（教官等）' AFTER fields_json
+    `)
+    console.log('✅ surveys.subjects_json 字段迁移完成')
+  } catch (e) {
+    if (e.code !== 'ER_DUP_FIELDNAME') throw e
+  }
+
+  console.log('✅ surveys 相关表迁移完成')
 }
 
 // 测试数据库连接

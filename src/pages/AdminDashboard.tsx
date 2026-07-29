@@ -19,6 +19,13 @@ import AssessmentGuidelines from './admin/AssessmentGuidelines'
 import PublicVideosManagement from './admin/PublicVideosManagement'
 import VideoUpload from './admin/VideoUpload'
 import DocManagement from './admin/DocManagement'
+import AntiCheatTickets from './admin/anticheat/AntiCheatTickets'
+import AntiCheatConfigs from './admin/anticheat/AntiCheatConfigs'
+import AntiCheatMonitor from './admin/anticheat/AntiCheatMonitor'
+import AntiCheatSessionDetail from './admin/anticheat/AntiCheatSessionDetail'
+import AntiCheatSettings from './admin/anticheat/AntiCheatSettings'
+import SurveyManagement from './admin/SurveyManagement'
+import SurveyResults from './admin/SurveyResults'
 
 function AdminDashboardContent() {
   const [isMobile, setIsMobile] = useState(false)
@@ -72,10 +79,17 @@ function AdminDashboardContent() {
           <Route path="/assessments/guidelines" element={<AssessmentGuidelines />} />
           <Route path="/assessments/videos" element={<PublicVideosManagement />} />
           <Route path="/assessments/upload" element={<VideoUpload />} />
+          <Route path="/anticheat/tickets" element={<AntiCheatTickets />} />
+          <Route path="/anticheat/configs" element={<AntiCheatConfigs />} />
+          <Route path="/anticheat/monitor" element={<AntiCheatMonitor />} />
+          <Route path="/anticheat/sessions/:id" element={<AntiCheatSessionDetail />} />
+          <Route path="/anticheat/settings" element={<AntiCheatSettings />} />
           <Route path="/leave-team/reminders" element={<ReminderList />} />
           <Route path="/leave-team/approval" element={<QuitApproval />} />
           <Route path="/leave-team/retention" element={<RetentionManagement />} />
           <Route path="/docs" element={<DocManagement />} />
+          <Route path="/surveys" element={<SurveyManagement />} />
+          <Route path="/surveys/:id/results" element={<SurveyResults />} />
         </Routes>
       </main>
     </div>

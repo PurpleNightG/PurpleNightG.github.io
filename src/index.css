@@ -881,6 +881,94 @@ select::-ms-expand {
   animation: shimmer 2s infinite;
 }
 
+/* 问卷星式编辑器：强制浅色，避免继承全站深色 color-scheme */
+.survey-editor-light {
+  color-scheme: light;
+  color: #1f2937;
+}
+
+.survey-editor-light input,
+.survey-editor-light textarea,
+.survey-editor-light select {
+  color-scheme: light;
+  color: #111827;
+  background-color: #ffffff;
+  caret-color: #111827;
+}
+
+.survey-editor-light input::placeholder,
+.survey-editor-light textarea::placeholder {
+  color: #d1d5db;
+}
+
+.survey-editor-light input[type='datetime-local'],
+.survey-editor-light input[type='date'],
+.survey-editor-light input[type='time'] {
+  color-scheme: light;
+  background-color: #ffffff !important;
+  color: #111827 !important;
+  border: 1px solid #e5e7eb;
+}
+
+.survey-editor-light input[type='radio'],
+.survey-editor-light input[type='checkbox'] {
+  background-color: transparent;
+  accent-color: #2563eb;
+}
+
+.survey-editor-light input.survey-ghost-input,
+.survey-editor-light textarea.survey-ghost-input {
+  background-color: transparent !important;
+  border: none;
+  box-shadow: none;
+}
+
+/* 投放设置等浅色区域内的滚动条，避免继承全站紫色滚动条 */
+.survey-editor-light,
+.survey-editor-light * {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 #f1f5f9;
+}
+
+.survey-editor-light::-webkit-scrollbar,
+.survey-editor-light *::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.survey-editor-light::-webkit-scrollbar-track,
+.survey-editor-light *::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.survey-editor-light::-webkit-scrollbar-thumb,
+.survey-editor-light *::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.survey-editor-light::-webkit-scrollbar-thumb:hover,
+.survey-editor-light *::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* 学员填写页：放大单选/多选控件，减轻视觉负担 */
+.survey-fill-form input[type='radio'],
+.survey-fill-form input[type='checkbox'] {
+  width: 1.2rem;
+  height: 1.2rem;
+  min-width: 1.2rem;
+  min-height: 1.2rem;
+  accent-color: #2563eb;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.survey-fill-form label {
+  line-height: 1.55;
+}
+
 /* 日期输入框优化 */
 input[type="date"] {
   position: relative;

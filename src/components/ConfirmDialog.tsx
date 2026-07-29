@@ -8,6 +8,8 @@ interface ConfirmDialogProps {
   onConfirm: () => void
   onCancel: () => void
   type?: 'danger' | 'warning' | 'info'
+  /** 为 false 时隐藏取消按钮（纯提示） */
+  showCancel?: boolean
 }
 
 export default function ConfirmDialog({
@@ -17,12 +19,13 @@ export default function ConfirmDialog({
   cancelText = '取消',
   onConfirm,
   onCancel,
-  type = 'warning'
+  type = 'warning',
+  showCancel = true,
 }: ConfirmDialogProps) {
   const colors = {
     danger: 'bg-red-600 hover:bg-red-700',
     warning: 'bg-yellow-600 hover:bg-yellow-700',
-    info: 'bg-blue-600 hover:bg-blue-700'
+    info: 'bg-purple-600 hover:bg-purple-700'
   }
 
   return (
@@ -32,27 +35,29 @@ export default function ConfirmDialog({
           <div className={`p-2 rounded-lg ${
             type === 'danger' ? 'bg-red-900/50' :
             type === 'warning' ? 'bg-yellow-900/50' :
-            'bg-blue-900/50'
+            'bg-purple-900/50'
           }`}>
             <AlertTriangle className={`${
               type === 'danger' ? 'text-red-400' :
               type === 'warning' ? 'text-yellow-400' :
-              'text-blue-400'
+              'text-purple-400'
             }`} size={24} />
           </div>
           <div className="flex-1">
             <h3 className="text-lg font-semibold text-white mb-2">{title}</h3>
-            <p className="text-gray-300 text-sm">{message}</p>
+            <p className="text-gray-300 text-sm whitespace-pre-wrap">{message}</p>
           </div>
         </div>
         
         <div className="flex gap-3 justify-end mt-6">
-          <button
-            onClick={onCancel}
-            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
-          >
-            {cancelText}
-          </button>
+          {showCancel && (
+            <button
+              onClick={onCancel}
+              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+            >
+              {cancelText}
+            </button>
+          )}
           <button
             onClick={onConfirm}
             className={`px-4 py-2 text-white rounded-lg transition-colors ${colors[type]}`}

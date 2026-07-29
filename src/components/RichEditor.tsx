@@ -1,5 +1,7 @@
 import { useEditor, EditorContent, Node, ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
+import Paragraph from '@tiptap/extension-paragraph'
+import HorizontalRule from '@tiptap/extension-horizontal-rule'
 import Underline from '@tiptap/extension-underline'
 import TextAlign from '@tiptap/extension-text-align'
 import Link from '@tiptap/extension-link'
@@ -12,6 +14,8 @@ import { TableRow } from '@tiptap/extension-table-row'
 import { TableCell } from '@tiptap/extension-table-cell'
 import { TableHeader } from '@tiptap/extension-table-header'
 import { Markdown } from 'tiptap-markdown'
+import { Extension } from '@tiptap/core'
+import markdownItCjkFriendly from 'markdown-it-cjk-friendly'
 import { useEffect, useState, useRef } from 'react'
 import {
   Bold, Italic, UnderlineIcon, Strikethrough, Code, Heading1, Heading2, Heading3,
@@ -19,6 +23,59 @@ import {
   AlignRight, Highlighter, Link as LinkIcon, Image as ImageIcon, RemoveFormatting, X,
   LayoutGrid, AlignJustify, SeparatorVertical, Trash2
 } from 'lucide-react'
+
+/** 让 markdown-it（富文本导入）支持中文两侧无空格的 **粗体** */
+const MarkdownCjkFriendly = Extension.create({
+  name: 'markdownCjkFriendly',
+  addStorage() {
+    return {
+      markdown: {
+        parse: {
+          setup(md: any) {
+            md.use(markdownItCjkFriendly)
+          },
+        },
+      },
+    }
+  },
+})
+
+/** 空段落序列化为 <br>，富文本多敲空行能写回 MD */
+const ParagraphWithBlankLines = Paragraph.extend({
+  addStorage() {
+    return {
+      markdown: {
+        serialize(state: any, node: any) {
+          if (node.content.size === 0) {
+            state.write('<br>')
+            state.closeBlock(node)
+            return
+          }
+          state.renderInline(node)
+          state.closeBlock(node)
+        },
+        parse: {},
+      },
+    }
+  },
+})
+
+/** 分隔线前强制空行，避免与图片粘成 ![x](y)--- */
+const HorizontalRuleSafe = HorizontalRule.extend({
+  addStorage() {
+    return {
+      markdown: {
+        serialize(state: any, node: any) {
+          state.ensureNewLine()
+          state.write('\n')
+          state.write(node.attrs?.markup || '---')
+          state.closeBlock(node)
+        },
+        parse: {},
+      },
+    }
+  },
+})
 
 // Convert any CSS color (rgb/rgba/hex) to #rrggbb for input[type=color]
 function rgbToHex(color: string): string {
@@ -72,45 +129,109 @@ const HtmlBlock = Node.create({
     return ['div', { 'data-html-block': encodeURIComponent(node.attrs.content) }]
   },
   addNodeView() { return ReactNodeViewRenderer(HtmlBlockView) },
+  addStorage() {
+    return {
+      markdown: {
+        serialize(state: any, node: any) {
+          state.write(node.attrs.content)
+          state.closeBlock(node)
+        },
+        parse: {},
+      },
+    }
+  },
 })
 
-// Tags that can appear as block-level HTML in markdown
-const BLOCK_TAGS = 'div|section|article|aside|figure|details|nav|header|footer|main|a|table'
-const BLOCK_OPEN  = new RegExp(`^<(${BLOCK_TAGS})\\b`, 'i')
+// 需要原样保留的 HTML（避免被 tiptap-markdown 改写成 MD 语法导致丢属性 / 粘连 ---）
+const VOID_TAGS = 'img|br|hr|input|meta|link|source|area|base|col|embed|wbr'
+const BLOCK_TAGS = `div|section|article|aside|figure|details|nav|header|footer|main|table|iframe|video|audio|a|p|span|ul|ol|blockquote|${VOID_TAGS}`
+const BLOCK_OPEN = new RegExp(`^<(${BLOCK_TAGS})\\b`, 'i')
+const VOID_LINE = new RegExp(`^<(?:${VOID_TAGS})\\b[^>]*\\/?>\\s*$`, 'i')
+const LIST_PREFIX = /^(\s*(?:[-*+]|\d+\.)\s+)/
 
-// Use depth counting so nested elements are captured as one block.
-// For <a> we only treat it as a block when it starts at column 0 (already guaranteed by BLOCK_OPEN).
+function toHtmlBlock(html: string) {
+  return `<div data-html-block="${encodeURIComponent(html)}"></div>`
+}
+
+/** CommonMark：div 类 HTML 块会一直吞行直到空行，必须在块后补空行，否则后续列表会变成纯文本 */
+function pushHtmlBlock(result: string[], html: string, remainingLines: string[], nextIndex: number) {
+  result.push(toHtmlBlock(html))
+  if (nextIndex < remainingLines.length && remainingLines[nextIndex].trim() !== '') {
+    result.push('')
+  }
+}
+
+function isBalancedSingleLineHtml(s: string): boolean {
+  const t = s.trim()
+  if (VOID_LINE.test(t)) return true
+  const m = t.match(/^<([a-zA-Z][\w:-]*)\b[^>]*>[\s\S]*<\/\1\s*>$/i)
+  return !!m
+}
+
+function countTagDepth(line: string): number {
+  // void 标签不参与深度（无闭合）
+  const withoutVoid = line.replace(new RegExp(`<(?:${VOID_TAGS})\\b[^>]*\\/?>`, 'gi'), '')
+  const openRe = new RegExp(`<(${BLOCK_TAGS})\\b[^>]*>`, 'gi')
+  const closeRe = new RegExp(`<\\/(${BLOCK_TAGS})>`, 'gi')
+  const opens = (withoutVoid.match(openRe) || []).length
+  const closes = (withoutVoid.match(closeRe) || []).length
+  return opens - closes
+}
+
+/**
+ * 把原始 HTML（含列表行内的 <a>、独立 <img width=...>）包成 htmlBlock，
+ * 避免往返时被序列化成 [text](url) / ![alt](src) 并与 --- 粘连。
+ */
 function wrapHtmlBlocks(md: string): string {
   const lines = md.split('\n')
   const result: string[] = []
   let i = 0
   while (i < lines.length) {
-    if (BLOCK_OPEN.test(lines[i])) {
+    const line = lines[i]
+    const listMatch = line.match(LIST_PREFIX)
+    const payload = listMatch ? line.slice(listMatch[0].length) : line.trimStart()
+
+    // 独立 void 行：整行保护（保留 width 等属性）
+    if (!listMatch && VOID_LINE.test(line.trim())) {
+      pushHtmlBlock(result, line.trim(), lines, i + 1)
+      i++
+      continue
+    }
+
+    // 列表项整行就是一段 HTML：整行保护（含 "- <a>...</a>"）
+    if (listMatch && isBalancedSingleLineHtml(payload)) {
+      pushHtmlBlock(result, line, lines, i + 1)
+      i++
+      continue
+    }
+
+    // 行首（或去列表前缀后）是 HTML 开标签：按深度收齐
+    if (BLOCK_OPEN.test(payload.trimStart())) {
       const htmlLines: string[] = []
       let depth = 0
       while (i < lines.length) {
-        const line = lines[i]
-        const openRe  = new RegExp(`<(${BLOCK_TAGS})\\b[^>]*>`, 'gi')
-        const closeRe = new RegExp(`<\\/(${BLOCK_TAGS})>`, 'gi')
-        const opens  = (line.match(openRe)  || []).length
-        const closes = (line.match(closeRe) || []).length
-        depth += opens - closes
-        htmlLines.push(line)
+        const cur = lines[i]
+        const depthSrc = htmlLines.length === 0 ? payload : cur
+        depth += countTagDepth(depthSrc)
+        htmlLines.push(htmlLines.length === 0 ? line : cur)
         i++
         if (depth <= 0 && htmlLines.length > 0) break
+        if (htmlLines.length === 1 && VOID_LINE.test(payload.trim())) break
       }
-      result.push(`<div data-html-block="${encodeURIComponent(htmlLines.join('\n'))}"></div>`)
-    } else {
-      result.push(lines[i])
-      i++
+      pushHtmlBlock(result, htmlLines.join('\n'), lines, i)
+      continue
     }
+
+    result.push(line)
+    i++
   }
   return result.join('\n')
 }
 
 function unwrapHtmlBlocks(md: string): string {
-  return md.replace(/<div\s+data-html-block="([^"]*?)"\s*(?:\/>|>\s*<\/div>)/g,
-    (_, enc) => '\n' + decodeURIComponent(enc) + '\n'
+  return md.replace(
+    /<div\s+data-html-block="([^"]*?)"\s*(?:\/>|>\s*<\/div>)/g,
+    (_, enc) => decodeURIComponent(enc)
   )
 }
 
@@ -160,17 +281,29 @@ export default function RichEditor({ value, onChange }: RichEditorProps) {
   const savedSel = useRef<{ from: number; to: number } | null>(null)  // saved selection for color pickers
   const applyingColor = useRef(false)  // lock: prevent onSelectionUpdate from overwriting savedSel mid-apply
   const lastEmittedMd = useRef('')     // last markdown emitted by onUpdate; skip setContent re-import for self-changes
+  const hydrating = useRef(false)      // setContent 期间禁止 onUpdate 写回
   const [tableGrid, setTableGrid] = useState<{ rows: number; cols: number } | null>(null)
   const [tableHover, setTableHover] = useState({ r: 0, c: 0 })
 
+  const applyEditorContent = (ed: any, md: string) => {
+    hydrating.current = true
+    ed.commands.setContent(wrapHtmlBlocks(md), { emitUpdate: false })
+    hydrating.current = false
+  }
+
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        paragraph: false,
+        horizontalRule: false,
+      }),
+      ParagraphWithBlankLines,
+      HorizontalRuleSafe,
       Underline,
       TextStyle,
       Color,
       Highlight.configure({ multicolor: true }),
-      Image,
+      Image.configure({ allowBase64: true }),
       Link.configure({ openOnClick: false }),
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Table.configure({ resizable: false }),
@@ -178,50 +311,39 @@ export default function RichEditor({ value, onChange }: RichEditorProps) {
       TableHeader,
       TableCell,
       HtmlBlock,
+      MarkdownCjkFriendly,
       Markdown.configure({ html: true, tightLists: true }),
     ],
     content: '',
     editorProps: {
       attributes: { class: 'markdown-content focus:outline-none min-h-full px-12 py-8' },
     },
-    onUpdate({ editor }) {
-      if (!serializerPatched.current) return
-      let md = (editor.storage as any).markdown.getMarkdown()
+    onUpdate({ editor: ed }) {
+      if (!serializerPatched.current || hydrating.current) return
+      let md = (ed.storage as any).markdown.getMarkdown()
       md = unwrapHtmlBlocks(md)
+      // 兜底：图片/HTML 与 --- 粘连时拆开
+      md = md.replace(/(!\[[^\]]*\]\([^)]+\)|<img\b[^>]*>)\s*(---)/gi, '$1\n\n$2')
       lastEmittedMd.current = md
       onChange(md)
     },
-    // Always track the last non-empty selection so color pickers can restore it.
-    // Gated by applyingColor so that the atom-node selection Tiptap creates
-    // internally after setColor doesn't overwrite the user's real selection.
-    onSelectionUpdate({ editor }) {
+    onSelectionUpdate({ editor: ed }) {
       if (applyingColor.current) return
-      const { from, to } = editor.state.selection
+      const { from, to } = ed.state.selection
       if (from !== to) savedSel.current = { from, to }
     },
   })
 
-  // Patch serializer once, then load initial content (no emitUpdate)
   useEffect(() => {
     if (!editor || serializerPatched.current) return
-    const storage = (editor.storage as any).markdown
-    if (storage?.serializer?.nodes) {
-      storage.serializer.nodes.htmlBlock = (state: any, node: any) => {
-        state.write(node.attrs.content)
-        state.ensureNewLine()
-        state.write('\n')
-      }
-    }
     serializerPatched.current = true
-    ;(editor.commands as any).setContent(wrapHtmlBlocks(value), false)
+    applyEditorContent(editor, value)
   }, [editor]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sync when a *different* file is opened from outside.
-  // Skip when value is just the round-trip of what this editor emitted (e.g. after setColor).
   useEffect(() => {
     if (!editor || !serializerPatched.current) return
     if (value === lastEmittedMd.current) return
-    ;(editor.commands as any).setContent(wrapHtmlBlocks(value), false)
+    applyEditorContent(editor, value)
   }, [value]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // auto-focus the url input when modal opens

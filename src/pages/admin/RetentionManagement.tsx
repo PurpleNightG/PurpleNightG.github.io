@@ -4,6 +4,7 @@ import { Plus, Trash2, Filter, ChevronUp, ChevronDown, Search, X, CheckSquare, S
 import { toast } from '../../utils/toast'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { formatDate } from '../../utils/dateFormat'
+import { getRoleColor } from '../../utils/roleColors'
 import SearchableSelect from '../../components/SearchableSelect'
 
 interface RetentionRecord {
@@ -196,16 +197,6 @@ export default function RetentionManagement() {
     } catch (error: any) {
       toast.error(error.message || '批量删除失败')
     }
-  }
-
-  const getRoleColor = (role: string) => {
-    if (role === '紫夜' || role === '紫夜尖兵') return 'bg-purple-600/20 text-purple-300'
-    if (role === '会长' || role === '执行官') return 'bg-amber-600/20 text-amber-300'
-    if (role === '总教' || role === '尖兵教官' || role === '教官') return 'bg-green-600/20 text-green-300'
-    if (role === '人事') return 'bg-cyan-600/20 text-cyan-300'
-    if (role === '工程师') return 'bg-sky-600/20 text-sky-300'
-    if (role.includes('新训')) return 'bg-blue-600/20 text-blue-300'
-    return 'bg-gray-600/20 text-gray-300'
   }
 
   const handleAdd = () => {

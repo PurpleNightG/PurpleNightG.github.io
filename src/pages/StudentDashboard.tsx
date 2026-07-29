@@ -11,6 +11,7 @@ import StudentHome from './StudentHome'
 import StudentClassmates from './StudentClassmates'
 import StudentBlackPoints from './StudentBlackPoints'
 import StudentLeave from './StudentLeave'
+import StudentSurveys from './StudentSurveys'
 
 function StudentDashboardContent() {
   const [isMobile, setIsMobile] = useState(false)
@@ -60,6 +61,7 @@ function StudentDashboardContent() {
           <Route path="blackpoints" element={<StudentBlackPoints />} />
           <Route path="leave" element={<StudentLeave />} />
           <Route path="videos" element={<PublicVideos />} />
+          <Route path="surveys" element={<StudentSurveys />} />
         </Routes>
       </main>
     </div>

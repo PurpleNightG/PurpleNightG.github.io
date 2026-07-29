@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useBadges } from "../../contexts/BadgeContext";
 import { motion, AnimatePresence } from "framer-motion";
-import { Home, Users, BookOpen, FileCheck, UserMinus, ChevronDown, FileText, Video, Monitor, AlertTriangle, Calendar, BookMarked } from "lucide-react";
+import { Home, Users, BookOpen, FileCheck, UserMinus, ChevronDown, FileText, Video, Monitor, AlertTriangle, Calendar, BookMarked, ClipboardList } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 
 const AnimatedMenuToggle = ({
@@ -119,6 +119,62 @@ export const CollapsibleSection = ({
           className="overflow-hidden"
         >
           <div className="mt-1 space-y-0.5 ml-2">{children}</div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  </div>
+);
+
+interface NestedNavGroupProps {
+  title: string;
+  isExpanded: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}
+
+/** 一级菜单内的二级折叠分组（如考核管理 → 反作弊） */
+export const NestedNavGroup = ({
+  title,
+  isExpanded,
+  onToggle,
+  children,
+}: NestedNavGroupProps) => (
+  <div className="mt-0.5">
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
+      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all ${
+        isExpanded
+          ? "text-purple-300 bg-purple-600/10"
+          : "text-gray-500 hover:text-gray-300 hover:bg-gray-700/20"
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        <div
+          className={`w-1 h-1 rounded-full flex-shrink-0 ${
+            isExpanded ? "bg-purple-400" : "bg-gray-600"
+          }`}
+        />
+        <span className="text-sm">{title}</span>
+      </div>
+      <motion.div animate={{ rotate: isExpanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
+        <ChevronDown size={12} className={isExpanded ? "text-purple-400" : "text-gray-600"} />
+      </motion.div>
+    </button>
+    <AnimatePresence initial={false}>
+      {isExpanded && (
+        <motion.div
+          key="nested"
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: "auto", opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          className="overflow-hidden"
+        >
+          <div className="ml-3 mt-0.5 space-y-0.5 border-l border-gray-700/60 pl-1">{children}</div>
         </motion.div>
       )}
     </AnimatePresence>
@@ -244,6 +300,16 @@ const AdminNav = ({ expandedMenus, toggleMenu }: AdminNavProps) => {
       <SubNavItem path="/admin/assessments/guidelines" label="考核须知管理" />
       <SubNavItem path="/admin/assessments/videos" label="报告公开管理" />
       <SubNavItem path="/admin/assessments/upload" label="视频上传管理" />
+      <NestedNavGroup
+        title="反作弊"
+        isExpanded={expandedMenus.includes("反作弊")}
+        onToggle={() => toggleMenu("反作弊")}
+      >
+        <SubNavItem path="/admin/anticheat/tickets" label="准考证导入" />
+        <SubNavItem path="/admin/anticheat/configs" label="考核配置" />
+        <SubNavItem path="/admin/anticheat/monitor" label="考试监控" />
+        <SubNavItem path="/admin/anticheat/settings" label="反作弊设置" />
+      </NestedNavGroup>
     </CollapsibleSection>
     <CollapsibleSection title="退队管理" icon={<UserMinus size={20} />}
       isExpanded={expandedMenus.includes("退队管理")} onToggle={() => toggleMenu("退队管理")}
@@ -253,6 +319,7 @@ const AdminNav = ({ expandedMenus, toggleMenu }: AdminNavProps) => {
       <SubNavItem path="/admin/leave-team/retention" label="留队管理" />
     </CollapsibleSection>
     <NavItem path="/admin/docs" icon={<BookMarked size={20} />} label="文档管理" />
+    <NavItem path="/admin/surveys" icon={<ClipboardList size={20} />} label="填表管理" />
     {/* Screen share - opens in new tab */}
     <a href="#/screen-share" target="_blank" rel="noopener noreferrer" className="group block mb-1">
       <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-all text-gray-400 hover:text-gray-200 hover:bg-gray-700/20">
@@ -265,8 +332,20 @@ const AdminNav = ({ expandedMenus, toggleMenu }: AdminNavProps) => {
 };
 
 export const AdminSidebar = () => {
+  const location = useLocation();
   const [isOpen, setIsOpen] = useState(false);
   const [expandedMenus, setExpandedMenus] = useState<string[]>(["成员管理"]);
+
+  useEffect(() => {
+    if (location.pathname.startsWith("/admin/anticheat")) {
+      setExpandedMenus((prev) => {
+        const next = new Set(prev);
+        next.add("考核管理");
+        next.add("反作弊");
+        return Array.from(next);
+      });
+    }
+  }, [location.pathname]);
 
   const toggleMenu = (name: string) =>
     setExpandedMenus((prev) =>
@@ -344,6 +423,7 @@ const studentMenuItems = [
   { path: '/student/blackpoints', icon: <AlertTriangle size={20} />, label: '黑点记录' },
   { path: '/student/leave', icon: <Calendar size={20} />, label: '请假记录' },
   { path: '/student/videos', icon: <Video size={20} />, label: '公开报告查看' },
+  { path: '/student/surveys', icon: <ClipboardList size={20} />, label: '填表' },
 ];
 
 const StudentNav = () => (

@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import rehypeRaw from 'rehype-raw'
+import { docRemarkPlugins, docRehypePlugins } from '../../utils/markdown'
 import {
   FileText, FolderOpen, Folder, Plus, Trash2, Save,
   Eye, Edit3, Loader2, RefreshCw, AlertCircle, ChevronRight, ChevronDown, FolderPlus, Pencil, Type, GripVertical,
@@ -860,7 +859,7 @@ function applyIndexOrder(listItems: TreeItem[], indexItems: any[]): TreeItem[] {
           ) : editorMode === 'preview' ? (
             <div className="h-full overflow-y-auto px-12 py-8">
               <article className="markdown-content max-w-4xl">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{content}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={docRemarkPlugins} rehypePlugins={docRehypePlugins}>{content}</ReactMarkdown>
               </article>
             </div>
           ) : editorMode === 'rich' ? (

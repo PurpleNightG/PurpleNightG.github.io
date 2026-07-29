@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { X, Calendar, AlertCircle, UserMinus, LogOut, Save, Key, Loader2 } from 'lucide-react'
 import { memberAPI, blackPointAPI, leaveAPI, quitAPI, retentionAPI } from '../../utils/api'
 import { formatDate, formatDateTime, toInputDate, formatDateForDB, getTodayDateString } from '../../utils/dateFormat'
+import { getRoleColor } from '../../utils/roleColors'
 import { toast } from '../../utils/toast'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import DateInput from '../../components/DateInput'
@@ -275,17 +276,6 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
   }
 
   const activeBlackPoints = blackPoints.filter(bp => bp.status === '生效中').length
-
-  // 根据阶段角色返回对应的颜色类
-  const getRoleColor = (role: string) => {
-    if (role === '紫夜' || role === '紫夜尖兵') return 'bg-purple-600/20 text-purple-300'
-    if (role === '会长' || role === '执行官') return 'bg-amber-600/20 text-amber-300'
-    if (role === '总教' || role === '尖兵教官' || role === '教官') return 'bg-green-600/20 text-green-300'
-    if (role === '人事') return 'bg-cyan-600/20 text-cyan-300'
-    if (role === '工程师') return 'bg-sky-600/20 text-sky-300'
-    if (role.includes('新训')) return 'bg-blue-600/20 text-blue-300'
-    return 'bg-gray-600/20 text-gray-300'
-  }
 
   if (loading) {
     return (

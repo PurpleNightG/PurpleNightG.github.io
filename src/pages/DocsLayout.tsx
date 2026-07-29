@@ -1,11 +1,10 @@
 import { useState, useEffect, useRef, memo } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import rehypeRaw from 'rehype-raw'
 import { FileText, Search, FolderOpen, Folder, ChevronRight, ChevronDown, Lock } from 'lucide-react'
 import UpdateNotification from '../components/UpdateNotification'
 import { DEFAULT_DOC_SLUG } from '../constants/docs'
+import { docRemarkPlugins, docRehypePlugins } from '../utils/markdown'
 
 const DOCS_API = import.meta.env.VITE_API_URL || ''
 
@@ -51,8 +50,8 @@ const MarkdownContent = memo(({ content }: { content: string }) => (
   <article className="px-12 py-10 animate-fade-in animate-delay-200">
     <div className="markdown-content">
       <ReactMarkdown 
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeRaw]}
+        remarkPlugins={docRemarkPlugins}
+        rehypePlugins={docRehypePlugins}
         components={{
           iframe: ({ node, ...props }) => {
             const { allowfullscreen, ...rest } = props as any

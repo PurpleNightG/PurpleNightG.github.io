@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { memberAPI, quitAPI } from '../../utils/api'
 import { Plus, Eye, Filter, ChevronUp, ChevronDown, Search, X, CheckSquare, Square, Loader2, RefreshCw } from 'lucide-react'
 import { formatDate } from '../../utils/dateFormat'
+import { getRoleColor } from '../../utils/roleColors'
 import { toast } from '../../utils/toast'
 import MemberDetail from './MemberDetail'
 
@@ -562,40 +563,6 @@ export default function MemberList() {
     clearSelection()
     loadMembers()
     setSubmitting(false)
-  }
-
-  // 根据阶段角色返回对应的颜色类
-  const getRoleColor = (role: string) => {
-    // 紫夜相关 - 紫色
-    if (role === '紫夜' || role === '紫夜尖兵') {
-      return 'bg-purple-600/20 text-purple-300'
-    }
-    // 领导层 - 金色/琥珀色
-    if (role === '会长' || role === '执行官') {
-      return 'bg-amber-600/20 text-amber-300'
-    }
-    // 教官相关 - 绿色
-    if (role === '总教' || role === '尖兵教官' || role === '教官') {
-      return 'bg-green-600/20 text-green-300'
-    }
-    // 人事 - 青色
-    if (role === '人事') {
-      return 'bg-cyan-600/20 text-cyan-300'
-    }
-    // 工程师 - 天蓝色
-    if (role === '工程师') {
-      return 'bg-sky-600/20 text-sky-300'
-    }
-    // 新训阶段 - 蓝色
-    if (role.includes('新训')) {
-      return 'bg-blue-600/20 text-blue-300'
-    }
-    // 未新训 - 灰色
-    if (role === '未新训') {
-      return 'bg-gray-600/20 text-gray-300'
-    }
-    // 默认 - 灰色
-    return 'bg-gray-600/20 text-gray-300'
   }
 
   const activeFilterCount = filters.stage_role.length + filters.status.length
