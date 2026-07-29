@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { surveyAPI } from '../utils/api'
 import { toast } from '../utils/toast'
 import { isFieldVisible, NOT_ATTENDED } from '../utils/surveyHelpers'
+import { useSurveyPending } from '../contexts/SurveyPendingContext'
 import {
   Loader2,
   ClipboardList,
@@ -99,6 +100,7 @@ function clearStoredClaim(surveyId: number) {
 }
 
 export default function StudentSurveys() {
+  const { refresh: refreshPending } = useSurveyPending()
   const [list, setList] = useState<SurveyListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [activeId, setActiveId] = useState<number | null>(null)
@@ -114,6 +116,7 @@ export default function StudentSurveys() {
       setLoading(true)
       const res = await surveyAPI.available()
       setList(res.data || [])
+      refreshPending()
     } catch (e: any) {
       toast.error(e.message || '加载失败')
     } finally {
@@ -257,6 +260,7 @@ export default function StudentSurveys() {
       }
       setAnonToken(null)
       backToList()
+      refreshPending()
     } catch (e: any) {
       toast.error(e.message || '提交失败')
     } finally {

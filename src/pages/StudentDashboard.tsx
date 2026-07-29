@@ -3,6 +3,7 @@ import { Smartphone } from 'lucide-react'
 import { Routes, Route } from 'react-router-dom'
 import ProtectedRoute from '../components/ProtectedRoute'
 import { StudentSidebar } from '../components/ui/sidebar'
+import SurveyReminderBanner from '../components/SurveyReminderBanner'
 import StudentProgress from './StudentProgress'
 import PublicVideos from './PublicVideos'
 import StudentApplyAssessment from './StudentApplyAssessment'
@@ -50,25 +51,26 @@ function StudentDashboardContent() {
     <div className="flex h-screen bg-gradient-to-br from-gray-900 via-gray-900 to-purple-900">
       <StudentSidebar />
 
-      {/* Main Content Area */}
-      <main className="flex-1 md:ml-64 overflow-y-auto">
-        <Routes>
-          <Route index element={<StudentHome />} />
-          <Route path="progress" element={<StudentProgress />} />
-          <Route path="classmates" element={<StudentClassmates />} />
-          <Route path="apply-assessment" element={<StudentApplyAssessment />} />
-          <Route path="assessment-report" element={<StudentAssessmentReport />} />
-          <Route path="blackpoints" element={<StudentBlackPoints />} />
-          <Route path="leave" element={<StudentLeave />} />
-          <Route path="videos" element={<PublicVideos />} />
-          <Route path="surveys" element={<StudentSurveys />} />
-        </Routes>
+      <main className="flex-1 md:ml-64 overflow-y-auto flex flex-col">
+        <SurveyReminderBanner />
+        <div className="flex-1">
+          <Routes>
+            <Route index element={<StudentHome />} />
+            <Route path="progress" element={<StudentProgress />} />
+            <Route path="classmates" element={<StudentClassmates />} />
+            <Route path="apply-assessment" element={<StudentApplyAssessment />} />
+            <Route path="assessment-report" element={<StudentAssessmentReport />} />
+            <Route path="blackpoints" element={<StudentBlackPoints />} />
+            <Route path="leave" element={<StudentLeave />} />
+            <Route path="videos" element={<PublicVideos />} />
+            <Route path="surveys" element={<StudentSurveys />} />
+          </Routes>
+        </div>
       </main>
     </div>
   )
 }
 
-// 导出带路由守卫的组件
 export default function StudentDashboard() {
   return (
     <ProtectedRoute requiredUserType="student">

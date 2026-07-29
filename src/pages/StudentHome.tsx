@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { memberAPI, progressAPI } from '../utils/api'
-import { Trophy, TrendingUp, CheckCircle, Star, Sparkles, Award, Target, BookOpen, Video, Lock, Clock, AlertTriangle, KeyRound, FileText, UserCheck } from 'lucide-react'
+import { Trophy, TrendingUp, CheckCircle, Star, Sparkles, Award, Target, BookOpen, Video, Lock, Clock, AlertTriangle, KeyRound, FileText, UserCheck, ClipboardList, ChevronRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import UserDropdown from '../components/UserDropdown'
 import { toast } from '../utils/toast'
+import { useSurveyPending } from '../contexts/SurveyPendingContext'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
@@ -90,6 +91,7 @@ const STAGE_CONGRATULATIONS = {
 
 export default function StudentHome() {
   const navigate = useNavigate()
+  const { pending, count } = useSurveyPending()
   const [member, setMember] = useState<Member | null>(null)
   const [courses, setCourses] = useState<Course[]>([])
   const [categoryProgress, setCategoryProgress] = useState<CategoryProgress[]>([])
@@ -632,6 +634,31 @@ export default function StudentHome() {
           </div>
           <UserDropdown userType="student" />
         </div>
+
+        {count > 0 && (
+          <button
+            type="button"
+            onClick={() => navigate('/student/surveys')}
+            className="w-full mb-6 text-left rounded-xl border-2 border-amber-400/60 bg-gradient-to-r from-amber-600/30 via-orange-500/25 to-rose-500/20 p-5 hover:border-amber-300 transition-colors group"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-amber-500/30 flex items-center justify-center shrink-0">
+                <ClipboardList className="text-amber-300 animate-pulse" size={26} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-amber-200 font-bold text-lg">
+                  有 {count} 份问卷待填写
+                </div>
+                <p className="text-amber-100/80 text-sm truncate mt-0.5">
+                  {pending.map((s) => s.title).join('、')}
+                </p>
+              </div>
+              <span className="inline-flex items-center gap-1 text-amber-100 font-semibold text-sm group-hover:translate-x-0.5 transition-transform">
+                立即填写 <ChevronRight size={18} />
+              </span>
+            </div>
+          </button>
+        )}
 
         {/* 今日值班教官 */}
         {onDutyInstructors.length > 0 && (

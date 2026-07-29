@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useBadges } from "../../contexts/BadgeContext";
+import { useSurveyPending } from "../../contexts/SurveyPendingContext";
 import { motion, AnimatePresence } from "framer-motion";
 import { Home, Users, BookOpen, FileCheck, UserMinus, ChevronDown, FileText, Video, Monitor, AlertTriangle, Calendar, BookMarked, ClipboardList } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
@@ -220,11 +221,12 @@ interface NavItemProps {
   path: string;
   icon: React.ReactNode;
   label: string;
+  badge?: number;
 }
 
-export const NavItem = ({ path, icon, label }: NavItemProps) => {
+export const NavItem = ({ path, icon, label, badge }: NavItemProps) => {
   const location = useLocation();
-  const isActive = location.pathname === path;
+  const isActive = location.pathname === path || (path !== '/student' && path !== '/admin' && location.pathname.startsWith(path));
 
   return (
     <Link to={path} className="group block mb-1">
@@ -242,7 +244,12 @@ export const NavItem = ({ path, icon, label }: NavItemProps) => {
         >
           {icon}
         </span>
-        <span className="text-sm font-medium">{label}</span>
+        <span className="text-sm font-medium flex-1">{label}</span>
+        {!!badge && badge > 0 && (
+          <span className="bg-amber-500 text-white text-xs font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 leading-none animate-pulse">
+            {badge > 99 ? "99+" : badge}
+          </span>
+        )}
       </div>
     </Link>
   );
@@ -426,10 +433,18 @@ const studentMenuItems = [
   { path: '/student/surveys', icon: <ClipboardList size={20} />, label: '填表' },
 ];
 
-const StudentNav = () => (
+const StudentNav = () => {
+  const { count } = useSurveyPending();
+  return (
   <nav className="flex-1 overflow-y-auto py-4 px-3">
     {studentMenuItems.map((item) => (
-      <NavItem key={item.path} path={item.path} icon={item.icon} label={item.label} />
+      <NavItem
+        key={item.path}
+        path={item.path}
+        icon={item.icon}
+        label={item.label}
+        badge={item.path === '/student/surveys' ? count : undefined}
+      />
     ))}
     {/* Screen share - opens in new tab */}
     <a href="#/screen-share" target="_blank" rel="noopener noreferrer" className="group block mb-1">
@@ -439,7 +454,8 @@ const StudentNav = () => (
       </div>
     </a>
   </nav>
-);
+  );
+};
 
 export const StudentSidebar = () => {
   const [isOpen, setIsOpen] = useState(false);

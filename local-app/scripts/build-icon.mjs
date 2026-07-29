@@ -23,7 +23,11 @@ async function createSquarePngs(logoPath, tempDir) {
     await sharp(logoPath)
       .resize(size, size, {
         fit: 'contain',
-        background: { r: 255, g: 255, b: 255, alpha: 1 },
+        // 托盘小图标用深色底，避免白底在浅色任务栏上几乎看不见
+        background:
+          size <= 32
+            ? { r: 88, g: 28, b: 135, alpha: 1 }
+            : { r: 255, g: 255, b: 255, alpha: 1 },
       })
       .png()
       .toFile(pngPath)

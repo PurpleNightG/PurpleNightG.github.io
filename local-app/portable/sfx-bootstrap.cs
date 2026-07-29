@@ -54,40 +54,15 @@ namespace ZiyeGuildSfx
 
         static void LaunchApp(string appExe, string installDir)
         {
-            var mutexName = "Global\\ZiyeGuildLocalApp";
-            bool createdNew;
-            using (var mutex = new Mutex(true, mutexName, out createdNew))
+            // 不要在启动前长时间占用 Global\\ZiyeGuildLocalApp：
+            // 否则子进程 紫夜官网.exe 会误判「已在运行」并直接退出，导致托盘不出现。
+            // 单实例由 launcher.cs 自己处理。
+            Process.Start(new ProcessStartInfo
             {
-                if (!createdNew)
-                {
-                    try
-                    {
-                        Process.Start(new ProcessStartInfo("http://127.0.0.1:3001/")
-                        {
-                            UseShellExecute = true
-                        });
-                    }
-                    catch
-                    {
-                        MessageBox.Show(
-                            "程序已在运行中。\n请在浏览器访问：http://127.0.0.1:3001/",
-                            "紫夜公会官网 - 本地版",
-                            MessageBoxButtons.OK,
-                            MessageBoxIcon.Information
-                        );
-                    }
-                    return;
-                }
-
-                var startInfo = new ProcessStartInfo
-                {
-                    FileName = appExe,
-                    WorkingDirectory = installDir,
-                    UseShellExecute = true
-                };
-
-                Process.Start(startInfo);
-            }
+                FileName = appExe,
+                WorkingDirectory = installDir,
+                UseShellExecute = true
+            });
         }
 
         static bool ExtractBundle(string selfPath, string installDir, string bundleVersion)

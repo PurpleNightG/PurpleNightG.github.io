@@ -2,6 +2,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { BookOpen, Home, LogIn, Smartphone, Download, Monitor, User, Shield } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { DEFAULT_DOC_SLUG, docPath } from '../constants/docs'
+import SurveyReminderBanner from './SurveyReminderBanner'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -183,6 +184,8 @@ export default function Layout({ children }: LayoutProps) {
           </div>
         </div>
       </nav>
+
+      {loggedInUser?.type === 'student' && <SurveyReminderBanner compact />}
 
       {/* Main Content */}
       {isFullWidthPage ? (

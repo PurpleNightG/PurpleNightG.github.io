@@ -108,7 +108,9 @@ namespace ZiyeGuildLocal
             _splash.Show();
 
             _trayIcon = CreateTrayIcon();
-            _trayIcon.Visible = false;
+            // 启动阶段即显示托盘，避免仅依赖 MarkReady（白名单/防病毒等场景更稳）
+            _trayIcon.Text = "紫夜公会官网 - 正在启动…";
+            _trayIcon.Visible = true;
 
             _pollTimer = new System.Windows.Forms.Timer { Interval = 500 };
             _pollTimer.Tick += delegate { PollServiceReady(); };
@@ -124,12 +126,21 @@ namespace ZiyeGuildLocal
                 Text = "紫夜公会官网 - 运行中",
             };
 
-            var iconPath = Path.Combine(_baseDir, "app.ico");
-            if (File.Exists(iconPath))
+            try
             {
-                trayIcon.Icon = new Icon(iconPath);
+                var iconPath = Path.Combine(_baseDir, "app.ico");
+                if (File.Exists(iconPath))
+                {
+                    trayIcon.Icon = new Icon(iconPath);
+                }
+                else
+                {
+                    // 回退到 EXE 自身嵌入图标
+                    trayIcon.Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath)
+                        ?? SystemIcons.Application;
+                }
             }
-            else
+            catch
             {
                 trayIcon.Icon = SystemIcons.Application;
             }
@@ -248,6 +259,7 @@ namespace ZiyeGuildLocal
             _splash.Hide();
             _splash.ShowInTaskbar = false;
 
+            _trayIcon.Text = "紫夜公会官网 - 运行中";
             _trayIcon.Visible = true;
             _trayIcon.ShowBalloonTip(
                 2500,
