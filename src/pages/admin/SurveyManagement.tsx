@@ -1,4 +1,5 @@
-import { useState, useEffect, type ReactNode } from 'react'
+import { useState, useEffect, useRef, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { surveyAPI, memberAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
@@ -28,6 +29,7 @@ import {
   Ban,
   AlertTriangle,
   UserPlus,
+  MoreHorizontal,
 } from 'lucide-react'
 
 export type FieldType = 'single' | 'multi' | 'text' | 'textarea' | 'rating' | 'matrix'
@@ -235,6 +237,54 @@ export default function SurveyManagement() {
   const [memberFilter, setMemberFilter] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; title: string } | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [actionMenu, setActionMenu] = useState<{
+    id: number
+    top: number
+    right: number
+  } | null>(null)
+  const actionMenuRef = useRef<HTMLDivElement | null>(null)
+  const actionBtnRefs = useRef<Record<number, HTMLButtonElement | null>>({})
+
+  const closeActionMenu = () => setActionMenu(null)
+
+  const openActionMenu = (id: number) => {
+    if (actionMenu?.id === id) {
+      closeActionMenu()
+      return
+    }
+    const btn = actionBtnRefs.current[id]
+    if (!btn) return
+    const rect = btn.getBoundingClientRect()
+    setActionMenu({
+      id,
+      top: rect.bottom + 4,
+      right: window.innerWidth - rect.right,
+    })
+  }
+
+  useEffect(() => {
+    if (!actionMenu) return
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (actionMenuRef.current?.contains(target)) return
+      if (actionBtnRefs.current[actionMenu.id]?.contains(target)) return
+      closeActionMenu()
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeActionMenu()
+    }
+    const onRepositionClose = () => closeActionMenu()
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    window.addEventListener('scroll', onRepositionClose, true)
+    window.addEventListener('resize', onRepositionClose)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('scroll', onRepositionClose, true)
+      window.removeEventListener('resize', onRepositionClose)
+    }
+  }, [actionMenu])
 
   const load = async () => {
     try {
@@ -1119,48 +1169,19 @@ export default function SurveyManagement() {
                       )}
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          onClick={() => openEdit(s.id)}
-                          className="text-blue-400 inline-flex items-center gap-1"
-                        >
-                          <Edit size={14} /> 编辑
-                        </button>
-                        <button
-                          onClick={() => duplicateSurvey(s.id)}
-                          className="text-violet-400 inline-flex items-center gap-1"
-                        >
-                          <Copy size={14} /> 复制
-                        </button>
-                        <button
-                          onClick={() => navigate(`/admin/surveys/${s.id}/results`)}
-                          className="text-cyan-400 inline-flex items-center gap-1"
-                        >
-                          <Eye size={14} /> 结果
-                        </button>
-                        {s.status !== 'published' && (
-                          <button
-                            onClick={() => setStatus(s.id, 'published')}
-                            className="text-emerald-400 inline-flex items-center gap-1"
-                          >
-                            <Send size={14} /> 发布
-                          </button>
-                        )}
-                        {s.status === 'published' && (
-                          <button
-                            onClick={() => setStatus(s.id, 'closed')}
-                            className="text-amber-400 inline-flex items-center gap-1"
-                          >
-                            <Ban size={14} /> 关闭
-                          </button>
-                        )}
-                        <button
-                          onClick={() => remove(s.id, s.title)}
-                          className="text-red-400 inline-flex items-center gap-1"
-                        >
-                          <Trash2 size={14} /> 删除
-                        </button>
-                      </div>
+                      <button
+                        ref={(el) => {
+                          actionBtnRefs.current[s.id] = el
+                        }}
+                        type="button"
+                        onClick={() => openActionMenu(s.id)}
+                        className="inline-flex items-center gap-1 rounded-lg border border-gray-600/70 bg-gray-800/80 px-2.5 py-1.5 text-xs text-gray-200 hover:bg-gray-700/80 hover:text-white transition-colors"
+                        aria-expanded={actionMenu?.id === s.id}
+                        aria-haspopup="menu"
+                      >
+                        操作
+                        <MoreHorizontal size={14} />
+                      </button>
                     </td>
                   </tr>
                 )
@@ -1191,6 +1212,92 @@ export default function SurveyManagement() {
           }}
         />
       )}
+
+      {actionMenu &&
+        (() => {
+          const s = list.find((item) => item.id === actionMenu.id)
+          if (!s) return null
+          return createPortal(
+            <div
+              ref={actionMenuRef}
+              role="menu"
+              style={{
+                position: 'fixed',
+                top: actionMenu.top,
+                right: actionMenu.right,
+                zIndex: 9999,
+              }}
+              className="min-w-[8.5rem] overflow-hidden rounded-lg border border-gray-600/80 bg-gray-900 shadow-xl shadow-black/50"
+            >
+              <button
+                role="menuitem"
+                onClick={() => {
+                  closeActionMenu()
+                  openEdit(s.id)
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-blue-400 hover:bg-gray-800"
+              >
+                <Edit size={14} /> 编辑
+              </button>
+              <button
+                role="menuitem"
+                onClick={() => {
+                  closeActionMenu()
+                  duplicateSurvey(s.id)
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-violet-400 hover:bg-gray-800"
+              >
+                <Copy size={14} /> 复制
+              </button>
+              <button
+                role="menuitem"
+                onClick={() => {
+                  closeActionMenu()
+                  navigate(`/admin/surveys/${s.id}/results`)
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-cyan-400 hover:bg-gray-800"
+              >
+                <Eye size={14} /> 结果
+              </button>
+              {s.status !== 'published' && (
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    closeActionMenu()
+                    setStatus(s.id, 'published')
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-emerald-400 hover:bg-gray-800"
+                >
+                  <Send size={14} /> 发布
+                </button>
+              )}
+              {s.status === 'published' && (
+                <button
+                  role="menuitem"
+                  onClick={() => {
+                    closeActionMenu()
+                    setStatus(s.id, 'closed')
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-amber-400 hover:bg-gray-800"
+                >
+                  <Ban size={14} /> 关闭
+                </button>
+              )}
+              <div className="border-t border-gray-700/80" />
+              <button
+                role="menuitem"
+                onClick={() => {
+                  closeActionMenu()
+                  remove(s.id, s.title)
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-400 hover:bg-gray-800"
+              >
+                <Trash2 size={14} /> 删除
+              </button>
+            </div>,
+            document.body,
+          )
+        })()}
     </div>
   )
 }
