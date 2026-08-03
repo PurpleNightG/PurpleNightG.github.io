@@ -14,31 +14,34 @@ const VOLC_APP_ID: string = import.meta.env.VITE_VOLC_APP_ID || '69a1d9e90340ba0
 
 type ScreenQuality = 240 | 480 | 720 | 1080
 type ScreenFps = 30 | 60
+/** 清晰=保细节(detail)；流畅=保帧率(motion) */
+type ScreenEncodeMode = 'detail' | 'motion'
 
 const SCREEN_QUALITY_OPTIONS: {
   id: ScreenQuality
   label: string
   height: number
-  /** 火山 setScreenEncoderConfig.maxKbps */
-  maxKbps: number
+  /**
+   * 清晰模式上限码率（@60fps）。文档/静态为主，码率可偏低。
+   * 参考火山文档：1080p 静态约 2000kbps。
+   */
+  maxKbpsDetail: number
+  /**
+   * 流畅模式上限码率（@60fps）。游戏/剧烈运动需要更高余量。
+   * 旧值 1080p=12000 偏高易顶满上行；火山动态推荐 1080p30≈4000，游戏 60fps 约需翻倍。
+   */
+  maxKbpsMotion: number
 }[] = [
-  { id: 240, label: '240p', height: 240, maxKbps: 800 },
-  { id: 480, label: '480p', height: 480, maxKbps: 2000 },
-  { id: 720, label: '720p', height: 720, maxKbps: 4500 },
-  { id: 1080, label: '1080p', height: 1080, maxKbps: 12000 },
+  { id: 240, label: '240p', height: 240, maxKbpsDetail: 500, maxKbpsMotion: 900 },
+  { id: 480, label: '480p', height: 480, maxKbpsDetail: 1200, maxKbpsMotion: 2200 },
+  { id: 720, label: '720p', height: 720, maxKbpsDetail: 2800, maxKbpsMotion: 5000 },
+  { id: 1080, label: '1080p', height: 1080, maxKbpsDetail: 5000, maxKbpsMotion: 9000 },
 ]
 
-function getVolcEncoderConfig(quality: ScreenQuality, fps: ScreenFps) {
-  const preset = getScreenQualityPreset(quality)
-  const brScale = fps === 30 ? 0.75 : 1
-  return {
-    width: Math.round((preset.height * 16) / 9),
-    height: preset.height,
-    frameRate: fps,
-    maxKbps: Math.round(preset.maxKbps * brScale),
-    contentHint: 'detail' as const,
-  }
-}
+const SCREEN_ENCODE_MODE_OPTIONS: { id: ScreenEncodeMode; label: string; hint: string }[] = [
+  { id: 'motion', label: '流畅', hint: '优先保帧率，适合游戏/视频；高动态时更稳' },
+  { id: 'detail', label: '清晰', hint: '优先保细节，适合文档/PPT；高动态可能掉帧' },
+]
 
 const SCREEN_FPS_OPTIONS: { id: ScreenFps; label: string }[] = [
   { id: 30, label: '30fps' },
@@ -47,6 +50,25 @@ const SCREEN_FPS_OPTIONS: { id: ScreenFps; label: string }[] = [
 
 function getScreenQualityPreset(q: ScreenQuality) {
   return SCREEN_QUALITY_OPTIONS.find(o => o.id === q) || SCREEN_QUALITY_OPTIONS[3]
+}
+
+function getVolcMaxKbps(quality: ScreenQuality, fps: ScreenFps, encodeMode: ScreenEncodeMode) {
+  const preset = getScreenQualityPreset(quality)
+  const base = encodeMode === 'motion' ? preset.maxKbpsMotion : preset.maxKbpsDetail
+  // 30fps 信息量更低，按比例下调，避免静态场景浪费带宽
+  const brScale = fps === 30 ? 0.75 : 1
+  return Math.round(base * brScale)
+}
+
+function getVolcEncoderConfig(quality: ScreenQuality, fps: ScreenFps, encodeMode: ScreenEncodeMode) {
+  const preset = getScreenQualityPreset(quality)
+  return {
+    width: Math.round((preset.height * 16) / 9),
+    height: preset.height,
+    frameRate: fps,
+    maxKbps: getVolcMaxKbps(quality, fps, encodeMode),
+    contentHint: encodeMode,
+  }
 }
 
 /** 监测推流码率塌陷 + 回报帧率/延迟 */
@@ -132,6 +154,7 @@ export default function ScreenShare() {
   const [latency, setLatency] = useState<number | null>(null)
   const [screenQuality, setScreenQuality] = useState<ScreenQuality>(1080)
   const [screenFpsChoice, setScreenFpsChoice] = useState<ScreenFps>(60)
+  const [screenEncodeMode, setScreenEncodeMode] = useState<ScreenEncodeMode>('motion')
   const [screenHostQuality, setScreenHostQuality] = useState<ScreenQuality>(1080)
   const [screenHostFps, setScreenHostFps] = useState<ScreenFps>(60)
   const [screenFps, setScreenFps] = useState<number | null>(null)
@@ -178,6 +201,7 @@ export default function ScreenShare() {
   const volcHostUserIdRef = useRef<string>('')
   const screenQualityRef = useRef<ScreenQuality>(1080)
   const screenFpsChoiceRef = useRef<ScreenFps>(60)
+  const screenEncodeModeRef = useRef<ScreenEncodeMode>('motion')
   const screenEncodeQualityRef = useRef<ScreenQuality>(1080)
   const screenEncodeFpsRef = useRef<ScreenFps>(60)
   const mediaToastTimerRef = useRef<number | null>(null)
@@ -435,15 +459,18 @@ export default function ScreenShare() {
 
       const q = screenQualityRef.current
       const f = screenFpsChoiceRef.current
+      const em = screenEncodeModeRef.current
       screenEncodeQualityRef.current = q
       screenEncodeFpsRef.current = f
       setScreenHostQuality(q)
       setScreenHostFps(f)
       setScreenQuality(q)
       setScreenFpsChoice(f)
+      setScreenEncodeMode(em)
 
-      const enc = getVolcEncoderConfig(q, f)
-      setConnectStep(`获取屏幕共享权限（${enc.height}p${enc.frameRate}fps）...`)
+      const enc = getVolcEncoderConfig(q, f, em)
+      const modeLabel = em === 'motion' ? '流畅' : '清晰'
+      setConnectStep(`获取屏幕共享权限（${enc.height}p${enc.frameRate}fps · ${modeLabel}）...`)
       const rawName = myName.current || 'host'
       const hostUid = rawName.replace(/[^a-zA-Z0-9@\-_.]/g, '_').slice(0, 128) || 'host'
       // 须在 startScreenCapture 前设置编码参数
@@ -1329,12 +1356,13 @@ export default function ScreenShare() {
     }
   }
 
-  const applyVolcEncodeLive = async (quality: ScreenQuality, fps: ScreenFps) => {
+  const applyVolcEncodeLive = async (quality: ScreenQuality, fps: ScreenFps, encodeMode: ScreenEncodeMode) => {
     const engine = volcEngineRef.current
     if (!engine || activeStreamMode !== 'volc' || rtcRoleRef.current !== 'host') return
-    const enc = getVolcEncoderConfig(quality, fps)
+    const enc = getVolcEncoderConfig(quality, fps, encodeMode)
     screenEncodeQualityRef.current = quality
     screenEncodeFpsRef.current = fps
+    screenEncodeModeRef.current = encodeMode
     try {
       await engine.setScreenEncoderConfig(enc)
     } catch (e) {
@@ -1351,7 +1379,7 @@ export default function ScreenShare() {
     screenQualityRef.current = q
     if (mode === 'host' || rtcRoleRef.current === 'host') {
       setScreenHostQuality(q)
-      await applyVolcEncodeLive(q, screenFpsChoiceRef.current)
+      await applyVolcEncodeLive(q, screenFpsChoiceRef.current, screenEncodeModeRef.current)
     }
     showMediaToast(`已切换至 ${label}`, 'success')
   }
@@ -1364,9 +1392,22 @@ export default function ScreenShare() {
     screenFpsChoiceRef.current = f
     if (mode === 'host' || rtcRoleRef.current === 'host') {
       setScreenHostFps(f)
-      await applyVolcEncodeLive(screenQualityRef.current, f)
+      await applyVolcEncodeLive(screenQualityRef.current, f, screenEncodeModeRef.current)
     }
     showMediaToast(`已切换至 ${f}fps`, 'success')
+  }
+
+  const handleScreenEncodeModeChange = async (em: ScreenEncodeMode) => {
+    if (em === screenEncodeModeRef.current) return
+    const opt = SCREEN_ENCODE_MODE_OPTIONS.find(o => o.id === em)
+    const label = opt?.label || em
+    showMediaToast(`正在切换至${label}模式…`, 'loading')
+    setScreenEncodeMode(em)
+    screenEncodeModeRef.current = em
+    if (mode === 'host' || rtcRoleRef.current === 'host') {
+      await applyVolcEncodeLive(screenQualityRef.current, screenFpsChoiceRef.current, em)
+    }
+    showMediaToast(`已切换至${label}模式`, 'success')
   }
 
   // Check if student can HOST (share) with a mode - viewing is always allowed
@@ -1856,10 +1897,26 @@ export default function ScreenShare() {
                   {hostConnMode === 'volc' && (
                     <div className="space-y-1.5">
                       <div className="flex items-center gap-0.5 bg-gray-900/50 border border-gray-700/45 rounded-lg p-0.5">
+                        {SCREEN_ENCODE_MODE_OPTIONS.map(o => (
+                          <button
+                            key={o.id}
+                            type="button"
+                            title={o.hint}
+                            onClick={() => { setScreenEncodeMode(o.id); screenEncodeModeRef.current = o.id }}
+                            className={`flex-1 px-1 py-1 rounded text-[11px] font-medium transition-colors ${
+                              screenEncodeMode === o.id ? 'bg-orange-600/40 text-orange-200' : 'text-gray-500 hover:text-gray-300'
+                            }`}
+                          >
+                            {o.label}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-0.5 bg-gray-900/50 border border-gray-700/45 rounded-lg p-0.5">
                         {SCREEN_QUALITY_OPTIONS.map(o => (
                           <button
                             key={o.id}
                             type="button"
+                            title={`${o.label} · 约 ${getVolcMaxKbps(o.id, screenFpsChoice, screenEncodeMode)}kbps`}
                             onClick={() => { setScreenQuality(o.id); screenQualityRef.current = o.id }}
                             className={`flex-1 px-1 py-1 rounded text-[11px] font-medium transition-colors ${
                               screenQuality === o.id ? 'bg-orange-600/40 text-orange-200' : 'text-gray-500 hover:text-gray-300'
@@ -2222,12 +2279,29 @@ export default function ScreenShare() {
 
   const volcMediaControls = activeStreamMode === 'volc' && mode === 'host' ? (
     <div className="flex items-center gap-1.5 flex-wrap">
+      <div className="flex items-center bg-gray-800/60 border border-gray-700/50 rounded-lg p-0.5" title="编码模式">
+        {SCREEN_ENCODE_MODE_OPTIONS.map(o => (
+          <button
+            key={o.id}
+            type="button"
+            title={o.hint}
+            onClick={() => handleScreenEncodeModeChange(o.id)}
+            className={`min-w-[2.5rem] px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+              screenEncodeMode === o.id
+                ? 'bg-orange-600/45 text-orange-100'
+                : 'text-gray-400 hover:text-white hover:bg-gray-700/40'
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
       <div className="flex items-center bg-gray-800/60 border border-gray-700/50 rounded-lg p-0.5" title="清晰度（影响码率）">
         {SCREEN_QUALITY_OPTIONS.map(o => (
           <button
             key={o.id}
             type="button"
-            title={`${o.label} · 最高约 ${o.maxKbps}kbps`}
+            title={`${o.label} · 最高约 ${getVolcMaxKbps(o.id, screenFpsChoice, screenEncodeMode)}kbps`}
             onClick={() => handleScreenQualityChange(o.id)}
             className={`min-w-[2.5rem] px-2 py-1 rounded-md text-xs font-medium transition-colors ${
               screenQuality === o.id
