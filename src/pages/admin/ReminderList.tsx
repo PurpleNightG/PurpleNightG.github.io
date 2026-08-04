@@ -936,10 +936,10 @@ export default function ReminderList() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex gap-1 student-glass-chip p-1 w-fit">
+          <div className="flex student-glass-chip student-glass-seg w-fit">
             <button
               onClick={() => setActiveTab('training')}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors relative ${
+              className={`px-4 py-1.5 text-sm font-medium transition-colors relative ${
                 activeTab === 'training' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
               }`}
             >
@@ -954,7 +954,7 @@ export default function ReminderList() {
             </button>
             <button
               onClick={() => setActiveTab('attendance')}
-              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors relative ${
+              className={`px-4 py-1.5 text-sm font-medium transition-colors relative ${
                 activeTab === 'attendance' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
               }`}
             >
@@ -971,10 +971,10 @@ export default function ReminderList() {
 
           {activeTab === 'training' && (
             <div className="flex items-center gap-2 flex-wrap">
-              <div className="flex gap-1 student-glass-chip p-1">
+              <div className="flex student-glass-chip student-glass-seg">
                 <button
                   onClick={() => void switchDisplayMode('remaining')}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  className={`px-3 py-1.5 text-xs font-medium transition-colors ${
                     displayMode === 'remaining' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'
                   }`}
                   title="还剩不超过 3 天即显示"
@@ -983,7 +983,7 @@ export default function ReminderList() {
                 </button>
                 <button
                   onClick={() => void switchDisplayMode('kick_cycle')}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  className={`px-3 py-1.5 text-xs font-medium transition-colors ${
                     displayMode === 'kick_cycle' ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'
                   }`}
                   title="按踢人日周期：只显示本轮踢人日会超期的人，并仅在踢人前 N 天提醒"

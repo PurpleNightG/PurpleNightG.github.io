@@ -503,6 +503,16 @@
   opacity: 0;
 }
 
+/* 分段切换条：内页签圆角 = 外壳圆角 − 内边距，避免「外圆内方」 */
+.student-glass-chip.student-glass-seg {
+  gap: 0.25rem;
+  padding: 0.25rem;
+}
+
+.student-glass-chip.student-glass-seg > button {
+  border-radius: calc(0.85rem - 0.25rem);
+}
+
 .student-glass-btn {
   position: relative;
   display: flex;

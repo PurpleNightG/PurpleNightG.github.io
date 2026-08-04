@@ -473,10 +473,10 @@ export default function LeaveRecords() {
       </div>
 
       {/* Tab 切换 */}
-      <div className="flex gap-1 mb-4 student-glass-chip p-1 w-fit">
+      <div className="flex mb-4 student-glass-chip student-glass-seg w-fit">
         <button
           onClick={() => setActiveTab('records')}
-          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
+          className={`px-4 py-1.5 text-sm font-medium transition-colors ${
             activeTab === 'records' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
           }`}
         >
@@ -484,7 +484,7 @@ export default function LeaveRecords() {
         </button>
         <button
           onClick={() => setActiveTab('applications')}
-          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors relative ${
+          className={`px-4 py-1.5 text-sm font-medium transition-colors relative ${
             activeTab === 'applications' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
           }`}
         >
@@ -497,7 +497,7 @@ export default function LeaveRecords() {
         </button>
         <button
           onClick={() => setActiveTab('endApproval')}
-          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors relative ${
+          className={`px-4 py-1.5 text-sm font-medium transition-colors relative ${
             activeTab === 'endApproval' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
           }`}
         >

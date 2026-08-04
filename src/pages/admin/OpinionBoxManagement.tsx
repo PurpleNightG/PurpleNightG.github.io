@@ -122,7 +122,7 @@ export default function OpinionBoxManagement() {
             ) : null}
           </p>
         </div>
-        <div className="flex flex-wrap gap-1 student-glass-chip p-1">
+        <div className="flex flex-wrap student-glass-chip student-glass-seg">
           {([
             ['all', '全部'],
             ['pending', '待查阅'],
@@ -133,7 +133,7 @@ export default function OpinionBoxManagement() {
               key={key}
               type="button"
               onClick={() => setFilter(key)}
-              className={`px-3 py-1.5 rounded-md text-sm transition-colors ${
+              className={`px-3 py-1.5 text-sm transition-colors ${
                 filter === key ? 'bg-purple-600 text-white' : 'text-gray-300 hover:bg-white/5'
               }`}
             >

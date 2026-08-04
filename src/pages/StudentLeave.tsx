@@ -136,16 +136,16 @@ export default function StudentLeave() {
       )}
 
       {/* Tab 切换 */}
-      <div className="flex gap-1 mb-4 student-glass-chip p-1 w-fit">
+      <div className="flex mb-4 student-glass-chip student-glass-seg w-fit">
         <button
           onClick={() => setTab('records')}
-          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'records' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
+          className={`px-4 py-1.5 text-sm font-medium transition-colors ${tab === 'records' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
         >
           请假历史
         </button>
         <button
           onClick={() => setTab('applications')}
-          className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors relative ${tab === 'applications' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
+          className={`px-4 py-1.5 text-sm font-medium transition-colors relative ${tab === 'applications' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
         >
           我的申请
           {hasPendingApp && (
