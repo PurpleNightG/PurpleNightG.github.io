@@ -6,11 +6,13 @@ import ConfirmDialog from '../../components/ConfirmDialog'
 import { formatDate } from '../../utils/dateFormat'
 import { getRoleColor } from '../../utils/roleColors'
 import { useBadges } from '../../contexts/BadgeContext'
+import MemberNameCell from '../../components/MemberNameCell'
 
 interface ReminderItem {
   id: number
   member_id: number
   member_name: string
+  avatar?: string | null
   qq?: string
   stage_role: string
   last_training_date: string | null
@@ -29,6 +31,7 @@ const TRAINING_WARN_DAYS = 3
 interface AttendanceItem {
   member_id: number
   member_name: string
+  avatar?: string | null
   qq?: string
   stage_role: string
   join_date?: string
@@ -1178,7 +1181,7 @@ export default function ReminderList() {
                       <td>
                         <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span>{item.member_name}</span>
+                            <MemberNameCell name={item.member_name} avatar={item.avatar} qq={item.qq} />
                             {item.paused && <span className="status-badge bg-cyan-600/20 text-cyan-300">请假暂停</span>}
                             {item.ignored && <span className="status-badge bg-gray-600/30 text-gray-400">已忽略</span>}
                             {item.has_custom_deadline && (
@@ -1503,7 +1506,7 @@ export default function ReminderList() {
                     </td>
                     <td>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span>{item.member_name}</span>
+                        <MemberNameCell name={item.member_name} avatar={item.avatar} qq={item.qq} />
                         {!!item.is_leave_buffer && (
                           <span className="status-badge bg-cyan-600/20 text-cyan-300">请假缓冲</span>
                         )}

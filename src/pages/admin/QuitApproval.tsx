@@ -5,11 +5,13 @@ import { formatDate } from '../../utils/dateFormat'
 import { toast } from '../../utils/toast'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import SearchableSelect from '../../components/SearchableSelect'
+import MemberNameCell from '../../components/MemberNameCell'
 
 interface QuitApproval {
   id: number
   member_id: number
   member_name: string
+  avatar?: string | null
   qq: string
   apply_date: string
   source_type: string
@@ -640,7 +642,7 @@ export default function QuitApproval() {
                         {selectedIds.has(approval.id) ? <CheckSquare size={18} className="text-purple-400" /> : <Square size={18} className="text-gray-400" />}
                       </button>
                     </td>
-                    <td>{approval.member_name}</td>
+                    <td><MemberNameCell name={approval.member_name} avatar={approval.avatar} qq={approval.qq} /></td>
                     <td>{approval.qq}</td>
                     <td>{formatDate(approval.apply_date)}</td>
                     <td>

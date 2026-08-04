@@ -3,7 +3,7 @@ import { pool } from '../config/database.js'
 
 const router = express.Router()
 
-const ASSISTANT_FIELDS = 'id, username, nickname, qq, status, is_assistant, screen_share_enabled, screen_share_quota, screen_share_used'
+const ASSISTANT_FIELDS = 'id, username, nickname, qq, status, is_assistant, screen_share_enabled, screen_share_quota, screen_share_used, guest_code_max'
 
 async function findMemberByDisplayName(name) {
   const [rows] = await pool.execute(
@@ -30,6 +30,7 @@ function buildAssistantStatus(member) {
       screenShareUsed: 0,
       quotaRemaining: null,
       canUseRtc: false,
+      guestCodeMax: 0,
     }
   }
   const quota = member.screen_share_quota
@@ -43,6 +44,7 @@ function buildAssistantStatus(member) {
     screenShareUsed: used,
     quotaRemaining: quota == null ? null : Math.max(0, quota - used),
     canUseRtc: enabled && hasQuota,
+    guestCodeMax: Math.max(0, Number(member.guest_code_max) || 0),
   }
 }
 
@@ -57,7 +59,35 @@ function formatAssistantRow(row) {
     screen_share_enabled: !!row.screen_share_enabled,
     screen_share_quota: row.screen_share_quota,
     screen_share_used: Number(row.screen_share_used) || 0,
+    guest_code_max: status.guestCodeMax,
     quotaRemaining: status.quotaRemaining,
+  }
+}
+
+function generateGuestCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  let code = 'G'
+  for (let i = 0; i < 7; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return code
+}
+
+const GUEST_HOST_MODES = ['peerjs', 'agora', 'volc']
+
+function formatGuestCodeRow(row) {
+  return {
+    id: row.id,
+    code: row.code,
+    mode: row.mode,
+    created_by_type: row.created_by_type,
+    created_by_member_id: row.created_by_member_id,
+    created_by_name: row.created_by_name,
+    status: row.status,
+    used_by_nickname: row.used_by_nickname,
+    used_at: row.used_at,
+    room_id: row.room_id,
+    created_at: row.created_at,
   }
 }
 
@@ -84,6 +114,54 @@ function formatAssistantRow(row) {
 })()
 
 const RTC_MODES = ['agora', 'volc']
+
+/** 批量按显示名解析成员头像/QQ（屏幕共享在线列表用） */
+router.post('/profiles-by-names', async (req, res) => {
+  try {
+    const raw = Array.isArray(req.body?.names) ? req.body.names : []
+    const names = [...new Set(
+      raw.map((n) => String(n || '').trim()).filter(Boolean)
+    )].slice(0, 50)
+
+    if (names.length === 0) {
+      return res.json({ success: true, data: [] })
+    }
+
+    const placeholders = names.map(() => '?').join(',')
+    const [rows] = await pool.execute(
+      `SELECT username, nickname, qq, avatar
+       FROM members
+       WHERE username IN (${placeholders}) OR nickname IN (${placeholders})`,
+      [...names, ...names]
+    )
+
+    const byKey = new Map()
+    for (const row of rows || []) {
+      const profile = {
+        nickname: row.nickname || row.username || '',
+        qq: row.qq || null,
+        avatar: row.avatar || null,
+      }
+      if (row.username) byKey.set(row.username, profile)
+      if (row.nickname) byKey.set(row.nickname, profile)
+    }
+
+    const data = names.map((key) => {
+      const hit = byKey.get(key)
+      return {
+        key,
+        nickname: hit?.nickname || key,
+        qq: hit?.qq || null,
+        avatar: hit?.avatar || null,
+      }
+    })
+
+    res.json({ success: true, data })
+  } catch (error) {
+    console.error('[room] profiles-by-names', error)
+    res.status(500).json({ success: false, message: '解析成员资料失败' })
+  }
+})
 
 // Student requests access to agora/volc
 router.post('/rtc-request', async (req, res) => {
@@ -248,6 +326,7 @@ router.put('/assistants/:memberId', async (req, res) => {
       is_assistant,
       screen_share_enabled,
       screen_share_quota,
+      guest_code_max,
       reset_used,
     } = req.body
 
@@ -262,6 +341,10 @@ router.put('/assistants/:memberId', async (req, res) => {
     if (screen_share_quota !== undefined) {
       nextQuota = screen_share_quota === null || screen_share_quota === '' ? null : Math.max(0, parseInt(screen_share_quota, 10) || 0)
     }
+    let nextGuestMax = Number(member.guest_code_max) || 1
+    if (guest_code_max !== undefined) {
+      nextGuestMax = Math.max(0, parseInt(guest_code_max, 10) || 0)
+    }
     let nextUsed = Number(member.screen_share_used) || 0
     if (reset_used) {
       nextUsed = 0
@@ -272,13 +355,250 @@ router.put('/assistants/:memberId', async (req, res) => {
         is_assistant = ?,
         screen_share_enabled = ?,
         screen_share_quota = ?,
-        screen_share_used = ?
+        screen_share_used = ?,
+        guest_code_max = ?
       WHERE id = ?`,
-      [nextIsAssistant ? 1 : 0, nextEnabled ? 1 : 0, nextQuota, nextUsed, memberId]
+      [nextIsAssistant ? 1 : 0, nextEnabled ? 1 : 0, nextQuota, nextUsed, nextGuestMax, memberId]
     )
 
     const updated = await findMemberById(memberId)
     res.json({ success: true, data: formatAssistantRow(updated) })
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message })
+  }
+})
+
+/** 生成访客码：助教生成会消耗一次共享次数，并可限制同时持有的未使用码数量 */
+router.post('/guest-codes', async (req, res) => {
+  try {
+    const {
+      mode,
+      creatorType,
+      memberId,
+      creatorName,
+    } = req.body || {}
+    const hostMode = GUEST_HOST_MODES.includes(mode) ? mode : null
+    if (!hostMode) {
+      return res.status(400).json({ success: false, error: '请选择共享方式：peerjs / agora / volc' })
+    }
+    if (creatorType !== 'admin' && creatorType !== 'assistant') {
+      return res.status(400).json({ success: false, error: 'creatorType 无效' })
+    }
+
+    let member = null
+    if (creatorType === 'assistant') {
+      if (!memberId) {
+        return res.status(400).json({ success: false, error: '助教生成访客码需要 memberId' })
+      }
+      member = await findMemberById(memberId)
+      if (!member?.is_assistant) {
+        return res.status(403).json({ success: false, error: '仅助教可生成访客码' })
+      }
+      if (!member.screen_share_enabled) {
+        return res.status(403).json({ success: false, error: '助教屏幕共享权限已关闭' })
+      }
+      const used = Number(member.screen_share_used) || 0
+      if (member.screen_share_quota != null && used >= member.screen_share_quota) {
+        return res.status(403).json({ success: false, error: '助教屏幕共享次数已用完' })
+      }
+      const guestMax = Math.max(0, Number(member.guest_code_max) || 0)
+      const [activeRows] = await pool.execute(
+        `SELECT COUNT(*) AS cnt FROM screen_share_guest_codes
+         WHERE created_by_member_id = ? AND status = 'active'`,
+        [member.id]
+      )
+      const activeCount = Number(activeRows[0]?.cnt) || 0
+      if (activeCount >= guestMax) {
+        return res.status(403).json({
+          success: false,
+          error: `未使用访客码已达上限（${guestMax} 个），请等待使用或删除后再生成`,
+        })
+      }
+    }
+
+    const displayCreator =
+      String(creatorName || member?.nickname || member?.username || '管理员').trim() || '管理员'
+
+    let code = generateGuestCode()
+    for (let i = 0; i < 5; i++) {
+      try {
+        const conn = await pool.getConnection()
+        try {
+          await conn.beginTransaction()
+          if (creatorType === 'assistant' && member) {
+            const [lockRows] = await conn.execute(
+              `SELECT id, screen_share_enabled, screen_share_quota, screen_share_used, guest_code_max
+               FROM members WHERE id = ? FOR UPDATE`,
+              [member.id]
+            )
+            const locked = lockRows[0]
+            if (!locked?.screen_share_enabled) {
+              await conn.rollback()
+              return res.status(403).json({ success: false, error: '助教屏幕共享权限已关闭' })
+            }
+            const usedNow = Number(locked.screen_share_used) || 0
+            if (locked.screen_share_quota != null && usedNow >= locked.screen_share_quota) {
+              await conn.rollback()
+              return res.status(403).json({ success: false, error: '助教屏幕共享次数已用完' })
+            }
+            const [cntRows] = await conn.execute(
+              `SELECT COUNT(*) AS cnt FROM screen_share_guest_codes
+               WHERE created_by_member_id = ? AND status = 'active'`,
+              [member.id]
+            )
+            const guestMax = Math.max(0, Number(locked.guest_code_max) || 0)
+            if ((Number(cntRows[0]?.cnt) || 0) >= guestMax) {
+              await conn.rollback()
+              return res.status(403).json({
+                success: false,
+                error: `未使用访客码已达上限（${guestMax} 个）`,
+              })
+            }
+            await conn.execute(
+              'UPDATE members SET screen_share_used = screen_share_used + 1 WHERE id = ?',
+              [member.id]
+            )
+          }
+
+          const [result] = await conn.execute(
+            `INSERT INTO screen_share_guest_codes
+              (code, mode, created_by_type, created_by_member_id, created_by_name, status)
+             VALUES (?, ?, ?, ?, ?, 'active')`,
+            [
+              code,
+              hostMode,
+              creatorType,
+              creatorType === 'assistant' ? member.id : null,
+              displayCreator,
+            ]
+          )
+          await conn.commit()
+          return res.json({
+            success: true,
+            data: {
+              id: result.insertId,
+              code,
+              mode: hostMode,
+              created_by_type: creatorType,
+              created_by_name: displayCreator,
+              status: 'active',
+            },
+          })
+        } catch (err) {
+          await conn.rollback()
+          throw err
+        } finally {
+          conn.release()
+        }
+      } catch (err) {
+        if (err?.code === 'ER_DUP_ENTRY') {
+          code = generateGuestCode()
+          continue
+        }
+        throw err
+      }
+    }
+    res.status(500).json({ success: false, error: '生成访客码失败，请重试' })
+  } catch (e) {
+    console.error('[room] guest-codes create', e)
+    res.status(500).json({ success: false, error: e.message })
+  }
+})
+
+/** 列出访客码：管理看全部（scope=admin）；助教只看自己的（scope=assistant&memberId） */
+router.get('/guest-codes', async (req, res) => {
+  try {
+    const { scope, memberId } = req.query
+    let rows = []
+
+    if (scope === 'assistant') {
+      const mid = parseInt(String(memberId || ''), 10)
+      if (!Number.isFinite(mid) || mid <= 0) {
+        return res.status(400).json({ success: false, data: [], error: '助教查询需要有效 memberId' })
+      }
+      ;[rows] = await pool.execute(
+        `SELECT * FROM screen_share_guest_codes
+         WHERE created_by_type = 'assistant'
+           AND created_by_member_id = ?
+           AND status IN ('active', 'used')
+         ORDER BY created_at DESC
+         LIMIT 100`,
+        [mid]
+      )
+    } else if (scope === 'admin') {
+      ;[rows] = await pool.execute(
+        `SELECT * FROM screen_share_guest_codes
+         WHERE status IN ('active', 'used')
+         ORDER BY created_at DESC
+         LIMIT 200`
+      )
+    } else {
+      return res.status(400).json({
+        success: false,
+        data: [],
+        error: '请指定 scope=admin 或 scope=assistant',
+      })
+    }
+
+    res.json({ success: true, data: (rows || []).map(formatGuestCodeRow) })
+  } catch (e) {
+    res.status(500).json({ success: false, data: [], error: e.message })
+  }
+})
+
+/** 校验访客码（不消耗，仅查询）— 须在 /:id 路由之前 */
+router.post('/guest-codes/validate', async (req, res) => {
+  try {
+    const code = String(req.body?.code || '').trim().toUpperCase()
+    if (!code) return res.status(400).json({ success: false, error: '请输入访客码' })
+    const [rows] = await pool.execute(
+      `SELECT id, code, mode, status FROM screen_share_guest_codes WHERE code = ? LIMIT 1`,
+      [code]
+    )
+    const row = rows[0]
+    if (!row) return res.status(404).json({ success: false, error: '访客码无效' })
+    if (row.status === 'revoked') {
+      return res.status(400).json({ success: false, error: '访客码已作废' })
+    }
+    if (row.status === 'used') {
+      return res.status(400).json({ success: false, error: '访客码已被使用' })
+    }
+    res.json({ success: true, data: { id: row.id, code: row.code, mode: row.mode } })
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message })
+  }
+})
+
+/** 删除访客码：管理可删未使用/已用；助教只能删自己的未使用码（不退还次数） */
+router.post('/guest-codes/:id/revoke', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10)
+    const { memberId, asAdmin } = req.body || {}
+    const [rows] = await pool.execute(
+      'SELECT * FROM screen_share_guest_codes WHERE id = ? LIMIT 1',
+      [id]
+    )
+    const row = rows[0]
+    if (!row) return res.status(404).json({ success: false, error: '访客码不存在' })
+
+    if (asAdmin) {
+      if (row.status !== 'active' && row.status !== 'used') {
+        return res.status(400).json({ success: false, error: '无法删除此访客码' })
+      }
+    } else {
+      if (row.status !== 'active') {
+        return res.status(403).json({ success: false, error: '助教只能删除未使用的访客码' })
+      }
+      if (!memberId || Number(row.created_by_member_id) !== Number(memberId)) {
+        return res.status(403).json({ success: false, error: '无权删除此访客码' })
+      }
+    }
+
+    await pool.execute(
+      `DELETE FROM screen_share_guest_codes WHERE id = ?`,
+      [id]
+    )
+    res.json({ success: true })
   } catch (e) {
     res.status(500).json({ success: false, error: e.message })
   }
@@ -341,12 +661,31 @@ const rooms = new Map()
 // Active user tracking: "userType:displayName" -> { role, roomId, displayName, registeredAt }
 const activeUsers = new Map()
 const killedRooms = new Map() // roomId -> adminName
+/** memberId → 屏幕共享邀请（学员端浮窗） */
+const pendingRoomInvites = new Map()
 const ACTIVE_USER_TTL = 2 * 60 * 60 * 1000 // 2 hours
 const VIEWER_TIMEOUT = 120000 // 120 seconds without heartbeat = viewer gone (tolerates browser background tab throttling ~60s)
 
 // Composite key to distinguish admin vs student with same name
 function userKey(displayName, userType) {
   return userType ? `${userType}:${displayName}` : displayName
+}
+
+function inviteMemberKey(memberId) {
+  return Number(memberId)
+}
+
+function clearInvitesForRoom(roomId) {
+  const rid = String(roomId || '').toUpperCase()
+  for (const [memberId, inv] of pendingRoomInvites) {
+    if (inv.roomId === rid) pendingRoomInvites.delete(memberId)
+  }
+}
+
+function canInviteToRoom(room, { userType, hostName }) {
+  if (!room?.hostName) return false
+  if (userType === 'admin') return true
+  return hostName && String(hostName) === String(room.hostName)
 }
 
 // Periodic cleanup: remove stale activeUsers entries for viewers whose heartbeats expired.
@@ -365,26 +704,58 @@ setInterval(() => {
         }
         room.viewers.delete(uid)
         room.viewerHeartbeats.delete(uid)
+        room.viewerMemberIds?.delete(uid)
       }
     }
   }
 }, 30000) // Run every 30 seconds
 
 function getRoom(roomId) {
-  if (!rooms.has(roomId)) {
-    rooms.set(roomId, {
+  const id = String(roomId || '').toUpperCase()
+  if (!rooms.has(id)) {
+    rooms.set(id, {
       hostName: '', hostKey: '', viewers: new Map(), viewerKeys: new Map(),
+      viewerMemberIds: new Map(),
       viewerHeartbeats: new Map(), mode: 'peerjs', peakViewers: 0, allViewerNames: new Set(),
       qualityPrefs: new Map(), fpsPrefs: new Map(),
       hostQuality: 1080, hostFps: 60,
     })
   }
-  const room = rooms.get(roomId)
+  const room = rooms.get(id)
   if (!room.qualityPrefs) room.qualityPrefs = new Map()
   if (!room.fpsPrefs) room.fpsPrefs = new Map()
+  if (!room.viewerMemberIds) room.viewerMemberIds = new Map()
   if (!room.hostQuality) room.hostQuality = 1080
   if (!room.hostFps) room.hostFps = 60
   return room
+}
+
+/** 按房间号查找进行中的共享（大小写不敏感） */
+function findLiveRoom(roomId) {
+  const upper = String(roomId || '').toUpperCase()
+  if (!upper) return null
+  const direct = rooms.get(upper)
+  if (direct?.hostName) return { roomId: upper, room: direct }
+  for (const [k, v] of rooms.entries()) {
+    if (String(k).toUpperCase() === upper && v?.hostName) {
+      return { roomId: k, room: v }
+    }
+  }
+  return null
+}
+
+/** 当前在房观看的学员 memberId（优先 id，避免同名误伤） */
+function getWatchingMemberIds(room) {
+  const ids = new Set()
+  if (!room) return ids
+  const now = Date.now()
+  for (const [uid] of room.viewers.entries()) {
+    const hb = room.viewerHeartbeats.get(uid)
+    if (hb && now - hb >= VIEWER_TIMEOUT) continue
+    const mid = room.viewerMemberIds?.get(uid)
+    if (mid != null && Number(mid) > 0) ids.add(Number(mid))
+  }
+  return ids
 }
 
 function getTargetQuality(room) {
@@ -436,6 +807,136 @@ router.post('/force-leave', (req, res) => {
   res.json({ success: true })
 })
 
+/** 学员：查询待处理屏幕共享邀请 */
+router.get('/invites/pending', (req, res) => {
+  const memberId = inviteMemberKey(req.query.memberId)
+  if (!memberId) return res.json({ invite: null })
+  const inv = pendingRoomInvites.get(memberId)
+  if (!inv) return res.json({ invite: null })
+  const room = rooms.get(inv.roomId) || findLiveRoom(inv.roomId)?.room
+  if (!room?.hostName) {
+    pendingRoomInvites.delete(memberId)
+    return res.json({ invite: null })
+  }
+  res.json({
+    invite: {
+      roomId: inv.roomId,
+      hostName: room.hostName,
+      invitedBy: inv.invitedBy,
+      invitedAt: inv.invitedAt,
+      viewerCount: getActiveViewers(room).length,
+      mode: room.mode || 'peerjs',
+    },
+  })
+})
+
+/** 学员：接受或忽略屏幕共享邀请 */
+router.post('/invites/respond', (req, res) => {
+  const { memberId, roomId, accept } = req.body || {}
+  const mid = inviteMemberKey(memberId)
+  if (!mid) return res.status(400).json({ success: false, error: '缺少 memberId' })
+  const inv = pendingRoomInvites.get(mid)
+  const rid = roomId ? String(roomId).toUpperCase() : ''
+  if (inv && (!rid || inv.roomId === rid)) {
+    pendingRoomInvites.delete(mid)
+  }
+  res.json({ success: true, accept: !!accept })
+})
+
+/** 可邀请观看的成员（未退队、且当前不在该房间观看）
+ *  不按 hostName 排除同名学员；仅排除真实观看者 memberId，以及可选的 excludeMemberId（自己）
+ */
+router.get('/:roomId/invite-candidates', async (req, res) => {
+  try {
+    const found = findLiveRoom(req.params.roomId)
+    if (!found) {
+      return res.status(404).json({ success: false, error: '房间不存在或已关闭' })
+    }
+    const { room } = found
+    const watchingIds = getWatchingMemberIds(room)
+    const excludeSelf = inviteMemberKey(req.query.excludeMemberId)
+    if (excludeSelf > 0) watchingIds.add(excludeSelf)
+
+    const [rows] = await pool.execute(
+      `SELECT id, nickname, username, qq, avatar, stage_role
+       FROM members
+       WHERE status != '已退队'
+       ORDER BY nickname ASC, id ASC`
+    )
+    const candidates = rows
+      .map((row) => {
+        const id = Number(row.id)
+        return {
+          id,
+          nickname: row.nickname || row.username || `成员${row.id}`,
+          username: row.username || '',
+          qq: row.qq != null ? String(row.qq) : null,
+          avatar: row.avatar || null,
+          stageRole: row.stage_role || null,
+          inRoom: watchingIds.has(id),
+        }
+      })
+      .filter((c) => !c.inRoom)
+    res.json({ success: true, candidates })
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message })
+  }
+})
+
+/**
+ * 邀请指定成员观看屏幕共享
+ * body: { hostName, userType, memberIds[] }
+ */
+router.post('/:roomId/invite', async (req, res) => {
+  try {
+    const found = findLiveRoom(req.params.roomId)
+    if (!found) {
+      return res.status(404).json({ success: false, error: '房间不存在或已关闭' })
+    }
+    const { roomId, room } = found
+    const { userType, hostName, displayName, memberIds } = req.body || {}
+    if (!canInviteToRoom(room, { userType, hostName: hostName || displayName })) {
+      return res.status(403).json({ success: false, error: '仅共享者可邀请' })
+    }
+
+    const ids = [...new Set(
+      (Array.isArray(memberIds) ? memberIds : [])
+        .map((id) => inviteMemberKey(id))
+        .filter((id) => id > 0)
+    )]
+    if (ids.length === 0) {
+      return res.status(400).json({ success: false, error: '请选择要邀请的成员' })
+    }
+
+    const watchingIds = getWatchingMemberIds(room)
+
+    const placeholders = ids.map(() => '?').join(',')
+    const [rows] = await pool.execute(
+      `SELECT id, nickname, username FROM members WHERE id IN (${placeholders}) AND status != '已退队'`,
+      ids
+    )
+
+    const now = Date.now()
+    let invitedCount = 0
+    const invitedBy = displayName || hostName || room.hostName
+    for (const row of rows) {
+      const mid = inviteMemberKey(row.id)
+      if (!mid) continue
+      // 只按 memberId 判断是否已在观看，避免同名误伤
+      if (watchingIds.has(mid)) continue
+      pendingRoomInvites.set(mid, {
+        roomId: String(roomId).toUpperCase(),
+        invitedBy,
+        invitedAt: now,
+      })
+      invitedCount++
+    }
+    res.json({ success: true, invitedCount })
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message })
+  }
+})
+
 // List all active rooms (admin only)
 router.get('/active-rooms', async (req, res) => {
   const list = []
@@ -485,6 +986,7 @@ router.post('/admin-close/:roomId', async (req, res) => {
         [room.peakViewers, req.params.roomId]
       )
     } catch {}
+    clearInvitesForRoom(req.params.roomId)
     rooms.delete(req.params.roomId)
   } else {
     // Room not in memory, clean DB
@@ -494,6 +996,7 @@ router.post('/admin-close/:roomId', async (req, res) => {
         [req.params.roomId]
       )
     } catch {}
+    clearInvitesForRoom(req.params.roomId)
   }
   const { adminName } = req.body || {}
   killedRooms.set(req.params.roomId, adminName || '管理员')
@@ -503,7 +1006,37 @@ router.post('/admin-close/:roomId', async (req, res) => {
 // Host registers room with display name
 router.post('/:roomId/host', async (req, res) => {
   const room = getRoom(req.params.roomId)
-  const { displayName, mode, userType: ut } = req.body
+  const { displayName, mode, userType: ut, guestCode } = req.body
+
+  let resolvedMode = mode || 'peerjs'
+  let guestCodeId = null
+
+  // 访客发起共享：必须带有效访客码，且模式与码绑定
+  if (ut === 'guest' || guestCode) {
+    const code = String(guestCode || '').trim().toUpperCase()
+    if (!code) {
+      return res.status(400).json({ success: false, error: '访客发起共享需要访客码' })
+    }
+    try {
+      const [rows] = await pool.execute(
+        `SELECT id, mode, status FROM screen_share_guest_codes WHERE code = ? LIMIT 1`,
+        [code]
+      )
+      const row = rows[0]
+      if (!row) return res.status(404).json({ success: false, error: '访客码无效' })
+      if (row.status === 'revoked') {
+        return res.status(400).json({ success: false, error: '访客码已作废' })
+      }
+      if (row.status === 'used') {
+        return res.status(400).json({ success: false, error: '访客码已被使用' })
+      }
+      resolvedMode = row.mode
+      guestCodeId = row.id
+    } catch (e) {
+      return res.status(500).json({ success: false, error: e.message })
+    }
+  }
+
   if (displayName) {
     const key = userKey(displayName, ut)
     const existing = activeUsers.get(key)
@@ -514,7 +1047,7 @@ router.post('/:roomId/host', async (req, res) => {
 
     room.hostName = displayName
     room.hostKey = key
-    room.mode = mode || 'peerjs'
+    room.mode = resolvedMode
     room.peakViewers = 0
     activeUsers.set(key, { role: 'host', roomId: req.params.roomId, displayName, registeredAt: Date.now() })
     room.viewerHeartbeats.clear()
@@ -528,17 +1061,37 @@ router.post('/:roomId/host', async (req, res) => {
     } catch (e) {
       console.error(`[ShareLog] INSERT failed:`, e.message)
     }
+
+    if (guestCodeId) {
+      try {
+        const [upd] = await pool.execute(
+          `UPDATE screen_share_guest_codes
+           SET status = 'used', used_by_nickname = ?, used_at = NOW(), room_id = ?
+           WHERE id = ? AND status = 'active'`,
+          [displayName, req.params.roomId, guestCodeId]
+        )
+        if (upd.affectedRows === 0) {
+          // 并发下码已被用：回滚本房间主机登记
+          if (room.hostKey) activeUsers.delete(room.hostKey)
+          room.hostName = null
+          room.hostKey = null
+          return res.status(400).json({ success: false, error: '访客码已被使用' })
+        }
+      } catch (e) {
+        console.error('[GuestCode] redeem failed:', e.message)
+      }
+    }
   }
   room.viewers.clear()
   room.viewerKeys.clear()
   room.viewerHeartbeats.clear()
-  res.json({ success: true })
+  res.json({ success: true, mode: room.mode })
 })
 
 // Viewer joins room with display name
 router.post('/:roomId/viewer', async (req, res) => {
   const room = getRoom(req.params.roomId)
-  const { userId, displayName, userType: ut } = req.body
+  const { userId, displayName, userType: ut, memberId } = req.body
   if (displayName) {
     const key = userKey(displayName, ut)
     const existing = activeUsers.get(key)
@@ -551,8 +1104,21 @@ router.post('/:roomId/viewer', async (req, res) => {
   if (userId && displayName) {
     room.viewers.set(userId, displayName)
     room.viewerHeartbeats.set(userId, Date.now())
+    if (room.kickedUserIds) room.kickedUserIds.delete(userId)
+  }
+  const mid = inviteMemberKey(memberId)
+  if (userId && mid > 0) {
+    if (!room.viewerMemberIds) room.viewerMemberIds = new Map()
+    room.viewerMemberIds.set(userId, mid)
   }
   if (displayName) room.allViewerNames.add(displayName)
+  // 加入后清除该成员的共享邀请
+  if (mid > 0) {
+    const inv = pendingRoomInvites.get(mid)
+    if (inv && inv.roomId === String(req.params.roomId || '').toUpperCase()) {
+      pendingRoomInvites.delete(mid)
+    }
+  }
   // Track peak viewers
   const currentViewers = room.viewers.size
   if (currentViewers > room.peakViewers) room.peakViewers = currentViewers
@@ -594,8 +1160,53 @@ router.post('/:roomId/viewer', async (req, res) => {
 router.post('/:roomId/heartbeat', (req, res) => {
   const { userId } = req.body
   const room = rooms.get(req.params.roomId)
-  if (room && userId) room.viewerHeartbeats.set(userId, Date.now())
+  if (!room) return res.json({ success: false, exists: false })
+  if (userId && room.kickedUserIds?.has(userId)) {
+    return res.json({ success: false, kicked: true })
+  }
+  if (userId) room.viewerHeartbeats.set(userId, Date.now())
   res.json({ success: true })
+})
+
+/** 主播踢出观众 */
+router.post('/:roomId/kick-viewer', (req, res) => {
+  const room = rooms.get(req.params.roomId)
+  if (!room || !room.hostName) {
+    return res.status(404).json({ success: false, error: '房间不存在' })
+  }
+  const { userId, hostName, userType } = req.body || {}
+  const requesterOk =
+    userType === 'admin' ||
+    (hostName && String(hostName) === String(room.hostName))
+  if (!requesterOk) {
+    return res.status(403).json({ success: false, error: '仅共享者可踢人' })
+  }
+  if (!userId) return res.status(400).json({ success: false, error: '缺少 userId' })
+  if (!room.viewers.has(userId)) {
+    return res.status(404).json({ success: false, error: '该成员不在观看列表' })
+  }
+
+  const name = room.viewers.get(userId)
+  room.viewers.delete(userId)
+  room.viewerHeartbeats.delete(userId)
+  room.viewerMemberIds?.delete(userId)
+  const storedKey = room.viewerKeys.get(userId)
+  if (storedKey) {
+    activeUsers.delete(storedKey)
+    room.viewerKeys.delete(userId)
+  }
+  if (room.qualityPrefs) room.qualityPrefs.delete(userId)
+  if (room.fpsPrefs) room.fpsPrefs.delete(userId)
+  if (!room.kickedUserIds) room.kickedUserIds = new Set()
+  room.kickedUserIds.add(userId)
+
+  res.json({
+    success: true,
+    kickedUserId: userId,
+    kickedName: name,
+    viewers: Array.from(room.viewers.values()),
+    viewerCount: room.viewers.size,
+  })
 })
 
 // Get room info (host name + viewer list + mode)
@@ -697,6 +1308,7 @@ router.post('/:roomId/leave', (req, res) => {
   if (room && userId) {
     room.viewers.delete(userId)
     room.viewerHeartbeats.delete(userId)
+    room.viewerMemberIds?.delete(userId)
     const storedKey = room.viewerKeys.get(userId)
     if (storedKey) { activeUsers.delete(storedKey); room.viewerKeys.delete(userId) }
     if (room.qualityPrefs) room.qualityPrefs.delete(userId)
@@ -739,6 +1351,7 @@ router.post('/:roomId/close', async (req, res) => {
       )
     } catch {}
   }
+  clearInvitesForRoom(req.params.roomId)
   rooms.delete(req.params.roomId)
   res.json({ success: true })
 })

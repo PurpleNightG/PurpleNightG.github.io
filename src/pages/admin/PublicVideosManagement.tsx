@@ -7,6 +7,7 @@ import DateInput from '../../components/DateInput'
 import { formatDate, toInputDate } from '../../utils/dateFormat'
 import PublicAssessmentReportDetail, { normalizePublicAssessment, PublicAssessment } from '../../components/PublicAssessmentReportDetail'
 import FullscreenReportModal from '../../components/FullscreenReportModal'
+import MemberNameCell from '../../components/MemberNameCell'
 
 interface PublicVideo {
   id: number
@@ -353,7 +354,11 @@ export default function PublicVideosManagement() {
                     <td>
                       {video.assessment ? (
                         <div className="text-sm space-y-1">
-                          <div className="text-white">{video.assessment.member_name}</div>
+                          <MemberNameCell
+                            name={video.assessment.member_name}
+                            avatar={video.assessment.avatar}
+                            qq={video.assessment.qq}
+                          />
                           <div className="text-gray-400">{video.assessment.custom_map || video.assessment.map}</div>
                           <div className="flex items-center gap-2">
                             <span className="text-white font-semibold">{video.assessment.total_score.toFixed(0)}分</span>

@@ -1,12 +1,14 @@
-import { useState, useEffect } from 'react'
-import { X, Calendar, AlertCircle, UserMinus, Save, Key, Loader2, Pencil } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { X, Calendar, AlertCircle, UserMinus, Save, Key, Loader2, Pencil, Camera, Trash2 } from 'lucide-react'
 import { memberAPI, blackPointAPI, leaveAPI, quitAPI, retentionAPI } from '../../utils/api'
 import { formatDate, formatDateTime, toInputDate, formatDateForDB, getTodayDateString } from '../../utils/dateFormat'
 import { getRoleColor } from '../../utils/roleColors'
 import { toast } from '../../utils/toast'
+import { compressImageToDataUrl } from '../../utils/imageCompress'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import DateInput from '../../components/DateInput'
 import StyledSelect from '../../components/StyledSelect'
+import MemberAvatar from '../../components/MemberAvatar'
 
 const MEMBER_STAGE_ROLES = [
   '未新训', '新训初期', '新训一期', '新训二期', '新训三期', '新训准考',
@@ -63,6 +65,8 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
   const [showResetPasswordConfirm, setShowResetPasswordConfirm] = useState(false)
   const [blackPointForm, setBlackPointForm] = useState({ reason: '', register_date: new Date().toISOString().split('T')[0] })
   const [leaveForm, setLeaveForm] = useState({ reason: '', start_date: new Date().toISOString().split('T')[0], end_date: new Date().toISOString().split('T')[0] })
+  const [avatarUploading, setAvatarUploading] = useState(false)
+  const avatarInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     const load = async () => {
@@ -130,6 +134,44 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
       toast.error(error.message || '保存失败')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleAvatarFile = async (file: File | null) => {
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      toast.error('请选择图片文件')
+      return
+    }
+    setAvatarUploading(true)
+    try {
+      const dataUrl = await compressImageToDataUrl(file)
+      const res = await memberAPI.updateAvatar(memberId, dataUrl)
+      const avatar = res?.data?.avatar ?? dataUrl
+      setMember((prev: any) => (prev ? { ...prev, avatar } : prev))
+      setEditedMember((prev: any) => ({ ...prev, avatar }))
+      toast.success('头像已更新')
+      onUpdate()
+    } catch (error: any) {
+      toast.error(error.message || '头像上传失败')
+    } finally {
+      setAvatarUploading(false)
+      if (avatarInputRef.current) avatarInputRef.current.value = ''
+    }
+  }
+
+  const handleClearAvatar = async () => {
+    setAvatarUploading(true)
+    try {
+      await memberAPI.updateAvatar(memberId, null)
+      setMember((prev: any) => (prev ? { ...prev, avatar: null } : prev))
+      setEditedMember((prev: any) => ({ ...prev, avatar: null }))
+      toast.success('头像已清除')
+      onUpdate()
+    } catch (error: any) {
+      toast.error(error.message || '清除头像失败')
+    } finally {
+      setAvatarUploading(false)
     }
   }
 
@@ -363,6 +405,38 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
           {/* 基本信息 */}
           <section>
             <h3 className="text-lg font-semibold text-white mb-4 border-b border-gray-700 pb-2">基本信息</h3>
+            <div className="mb-5 flex flex-wrap items-center gap-4">
+              <MemberAvatar avatar={member.avatar} qq={member.qq} name={member.nickname} size="lg" />
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => handleAvatarFile(e.target.files?.[0] || null)}
+                />
+                <button
+                  type="button"
+                  disabled={avatarUploading}
+                  onClick={() => avatarInputRef.current?.click()}
+                  className="student-glass-chip inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-purple-200 hover:text-white disabled:opacity-50"
+                >
+                  {avatarUploading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
+                  {member.avatar ? '更换头像' : '上传头像'}
+                </button>
+                {member.avatar && (
+                  <button
+                    type="button"
+                    disabled={avatarUploading}
+                    onClick={handleClearAvatar}
+                    className="student-glass-chip inline-flex items-center gap-1.5 px-3 py-1.5 text-sm text-red-300 hover:text-white disabled:opacity-50"
+                  >
+                    <Trash2 size={14} />
+                    清除
+                  </button>
+                )}
+              </div>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="text-gray-400 text-sm block mb-1">昵称：</label>

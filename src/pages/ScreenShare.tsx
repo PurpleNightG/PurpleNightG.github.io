@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import Peer, { MediaConnection } from 'peerjs'
-import { Monitor, Users, Copy, Check, StopCircle, Play, Link2, X, Maximize2, Minimize2, Wifi, Zap, Globe, Lock, Clock, CheckCircle, XCircle, ChevronDown, Search, Trash2, GraduationCap, Mic, MicOff, Volume2 } from 'lucide-react'
+import { Monitor, Users, Copy, Check, StopCircle, Play, Link2, X, Maximize2, Minimize2, Wifi, Zap, Globe, Lock, Clock, CheckCircle, XCircle, ChevronDown, Search, Trash2, GraduationCap, Mic, MicOff, Volume2, VolumeX, LogIn, GripVertical, Video, PhoneOff, UserX, UserPlus, CheckSquare, Square, Loader2 } from 'lucide-react'
 import ScreenShareAssistantPanel, { type AssistantRow, type AssistantCandidate } from '../components/ScreenShareAssistantPanel'
+import ScreenShareGuestCodesPanel from '../components/ScreenShareGuestCodesPanel'
+import MeetingRoom from './MeetingRoom'
+import MemberAvatar from '../components/MemberAvatar'
+import { loadGuestSession, saveGuestSession, clearGuestSession, type GuestSession } from '../utils/guestSession'
 import {
   parseVolcVoiceMessage,
   setVolcLocalMicVolume,
@@ -15,7 +21,7 @@ import {
   VOLC_MIC_VOLUME_MAX,
 } from '../utils/volcScreenShare'
 
-type Mode = 'select' | 'host' | 'viewer'
+type Mode = 'select' | 'host' | 'viewer' | 'meeting'
 type Status = 'idle' | 'connecting' | 'streaming' | 'watching' | 'error'
 
 const PEER_PREFIX = 'ziye-share-'
@@ -126,8 +132,42 @@ function getCurrentUsername(): string {
       const parsed = JSON.parse(studentUser)
       return parsed.username || parsed.name || parsed.game_id || '未知用户'
     }
+    const guest = loadGuestSession()
+    if (guest?.nickname) return guest.nickname
   } catch {}
   return '未知用户'
+}
+
+function getCurrentAvatar(): string | null {
+  try {
+    const adminUser = localStorage.getItem('user') || sessionStorage.getItem('user')
+    if (adminUser) {
+      const parsed = JSON.parse(adminUser)
+      return parsed.avatar || null
+    }
+    const studentUser = localStorage.getItem('studentUser') || sessionStorage.getItem('studentUser')
+    if (studentUser) {
+      const parsed = JSON.parse(studentUser)
+      return parsed.avatar || null
+    }
+  } catch {}
+  return null
+}
+
+function getCurrentQq(): string | null {
+  try {
+    const adminUser = localStorage.getItem('user') || sessionStorage.getItem('user')
+    if (adminUser) {
+      const parsed = JSON.parse(adminUser)
+      return parsed.qq != null ? String(parsed.qq) : null
+    }
+    const studentUser = localStorage.getItem('studentUser') || sessionStorage.getItem('studentUser')
+    if (studentUser) {
+      const parsed = JSON.parse(studentUser)
+      return parsed.qq != null ? String(parsed.qq) : null
+    }
+  } catch {}
+  return null
 }
 
 function getStudentMemberId(): number | null {
@@ -148,10 +188,16 @@ function getUserType(): 'admin' | 'student' | null {
 }
 
 export default function ScreenShare() {
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [mode, setMode] = useState<Mode>('select')
   const [status, setStatus] = useState<Status>('idle')
   const [roomCode, setRoomCode] = useState('')
   const [inputCode, setInputCode] = useState('')
+  const [meetingCode, setMeetingCode] = useState('')
+  const [meetingInput, setMeetingInput] = useState('')
+  const [meetingCreating, setMeetingCreating] = useState(false)
+  const [meetingJoining, setMeetingJoining] = useState(false)
   const [copied, setCopied] = useState(false)
   const [viewerCount, setViewerCount] = useState(0)
   const [viewerNames, setViewerNames] = useState<string[]>([])
@@ -187,11 +233,42 @@ export default function ScreenShare() {
   const [volcHostUserId, setVolcHostUserId] = useState('')
   /** 主机已强制禁言的 uid（与当前是否开麦解耦，方便再次解禁） */
   const [forcedMutedIds, setForcedMutedIds] = useState<Set<string>>(() => new Set())
+  const kickedViewerIdsRef = useRef<Set<string>>(new Set())
   const [peersMenuOpen, setPeersMenuOpen] = useState(false)
   const [micMenuOpen, setMicMenuOpen] = useState(false)
+  /** 主机邀请观看成员 */
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const [inviteBusy, setInviteBusy] = useState(false)
+  const [inviteLoading, setInviteLoading] = useState(false)
+  const [inviteQuery, setInviteQuery] = useState('')
+  const [inviteCandidates, setInviteCandidates] = useState<{
+    id: number
+    nickname: string
+    username: string
+    qq: string | null
+    avatar: string | null
+    stageRole: string | null
+  }[]>([])
+  const [inviteSelected, setInviteSelected] = useState<Set<number>>(() => new Set())
+  const roomLinkHandledRef = useRef<string | null>(null)
+  const handleJoinRoomRef = useRef<(code?: string) => Promise<void>>(async () => {})
+  const [profileByName, setProfileByName] = useState<
+    Record<string, { nickname: string; qq: string | null; avatar: string | null }>
+  >({})
+  const [allListenMuted, setAllListenMuted] = useState(false)
   const peersMenuRef = useRef<HTMLDivElement>(null)
   const micMenuRef = useRef<HTMLDivElement>(null)
   const [userType] = useState<'admin' | 'student' | null>(getUserType)
+  const [guestSession, setGuestSession] = useState<GuestSession | null>(() =>
+    getUserType() ? null : loadGuestSession()
+  )
+  const isGuest = !userType && !!guestSession
+  const [guestNicknameInput, setGuestNicknameInput] = useState('')
+  const [guestHostCodeInput, setGuestHostCodeInput] = useState('')
+  const [guestValidatedCode, setGuestValidatedCode] = useState('')
+  const [guestHostMode, setGuestHostMode] = useState<'peerjs' | 'agora' | 'volc' | null>(null)
+  const [guestValidating, setGuestValidating] = useState(false)
+  const effectiveUserType = userType || (isGuest ? 'guest' : null)
   const [rtcPerm, setRtcPerm] = useState<{
     agora: boolean
     volc: boolean
@@ -220,12 +297,43 @@ export default function ScreenShare() {
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [actionLoading, setActionLoading] = useState<string>('')
   const [expandedLogId, setExpandedLogId] = useState<number | null>(null)
+  const [meetingLogs, setMeetingLogs] = useState<{
+    id: number
+    code: string
+    title: string
+    created_by: string
+    status: string
+    created_at: string
+    closed_at: string | null
+    live?: boolean
+    memberCount?: number | null
+  }[]>([])
+  const [meetingLogsOpen, setMeetingLogsOpen] = useState(false)
+  const [meetingLogSearch, setMeetingLogSearch] = useState('')
+  const [meetingLogPage, setMeetingLogPage] = useState(1)
+  const [meetingDeleteConfirmId, setMeetingDeleteConfirmId] = useState<number | null>(null)
+  const [meetingDeletePassword, setMeetingDeletePassword] = useState('')
+  const [meetingDeleteError, setMeetingDeleteError] = useState('')
+  const [meetingDeletingId, setMeetingDeletingId] = useState<number | null>(null)
+  const [meetingEndConfirm, setMeetingEndConfirm] = useState<{ code: string } | null>(null)
+  const [meetingEnding, setMeetingEnding] = useState(false)
+  const MEETING_LOG_PAGE_SIZE = 8
   const [activeRooms, setActiveRooms] = useState<{ roomId: string; hostName: string; mode: string; viewerCount: number; viewers: string[] }[]>([])
   const [closingRoomId, setClosingRoomId] = useState<string | null>(null)
-  const [activeRoomsOpen, setActiveRoomsOpen] = useState(false)
+  const [joiningRoomId, setJoiningRoomId] = useState<string | null>(null)
+  const [activeRoomsPos, setActiveRoomsPos] = useState<{ x: number; y: number } | null>(null)
+  const [activeRoomsCollapsed, setActiveRoomsCollapsed] = useState(false)
+  const activeRoomsDragRef = useRef<{
+    startX: number
+    startY: number
+    originX: number
+    originY: number
+  } | null>(null)
   const myName = useRef(getCurrentUsername())
+  const guestCodeRef = useRef('')
   const latencyIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const kickedExitRef = useRef<(() => void) | null>(null)
   const agoraClientRef = useRef<any>(null)
   const agoraTrackRef = useRef<any>(null)
   const volcEngineRef = useRef<any>(null)
@@ -282,6 +390,207 @@ export default function ScreenShare() {
     return () => document.removeEventListener('pointerdown', onPointerDown)
   }, [peersMenuOpen, micMenuOpen])
 
+  // 按显示名批量拉取头像 / QQ
+  useEffect(() => {
+    const names = new Set<string>()
+    if (hostName) names.add(hostName)
+    if (myName.current) names.add(myName.current)
+    for (const n of viewerNames) if (n) names.add(n)
+    for (const p of volcPeers) if (p.name) names.add(p.name)
+    const list = [...names]
+    if (list.length === 0) return
+
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(`${API_URL}/room/profiles-by-names`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ names: list }),
+        })
+        const data = await res.json()
+        if (cancelled || !data?.success || !Array.isArray(data.data)) return
+        setProfileByName((prev) => {
+          const next = { ...prev }
+          for (const row of data.data) {
+            if (!row?.key) continue
+            next[row.key] = {
+              nickname: row.nickname || row.key,
+              qq: row.qq || null,
+              avatar: row.avatar || null,
+            }
+          }
+          return next
+        })
+      } catch {
+        /* ignore */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [hostName, viewerNames, volcPeers])
+
+  useEffect(() => {
+    if (guestSession?.nickname) {
+      myName.current = guestSession.nickname
+    }
+  }, [guestSession])
+
+  // 已登录账号优先，清掉残留访客会话
+  useEffect(() => {
+    if (userType && loadGuestSession()) {
+      clearGuestSession()
+      setGuestSession(null)
+    }
+  }, [userType])
+
+  useEffect(() => {
+    guestCodeRef.current = guestValidatedCode
+  }, [guestValidatedCode])
+
+  // ?guest=1 时若未登录且无访客会话，停留在访客登记；登录用户忽略该参数
+  useEffect(() => {
+    if (userType && searchParams.get('guest')) {
+      searchParams.delete('guest')
+      setSearchParams(searchParams, { replace: true })
+    }
+  }, [userType, searchParams, setSearchParams])
+
+  // ?meeting=CODE：从邀请浮窗 / 管理端会议浮窗一键进入
+  useEffect(() => {
+    const raw = searchParams.get('meeting')?.trim().toUpperCase()
+    if (!raw || raw.length !== 6) return
+    if (mode === 'meeting' && meetingCode === raw) return
+    if (!userType && !guestSession) return
+
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await fetch(`${API_URL}/meeting/${raw}`)
+        const d = await r.json()
+        if (cancelled) return
+        if (!r.ok || !d.exists) {
+          setErrorMsg(d.error || '会议不存在或已结束')
+          const next = new URLSearchParams(searchParams)
+          next.delete('meeting')
+          setSearchParams(next, { replace: true })
+          return
+        }
+        setMeetingCode(raw)
+        setMeetingInput(raw)
+        setMode('meeting')
+      } catch {
+        if (!cancelled) setErrorMsg('无法加入会议，请稍后重试')
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [searchParams, userType, guestSession, mode, meetingCode, setSearchParams])
+
+  // ?room=CODE：从共享邀请浮窗一键进入观看
+  useEffect(() => {
+    const raw = searchParams.get('room')?.trim().toUpperCase()
+    if (!raw || raw.length !== 6) return
+    if (!userType && !guestSession) return
+    if (roomLinkHandledRef.current === raw) return
+    if (mode === 'viewer' && roomCode === raw && (status === 'watching' || status === 'connecting')) return
+    if (mode === 'host' && roomCode === raw) return
+
+    roomLinkHandledRef.current = raw
+    const next = new URLSearchParams(searchParams)
+    next.delete('room')
+    setSearchParams(next, { replace: true })
+    void handleJoinRoomRef.current(raw)
+  }, [searchParams, userType, guestSession, mode, roomCode, status, setSearchParams])
+
+  const buildHostPayload = (modeName: 'peerjs' | 'agora' | 'volc', extra?: Record<string, unknown>) => {
+    const payload: Record<string, unknown> = {
+      displayName: myName.current || 'host',
+      mode: modeName,
+      userType: effectiveUserType,
+      ...extra,
+    }
+    if (isGuest && guestCodeRef.current) {
+      payload.guestCode = guestCodeRef.current
+    }
+    return payload
+  }
+
+  const enterAsGuest = () => {
+    const name = guestNicknameInput.trim()
+    if (name.length < 1) {
+      setErrorMsg('请输入昵称')
+      return
+    }
+    if (name.length > 24) {
+      setErrorMsg('昵称最多 24 个字符')
+      return
+    }
+    const session = saveGuestSession(name)
+    setGuestSession(session)
+    myName.current = session.nickname
+    setErrorMsg('')
+    if (searchParams.get('guest')) {
+      searchParams.delete('guest')
+      setSearchParams(searchParams, { replace: true })
+    }
+  }
+
+  const exitGuest = () => {
+    clearGuestSession()
+    setGuestSession(null)
+    setGuestValidatedCode('')
+    setGuestHostMode(null)
+    setGuestHostCodeInput('')
+    navigate('/login', { state: { from: { pathname: '/screen-share' } } })
+  }
+
+  const validateGuestHostCode = async () => {
+    const code = guestHostCodeInput.trim().toUpperCase()
+    if (!code) {
+      setErrorMsg('请输入访客码')
+      return
+    }
+    setGuestValidating(true)
+    setErrorMsg('')
+    try {
+      const res = await fetch(`${API_URL}/room/guest-codes/validate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      })
+      const data = await res.json()
+      if (!data.success) {
+        setGuestValidatedCode('')
+        setGuestHostMode(null)
+        setErrorMsg(data.error || '访客码无效')
+        return
+      }
+      setGuestValidatedCode(data.data.code)
+      setGuestHostMode(data.data.mode)
+      setHostConnMode(data.data.mode)
+      if (data.data.mode === 'agora') setConnMode('agora')
+      else if (data.data.mode === 'volc') setConnMode('volc')
+      else setConnMode('auto')
+    } catch {
+      setErrorMsg('校验访客码失败')
+    } finally {
+      setGuestValidating(false)
+    }
+  }
+
+  // 访客码在开播成功后作废于服务端；本地清掉以免误以为可复用
+  useEffect(() => {
+    if (isGuest && status === 'streaming') {
+      setGuestValidatedCode('')
+      setGuestHostMode(null)
+      setGuestHostCodeInput('')
+      guestCodeRef.current = ''
+    }
+  }, [isGuest, status])
+
   // Bind stream to video element after React renders the <video>
   useEffect(() => {
     if ((status === 'streaming' || status === 'watching') && videoRef.current && streamRef.current) {
@@ -302,12 +611,12 @@ export default function ScreenShare() {
         if (rtcRoleRef.current === 'host') {
           navigator.sendBeacon(
             `${API_URL}/room/${rid}/close`,
-            new Blob([JSON.stringify({ displayName: myName.current, userType })], { type: 'application/json' })
+            new Blob([JSON.stringify({ displayName: myName.current, userType: userType || (loadGuestSession() ? 'guest' : undefined) })], { type: 'application/json' })
           )
         } else if (rtcRoleRef.current === 'viewer' && rtcUidRef.current) {
           navigator.sendBeacon(
             `${API_URL}/room/${rid}/leave`,
-            new Blob([JSON.stringify({ userId: rtcUidRef.current, displayName: myName.current, userType })], { type: 'application/json' })
+            new Blob([JSON.stringify({ userId: rtcUidRef.current, displayName: myName.current, userType: userType || (loadGuestSession() ? 'guest' : undefined) })], { type: 'application/json' })
           )
         }
       }
@@ -364,7 +673,12 @@ export default function ScreenShare() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ userId: rtcUidRef.current }),
-        }).catch(() => {})
+        })
+          .then((r) => r.json())
+          .then((hd) => {
+            if (hd?.kicked) kickedExitRef.current?.()
+          })
+          .catch(() => {})
       }
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)
@@ -392,6 +706,9 @@ export default function ScreenShare() {
           const lr = await fetch(`${API_URL}/room/share-logs`)
           const ld = await lr.json()
           setShareLogs(ld.logs || [])
+          const mlr = await fetch(`${API_URL}/meeting/logs`)
+          const mld = await mlr.json()
+          setMeetingLogs(mld.logs || [])
           const activeRes = await fetch(`${API_URL}/room/active-rooms`)
           const activeData = await activeRes.json()
           setActiveRooms(activeData.rooms || [])
@@ -402,6 +719,47 @@ export default function ScreenShare() {
     const iv = setInterval(poll, 3000)
     return () => clearInterval(iv)
   }, [mode, userType])
+
+  useEffect(() => {
+    if (userType !== 'admin' || activeRooms.length === 0) return
+    setActiveRoomsPos((prev) => prev ?? {
+      x: 16,
+      y: Math.max(88, Math.round(window.innerHeight / 2 - 160)),
+    })
+  }, [userType, activeRooms.length])
+
+  const startActiveRoomsDrag = useCallback((
+    e: React.MouseEvent,
+    pos: { x: number; y: number }
+  ) => {
+    e.preventDefault()
+    e.stopPropagation()
+    activeRoomsDragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: pos.x,
+      originY: pos.y,
+    }
+    const onMove = (ev: MouseEvent) => {
+      const drag = activeRoomsDragRef.current
+      if (!drag) return
+      const cardW = 300
+      const cardH = 280
+      const nextX = drag.originX + (ev.clientX - drag.startX)
+      const nextY = drag.originY + (ev.clientY - drag.startY)
+      setActiveRoomsPos({
+        x: Math.min(Math.max(8, nextX), Math.max(8, window.innerWidth - cardW - 8)),
+        y: Math.min(Math.max(8, nextY), Math.max(8, window.innerHeight - cardH - 8)),
+      })
+    }
+    const onUp = () => {
+      activeRoomsDragRef.current = null
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [])
 
   const cleanup = useCallback(() => {
     // Stop all tracks
@@ -432,6 +790,7 @@ export default function ScreenShare() {
     volcMicForcedOffRef.current = false
     setVolcPeers([])
     setForcedMutedIds(new Set())
+    kickedViewerIdsRef.current = new Set()
     setPeerVolumes({})
     peerVolumesRef.current = {}
     setLocalMicVolume(VOLC_MIC_VOLUME_DEFAULT)
@@ -486,8 +845,8 @@ export default function ScreenShare() {
       const rid = rtcRoomRef.current
       const endpoint = rtcRoleRef.current === 'host' ? 'close' : 'leave'
       const payload = rtcRoleRef.current === 'host'
-        ? { displayName: myName.current, userType }
-        : { userId: rtcUidRef.current, displayName: myName.current, userType }
+        ? { displayName: myName.current, userType: effectiveUserType }
+        : { userId: rtcUidRef.current, displayName: myName.current, userType: effectiveUserType }
       // Try close/leave, fallback to force-leave
       fetch(`${API_URL}/room/${rid}/${endpoint}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -495,7 +854,7 @@ export default function ScreenShare() {
       }).catch(() =>
         fetch(`${API_URL}/room/force-leave`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ displayName: myName.current, userType }),
+          body: JSON.stringify({ displayName: myName.current, userType: effectiveUserType }),
         }).catch(() => {})
       )
     }
@@ -505,6 +864,13 @@ export default function ScreenShare() {
     rtcUidRef.current = ''
     setActiveStreamMode('peerjs')
   }, [])
+
+  kickedExitRef.current = () => {
+    cleanup()
+    setErrorMsg('你已被移出房间')
+    setStatus('error')
+    setMode('select')
+  }
 
   const fetchVolcToken = async (roomId: string, userId: string): Promise<string | null> => {
     try {
@@ -575,13 +941,10 @@ export default function ScreenShare() {
       setConnectStep('连接火山引擎服务器...')
       const hostRes = await fetch(`${API_URL}/room/${code}/host`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          displayName: rawName,
-          mode: 'volc',
-          userType,
+        body: JSON.stringify(buildHostPayload('volc', {
           hostQuality: q,
           hostFps: f,
-        }),
+        })),
       })
       if (hostRes.status === 409) {
         const d = await hostRes.json()
@@ -633,17 +996,20 @@ export default function ScreenShare() {
       const volcViewerMap = new Map<string, string>()
       const peerMicMap = new Map<string, boolean>()
       const syncPeers = () => {
-        const list = Array.from(volcViewerMap.entries()).map(([userId, name]) => ({
-          userId,
-          name,
-          micOn: peerMicMap.get(userId) ?? false,
-        }))
+        const list = Array.from(volcViewerMap.entries())
+          .filter(([userId]) => !kickedViewerIdsRef.current.has(userId))
+          .map(([userId, name]) => ({
+            userId,
+            name,
+            micOn: peerMicMap.get(userId) ?? false,
+          }))
         setVolcPeers(list)
         setViewerNames(list.map(p => p.name))
         setViewerCount(list.length)
       }
 
       engine.on(VERTC.events.onUserJoined, ({ userInfo }: { userInfo: { userId: string; extraInfo?: string } }) => {
+        kickedViewerIdsRef.current.delete(userInfo.userId)
         const name = userInfo.extraInfo || userInfo.userId
         for (const [oldUid, oldName] of Array.from(volcViewerMap.entries())) {
           if (oldName === name && oldUid !== userInfo.userId) {
@@ -659,6 +1025,7 @@ export default function ScreenShare() {
       engine.on(VERTC.events.onUserLeave, ({ userInfo }: { userInfo: { userId: string } }) => {
         volcViewerMap.delete(userInfo.userId)
         peerMicMap.delete(userInfo.userId)
+        kickedViewerIdsRef.current.delete(userInfo.userId)
         setForcedMutedIds(prev => {
           if (!prev.has(userInfo.userId)) return prev
           const next = new Set(prev)
@@ -734,7 +1101,12 @@ export default function ScreenShare() {
       const viewerDisplayName = myName.current || viewerUid
       const viewerRes = await fetch(`${API_URL}/room/${code}/viewer`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: viewerUid, displayName: viewerDisplayName, userType }),
+        body: JSON.stringify({
+          userId: viewerUid,
+          displayName: viewerDisplayName,
+          userType: effectiveUserType,
+          memberId: memberIdRef.current,
+        }),
       })
       if (viewerRes.status === 409) {
         const d = await viewerRes.json()
@@ -868,6 +1240,9 @@ export default function ScreenShare() {
           volcMicForcedOffRef.current = false
           setMicForcedOff(false)
           setMediaToast({ text: '主播已解除禁言，可自行开麦', kind: 'success' })
+        } else if (msg.action === 'force-kick') {
+          kickedExitRef.current?.()
+          if (msg.by) setErrorMsg(`你已被 ${msg.by} 移出房间`)
         }
       })
 
@@ -884,10 +1259,17 @@ export default function ScreenShare() {
 
       if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current)
       heartbeatIntervalRef.current = setInterval(async () => {
-        fetch(`${API_URL}/room/${code}/heartbeat`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: viewerUid }),
-        }).catch(() => {})
+        try {
+          const hr = await fetch(`${API_URL}/room/${code}/heartbeat`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: viewerUid }),
+          })
+          const hd = await hr.json()
+          if (hd?.kicked) {
+            kickedExitRef.current?.()
+            return
+          }
+        } catch {}
         try {
           const r = await fetch(`${API_URL}/room/${code}`)
           const d = await r.json()
@@ -935,10 +1317,9 @@ export default function ScreenShare() {
       setRoomCode(code)
 
       setConnectStep('获取连接凭证...')
-      const rawName = myName.current || 'host'
       const hostRes = await fetch(`${API_URL}/room/${code}/host`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ displayName: rawName, mode: 'agora', userType }),
+        body: JSON.stringify(buildHostPayload('agora')),
       })
       if (hostRes.status === 409) {
         const d = await hostRes.json()
@@ -1017,7 +1398,12 @@ export default function ScreenShare() {
       const viewerDisplayName = myName.current || agoraViewerUid
       const viewerRes = await fetch(`${API_URL}/room/${code}/viewer`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: agoraViewerUid, displayName: viewerDisplayName, userType }),
+        body: JSON.stringify({
+          userId: agoraViewerUid,
+          displayName: viewerDisplayName,
+          userType: effectiveUserType,
+          memberId: memberIdRef.current,
+        }),
       })
       if (viewerRes.status === 409) {
         const d = await viewerRes.json()
@@ -1043,10 +1429,17 @@ export default function ScreenShare() {
       // Heartbeat + viewer list poll every 10s
       if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current)
       heartbeatIntervalRef.current = setInterval(async () => {
-        fetch(`${API_URL}/room/${code}/heartbeat`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: agoraViewerUid }),
-        }).catch(() => {})
+        try {
+          const hr = await fetch(`${API_URL}/room/${code}/heartbeat`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: agoraViewerUid }),
+          })
+          const hd = await hr.json()
+          if (hd?.kicked) {
+            kickedExitRef.current?.()
+            return
+          }
+        } catch {}
         try {
           const r = await fetch(`${API_URL}/room/${code}`)
           const d = await r.json()
@@ -1102,7 +1495,7 @@ export default function ScreenShare() {
 
   const checkAlreadyActive = async (): Promise<boolean> => {
     try {
-      const r = await fetch(`${API_URL}/room/active-check/${encodeURIComponent(myName.current)}?userType=${userType || ''}`)
+      const r = await fetch(`${API_URL}/room/active-check/${encodeURIComponent(myName.current)}?userType=${effectiveUserType || ''}`)
       const d = await r.json()
       if (d.active) {
         setErrorMsg(`你已经在房间 ${d.roomId} 中${d.role === 'host' ? '分享' : '观看'}，请先退出后再操作`)
@@ -1113,6 +1506,15 @@ export default function ScreenShare() {
   }
 
   const handleStartHost = async () => {
+    if (isGuest) {
+      if (!guestValidatedCode || !guestHostMode) {
+        setErrorMsg('请先校验访客码')
+        return
+      }
+      if (hostConnMode !== guestHostMode) {
+        setHostConnMode(guestHostMode)
+      }
+    }
     if (await checkAlreadyActive()) return
     if (hostConnMode === 'volc') return handleStartHostVolc()
     if (hostConnMode === 'agora') return handleStartHostAgora()
@@ -1147,10 +1549,9 @@ export default function ScreenShare() {
       const code = generateRoomCode()
       setRoomCode(code)
 
-      const rawName = myName.current || 'host'
       const hostRes = await fetch(`${API_URL}/room/${code}/host`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ displayName: rawName, mode: 'peerjs', userType }),
+        body: JSON.stringify(buildHostPayload('peerjs')),
       })
       if (hostRes.status === 409) {
         const d = await hostRes.json()
@@ -1298,12 +1699,13 @@ export default function ScreenShare() {
     }
   }
 
-  const handleJoinRoom = async () => {
-    const code = inputCode.trim().toUpperCase()
+  const handleJoinRoom = async (codeOverride?: string) => {
+    const code = (codeOverride ?? inputCode).trim().toUpperCase()
     if (code.length !== 6) {
       setErrorMsg('请输入6位房间代码')
       return
     }
+    if (codeOverride) setInputCode(code)
 
     if (await checkAlreadyActive()) return
 
@@ -1358,7 +1760,12 @@ export default function ScreenShare() {
     const viewerDisplayName = myName.current || viewerUid
     const viewerRes = await fetch(`${API_URL}/room/${code}/viewer`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: viewerUid, displayName: viewerDisplayName, userType }),
+      body: JSON.stringify({
+        userId: viewerUid,
+        displayName: viewerDisplayName,
+        userType: effectiveUserType,
+        memberId: memberIdRef.current,
+      }),
     })
     if (viewerRes.status === 409) {
       const d = await viewerRes.json()
@@ -1377,10 +1784,17 @@ export default function ScreenShare() {
     // Heartbeat + viewer list poll every 10s
     if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current)
     heartbeatIntervalRef.current = setInterval(async () => {
-      fetch(`${API_URL}/room/${code}/heartbeat`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: viewerUid }),
-      }).catch(() => {})
+      try {
+        const hr = await fetch(`${API_URL}/room/${code}/heartbeat`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: viewerUid }),
+        })
+        const hd = await hr.json()
+        if (hd?.kicked) {
+          kickedExitRef.current?.()
+          return
+        }
+      } catch {}
       try {
         const r = await fetch(`${API_URL}/room/${code}`)
         const d = await r.json()
@@ -1530,6 +1944,8 @@ export default function ScreenShare() {
     peerRef.current = peer
   }
 
+  handleJoinRoomRef.current = handleJoinRoom
+
   const handleStop = () => {
     // Optimistically remove from active rooms before mode switches to 'select',
     // preventing the race where the immediate active-rooms poll still returns
@@ -1616,6 +2032,8 @@ export default function ScreenShare() {
     }
   }
 
+  const peerVolumeBeforeMuteRef = useRef<Record<string, number>>({})
+
   const handlePeerVolumeChange = (userId: string, percent: number) => {
     const v = Math.max(0, Math.min(VOLC_MIC_VOLUME_MAX, Math.round(percent)))
     peerVolumesRef.current = { ...peerVolumesRef.current, [userId]: v }
@@ -1623,6 +2041,66 @@ export default function ScreenShare() {
     const engine = volcEngineRef.current
     const StreamIndex = volcStreamIndexRef.current
     if (engine && StreamIndex) setVolcRemoteMicVolume(engine, StreamIndex, userId, v)
+    if (v > 0) {
+      setAllListenMuted(false)
+      delete peerVolumeBeforeMuteRef.current[userId]
+    }
+  }
+
+  const getRemoteListenTargets = useCallback(() => {
+    const ids: string[] = []
+    if (mode === 'viewer' && volcHostUserId) ids.push(volcHostUserId)
+    for (const p of volcPeers) {
+      if (p.userId && !ids.includes(p.userId)) ids.push(p.userId)
+    }
+    return ids
+  }, [mode, volcHostUserId, volcPeers])
+
+  const togglePeerListenMute = (userId: string) => {
+    if (activeStreamMode !== 'volc') return
+    const cur = peerVolumesRef.current[userId] ?? VOLC_MIC_VOLUME_DEFAULT
+    if (cur <= 0) {
+      const restore = peerVolumeBeforeMuteRef.current[userId] ?? VOLC_MIC_VOLUME_DEFAULT
+      delete peerVolumeBeforeMuteRef.current[userId]
+      handlePeerVolumeChange(userId, restore)
+    } else {
+      peerVolumeBeforeMuteRef.current[userId] = cur
+      handlePeerVolumeChange(userId, 0)
+    }
+  }
+
+  const toggleMuteAllListen = () => {
+    const ids = getRemoteListenTargets()
+    if (ids.length === 0 || activeStreamMode !== 'volc') return
+    const nextMuted = !allListenMuted
+    if (nextMuted) {
+      for (const id of ids) {
+        const cur = peerVolumesRef.current[id] ?? VOLC_MIC_VOLUME_DEFAULT
+        if (cur > 0) peerVolumeBeforeMuteRef.current[id] = cur
+        peerVolumesRef.current = { ...peerVolumesRef.current, [id]: 0 }
+        const engine = volcEngineRef.current
+        const StreamIndex = volcStreamIndexRef.current
+        if (engine && StreamIndex) setVolcRemoteMicVolume(engine, StreamIndex, id, 0)
+      }
+    } else {
+      for (const id of ids) {
+        const restore = peerVolumeBeforeMuteRef.current[id] ?? VOLC_MIC_VOLUME_DEFAULT
+        delete peerVolumeBeforeMuteRef.current[id]
+        peerVolumesRef.current = { ...peerVolumesRef.current, [id]: restore }
+        const engine = volcEngineRef.current
+        const StreamIndex = volcStreamIndexRef.current
+        if (engine && StreamIndex) setVolcRemoteMicVolume(engine, StreamIndex, id, restore)
+      }
+    }
+    setPeerVolumes({ ...peerVolumesRef.current })
+    setAllListenMuted(nextMuted)
+    showMediaToast(nextMuted ? '已一键静音远端语音' : '已恢复远端听感音量', 'success')
+  }
+
+  const resolveProfile = (name?: string | null) => {
+    const key = String(name || '').trim()
+    if (!key) return { nickname: '未知', qq: null as string | null, avatar: null as string | null }
+    return profileByName[key] || { nickname: key, qq: null, avatar: null }
   }
 
   const handleLocalMicVolumeChange = (percent: number) => {
@@ -1667,6 +2145,107 @@ export default function ScreenShare() {
       showMediaToast(mute ? '已禁言该成员' : '已解除禁言', 'success')
     } catch (e: any) {
       showMediaToast(`操作失败：${e?.message || '请重试'}`, 'success')
+    }
+  }
+
+  const hostKickViewer = async (userId: string, name?: string) => {
+    if (rtcRoleRef.current !== 'host' || !roomCode) return
+    try {
+      const r = await fetch(`${API_URL}/room/${roomCode}/kick-viewer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          hostName: myName.current,
+          userType: effectiveUserType,
+        }),
+      })
+      const d = await r.json()
+      if (!r.ok || !d.success) throw new Error(d.error || '踢出失败')
+      kickedViewerIdsRef.current.add(userId)
+      if (Array.isArray(d.viewers)) {
+        setViewerNames(d.viewers)
+        setViewerCount(d.viewerCount ?? d.viewers.length)
+      }
+      setVolcPeers((prev) => prev.filter((p) => p.userId !== userId))
+      setForcedMutedIds((prev) => {
+        if (!prev.has(userId)) return prev
+        const next = new Set(prev)
+        next.delete(userId)
+        return next
+      })
+      const engine = volcEngineRef.current
+      if (engine && activeStreamMode === 'volc') {
+        try {
+          await engine.sendUserMessage(
+            userId,
+            JSON.stringify({ t: 'ziye-voice', action: 'force-kick', by: myName.current || '主播' })
+          )
+        } catch {}
+      }
+      showMediaToast(`已将 ${name || d.kickedName || '该成员'} 移出房间`, 'success')
+    } catch (e: any) {
+      showMediaToast(e?.message || '踢出失败', 'success')
+    }
+  }
+
+  const openInvitePanel = async () => {
+    if (!roomCode || mode !== 'host') return
+    setInviteOpen(true)
+    setInviteQuery('')
+    setInviteSelected(new Set())
+    setInviteLoading(true)
+    try {
+      const r = await fetch(
+        `${API_URL}/room/${roomCode}/invite-candidates${
+          memberIdRef.current ? `?excludeMemberId=${memberIdRef.current}` : ''
+        }`
+      )
+      const d = await r.json()
+      if (!r.ok || !d.success) throw new Error(d.error || '加载成员失败')
+      setInviteCandidates(d.candidates || [])
+    } catch (e: any) {
+      setInviteCandidates([])
+      showMediaToast(e?.message || '加载成员失败', 'success')
+    } finally {
+      setInviteLoading(false)
+    }
+  }
+
+  const toggleInviteSelect = (id: number) => {
+    setInviteSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const sendInvites = async () => {
+    if (inviteBusy || inviteSelected.size === 0 || !roomCode) return
+    setInviteBusy(true)
+    try {
+      const r = await fetch(`${API_URL}/room/${roomCode}/invite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userType: effectiveUserType,
+          hostName: myName.current,
+          displayName: myName.current,
+          memberIds: [...inviteSelected],
+        }),
+      })
+      const d = await r.json()
+      if (!r.ok || !d.success) throw new Error(d.error || '邀请失败')
+      showMediaToast(
+        d.invitedCount > 0 ? `已向 ${d.invitedCount} 位成员发出邀请` : '没有可邀请的成员',
+        'success'
+      )
+      setInviteOpen(false)
+    } catch (e: any) {
+      showMediaToast(e?.message || '邀请失败', 'success')
+    } finally {
+      setInviteBusy(false)
     }
   }
 
@@ -1726,6 +2305,7 @@ export default function ScreenShare() {
 
   // Check if student can HOST (share) with a mode - viewing is always allowed
   const canHostMode = (m: 'peerjs' | 'agora' | 'volc'): boolean => {
+    if (isGuest) return guestHostMode === m && !!guestValidatedCode
     if (m === 'peerjs') return true
     if (userType === 'admin') return true
     if (rtcPerm.canUseRtc) return true
@@ -1801,7 +2381,7 @@ export default function ScreenShare() {
 
   // Consume permission when student starts using a non-webrtc mode
   const consumePermission = async (m: 'agora' | 'volc', asHost = false) => {
-    if (userType === 'admin') return
+    if (userType === 'admin' || isGuest) return
     if (rtcPerm.isAssistant) {
       if (!asHost) return
     }
@@ -1904,79 +2484,220 @@ export default function ScreenShare() {
     return () => { cancelAnimationFrame(animId); clearTimeout(startTimer); window.removeEventListener('resize', resize) }
   }, [mode])
 
+  // 未登录且未登记访客：先选登录或输入昵称
+  if (!userType && !guestSession) {
+    return (
+      <div className="min-h-[calc(100vh-8rem)] flex items-center justify-center p-6">
+        <div className="w-full max-w-md rounded-2xl border border-gray-700/50 bg-gray-800/40 backdrop-blur-sm p-6 sm:p-8 space-y-5">
+          <div className="text-center">
+            <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-purple-600 to-indigo-800 flex items-center justify-center">
+              <Monitor size={28} className="text-white" />
+            </div>
+            <h1 className="text-2xl font-bold text-white mb-1">屏幕共享</h1>
+            <p className="text-gray-500 text-sm">登录账号，或以访客身份观看 / 使用访客码共享</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate('/login', { state: { from: { pathname: '/screen-share' } } })}
+            className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-medium transition-colors"
+          >
+            登录账号
+          </button>
+          <div className="relative py-1">
+            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-700/60" /></div>
+            <div className="relative flex justify-center text-xs"><span className="px-2 bg-transparent text-gray-500">或访客进入</span></div>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm text-gray-400">访客昵称</label>
+            <input
+              type="text"
+              value={guestNicknameInput}
+              onChange={(e) => setGuestNicknameInput(e.target.value.slice(0, 24))}
+              onKeyDown={(e) => e.key === 'Enter' && enterAsGuest()}
+              placeholder="输入显示昵称"
+              maxLength={24}
+              className="w-full bg-gray-950/60 border border-gray-600/40 rounded-xl px-3 py-3 text-white placeholder-gray-600 focus:outline-none focus:border-amber-500/50"
+            />
+            <button
+              type="button"
+              onClick={enterAsGuest}
+              className="w-full py-3 rounded-xl bg-amber-600/25 hover:bg-amber-600/35 border border-amber-500/35 text-amber-100 font-medium transition-colors"
+            >
+              以访客进入
+            </button>
+          </div>
+          {errorMsg && <p className="text-red-400 text-sm text-center">{errorMsg}</p>}
+          <p className="text-gray-600 text-xs leading-relaxed text-center">
+            访客可输入房间码观看；发起共享需管理或助教提供的访客码。
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   // Mode selection screen
+  if (mode === 'meeting' && meetingCode) {
+    const meetingUserType: 'admin' | 'student' | 'guest' =
+      userType === 'admin' ? 'admin' : userType === 'student' ? 'student' : 'guest'
+    return (
+      <MeetingRoom
+        code={meetingCode}
+        displayName={myName.current}
+        userType={meetingUserType}
+        memberId={memberIdRef.current || getStudentMemberId()}
+        avatar={getCurrentAvatar()}
+        qq={getCurrentQq()}
+        onLeave={(reason) => {
+          setMeetingCode('')
+          setMode('select')
+          if (reason) setErrorMsg(reason)
+          const next = new URLSearchParams(searchParams)
+          if (next.has('meeting')) {
+            next.delete('meeting')
+            setSearchParams(next, { replace: true })
+          }
+        }}
+      />
+    )
+  }
+
   if (mode === 'select') {
     return (
       <div className="min-h-[calc(100vh-8rem)] flex items-center justify-center p-6 relative overflow-hidden">
-        {/* Admin: floating active rooms sidebar */}
-        {userType === 'admin' && activeRooms.length > 0 && (
-          <div className="fixed left-0 top-1/2 -translate-y-1/2 z-50 flex items-stretch">
-            <div
-              className={`transition-all duration-300 ease-in-out ${activeRoomsOpen ? 'w-72 opacity-100' : 'w-0 opacity-0'} overflow-hidden`}
-            >
-              <div className="bg-gray-900/95 backdrop-blur-xl border border-purple-500/30 border-r-0 rounded-r-none shadow-[0_0_40px_rgba(147,51,234,0.15)] p-4 min-w-[18rem] h-full">
-                <h3 className="text-purple-400 text-sm font-semibold mb-3 flex items-center gap-2">
-                  <Wifi size={16} />
-                  正在共享的房间
-                </h3>
-                <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
-                  {activeRooms.map((room) => {
-                    const modeLabel = room.mode === 'agora' ? '声网' : room.mode === 'volc' ? '火山' : 'P2P'
-                    const modeColor = room.mode === 'agora' ? 'text-blue-400' : room.mode === 'volc' ? 'text-orange-400' : 'text-emerald-400'
-                    return (
-                      <div key={room.roomId} className="bg-gray-800/70 rounded-lg p-3 space-y-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse flex-shrink-0" />
-                          <span className="text-white text-sm font-medium truncate">{room.hostName}</span>
-                          <span className={`text-xs font-medium flex-shrink-0 ${modeColor}`}>{modeLabel}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2 text-xs text-gray-500">
-                            <span>{room.roomId}</span>
-                            {room.viewerCount > 0 && <span>{room.viewerCount}人观看</span>}
+        {/* Admin: draggable active rooms float (考勤进度同款风格) */}
+        {userType === 'admin' && activeRooms.length > 0 && activeRoomsPos && createPortal(
+          <aside
+            className="fixed z-50 w-[18.75rem] pointer-events-none"
+            style={{ left: activeRoomsPos.x, top: activeRoomsPos.y }}
+            aria-label="正在共享的房间"
+          >
+            <div className="pointer-events-auto">
+              <div className="student-float-panel student-float-panel--purple overflow-hidden">
+                <div
+                  className="flex items-center gap-3 p-4 cursor-grab active:cursor-grabbing select-none"
+                  onMouseDown={(e) => startActiveRoomsDrag(e, activeRoomsPos)}
+                >
+                  <div className="p-2.5 rounded-2xl ring-1 shrink-0 bg-purple-400/15 ring-purple-300/20">
+                    <Wifi className="text-purple-300" size={18} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[11px] uppercase tracking-[0.14em] text-white/45 mb-0.5 flex items-center gap-1">
+                      <GripVertical size={11} className="opacity-60" />
+                      Live Share
+                    </div>
+                    <h3 className="text-white font-semibold leading-tight flex items-center gap-2">
+                      正在共享
+                      <span className="inline-flex items-center gap-1 text-xs font-normal text-red-300">
+                        <span className="relative flex h-1.5 w-1.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500" />
+                        </span>
+                        {activeRooms.length}
+                      </span>
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    title={activeRoomsCollapsed ? '展开' : '收起'}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={() => setActiveRoomsCollapsed(v => !v)}
+                    className="p-1.5 rounded-lg text-white/40 hover:text-white/80 hover:bg-white/5 transition-colors"
+                  >
+                    <ChevronDown size={16} className={`transition-transform duration-300 ${activeRoomsCollapsed ? '-rotate-90' : ''}`} />
+                  </button>
+                </div>
+
+                <div className={`collapsible ${activeRoomsCollapsed ? '' : 'open'}`}>
+                  <div>
+                    <div className="px-4 pb-4 space-y-2.5 max-h-[min(55vh,22rem)] overflow-y-auto sidebar-scrollbar">
+                    {activeRooms.map((room) => {
+                      const modeLabel = room.mode === 'agora' ? '声网' : room.mode === 'volc' ? '火山' : 'P2P'
+                      const modeColor = room.mode === 'agora' ? 'text-blue-300' : room.mode === 'volc' ? 'text-orange-300' : 'text-emerald-300'
+                      const busy = !!closingRoomId || !!joiningRoomId
+                      return (
+                        <div
+                          key={room.roomId}
+                          className="rounded-xl bg-black/25 border border-white/10 p-3 space-y-2.5"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse flex-shrink-0" />
+                            <span className="text-white text-sm font-medium truncate">{room.hostName}</span>
+                            <span className={`text-[11px] font-medium flex-shrink-0 ${modeColor}`}>{modeLabel}</span>
                           </div>
-                          <button
-                            onClick={async () => {
-                              setClosingRoomId(room.roomId)
-                              try {
-                                await fetch(`${API_URL}/room/admin-close/${room.roomId}`, {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ adminName: getCurrentUsername() }),
-                                })
-                                setActiveRooms(prev => prev.filter(r => r.roomId !== room.roomId))
-                              } catch {}
-                              setClosingRoomId(null)
-                            }}
-                            disabled={!!closingRoomId}
-                            className={`flex items-center gap-1 px-2 py-1 border rounded-md text-xs font-medium transition-colors ${
-                              closingRoomId === room.roomId
-                                ? 'bg-red-600/30 border-red-500/40 text-red-300 cursor-wait'
-                                : closingRoomId ? 'opacity-50 cursor-not-allowed bg-red-600/20 border-red-500/30 text-red-400'
-                                : 'bg-red-600/20 hover:bg-red-600/30 border-red-500/30 text-red-400'
-                            }`}>
-                            <StopCircle size={12} /> {closingRoomId === room.roomId ? '关闭中' : '强制关闭'}
-                          </button>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="text-[10px] uppercase tracking-wider text-white/35 mb-0.5">房间码</div>
+                              <div className="font-mono text-base tracking-[0.2em] text-purple-200 font-semibold">
+                                {room.roomId}
+                              </div>
+                            </div>
+                            {room.viewerCount > 0 && (
+                              <span className="text-[11px] text-white/45 tabular-nums shrink-0">
+                                {room.viewerCount} 人观看
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (busy) return
+                                setJoiningRoomId(room.roomId)
+                                try {
+                                  await handleJoinRoom(room.roomId)
+                                } finally {
+                                  setJoiningRoomId(null)
+                                }
+                              }}
+                              disabled={busy}
+                              className={`flex-1 inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                                joiningRoomId === room.roomId
+                                  ? 'bg-purple-600/35 border-purple-400/40 text-purple-100 cursor-wait'
+                                  : busy
+                                    ? 'opacity-50 cursor-not-allowed bg-purple-600/15 border-purple-500/25 text-purple-300'
+                                    : 'bg-purple-600/25 hover:bg-purple-600/40 border-purple-400/35 text-purple-100'
+                              }`}
+                            >
+                              <LogIn size={13} />
+                              {joiningRoomId === room.roomId ? '加入中…' : '一键加入'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                setClosingRoomId(room.roomId)
+                                try {
+                                  await fetch(`${API_URL}/room/admin-close/${room.roomId}`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ adminName: getCurrentUsername() }),
+                                  })
+                                  setActiveRooms(prev => prev.filter(r => r.roomId !== room.roomId))
+                                } catch {}
+                                setClosingRoomId(null)
+                              }}
+                              disabled={busy}
+                              className={`inline-flex items-center justify-center gap-1 px-2.5 py-1.5 border rounded-lg text-xs font-medium transition-colors ${
+                                closingRoomId === room.roomId
+                                  ? 'bg-red-600/30 border-red-500/40 text-red-300 cursor-wait'
+                                  : busy
+                                    ? 'opacity-50 cursor-not-allowed bg-red-600/15 border-red-500/25 text-red-400'
+                                    : 'bg-red-600/20 hover:bg-red-600/30 border-red-500/30 text-red-400'
+                              }`}
+                            >
+                              <StopCircle size={13} />
+                              {closingRoomId === room.roomId ? '关闭中' : '关闭'}
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    )
-                  })}
+                      )
+                    })}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-            <button
-              onClick={() => setActiveRoomsOpen(prev => !prev)}
-              className={`flex-shrink-0 flex items-center justify-center gap-1.5 px-2 py-3 rounded-r-xl border border-purple-500/30 border-l-0 bg-gray-900/95 text-purple-400 hover:bg-gray-800/95 transition-all duration-300`}
-              style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
-            >
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
-              </span>
-              <span className="text-xs font-medium">{activeRooms.length} 个房间</span>
-              <ChevronDown size={12} className={`transition-transform duration-300 ${activeRoomsOpen ? 'rotate-90' : '-rotate-90'}`} />
-            </button>
-          </div>
+          </aside>,
+          document.body
         )}
 
         {/* Animated CSS */}
@@ -2071,7 +2792,7 @@ export default function ScreenShare() {
           <div className="absolute w-[300px] h-[300px] top-1/3 right-1/4 rounded-full blur-[80px] bg-orange-500/[0.04]" />
         </div>
 
-        <div className="max-w-4xl w-full relative z-10">
+        <div className={`${userType === 'admin' || (userType === 'student' && rtcPerm.isAssistant) ? 'max-w-[1480px]' : 'max-w-4xl'} w-full relative z-10 px-2 sm:px-3 mx-auto`}>
           {/* Header - cinematic entrance */}
           <div className="text-center mb-7 anim-cinematic-in">
             <div className="relative inline-flex items-center justify-center mb-5">
@@ -2108,6 +2829,8 @@ export default function ScreenShare() {
             <p className="text-gray-400 text-sm tracking-widest uppercase" style={{ letterSpacing: '0.3em' }}>Screen Sharing System</p>
           </div>
 
+          {/* 上行：主操作台（限宽居中） */}
+          <div className={`w-full mx-auto ${userType === 'admin' || (userType === 'student' && rtcPerm.isAssistant) ? 'max-w-5xl' : ''}`}>
           {/* 主操作台：左加入 / 右发起 */}
           <div className="anim-reveal-1 rounded-2xl border border-gray-700/50 bg-gray-800/30 backdrop-blur-sm overflow-hidden">
             <div className="grid grid-cols-1 md:grid-cols-5">
@@ -2132,7 +2855,7 @@ export default function ScreenShare() {
                       className="flex-1 min-w-0 bg-gray-950/60 border border-gray-600/40 rounded-xl px-3 py-3.5 text-white placeholder-gray-600 focus:outline-none focus:border-blue-500/50 focus:shadow-[0_0_18px_rgba(59,130,246,0.12)] font-mono text-2xl tracking-[0.4em] text-center uppercase transition-all"
                     />
                     <button
-                      onClick={handleJoinRoom}
+                      onClick={() => handleJoinRoom()}
                       disabled={inputCode.length !== 6}
                       className="w-24 shrink-0 py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 text-white rounded-xl font-semibold transition-all text-sm"
                     >
@@ -2175,9 +2898,95 @@ export default function ScreenShare() {
                       <Play size={16} className="text-purple-400" />
                       <h2 className="text-base font-bold text-white">发起共享</h2>
                     </div>
-                    <p className="text-gray-500 text-xs">选择方式后开始</p>
+                    <p className="text-gray-500 text-xs">
+                      {isGuest ? '输入管理/助教发放的访客码后开始' : '选择方式后开始'}
+                    </p>
                   </div>
 
+                  {isGuest ? (
+                    <>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={guestHostCodeInput}
+                          onChange={(e) => setGuestHostCodeInput(e.target.value.toUpperCase().slice(0, 16))}
+                          onKeyDown={(e) => e.key === 'Enter' && validateGuestHostCode()}
+                          placeholder="访客码"
+                          className="flex-1 min-w-0 bg-gray-950/60 border border-gray-600/40 rounded-xl px-3 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:border-amber-500/50 font-mono tracking-wider text-sm uppercase"
+                        />
+                        <button
+                          type="button"
+                          onClick={validateGuestHostCode}
+                          disabled={guestValidating || !guestHostCodeInput.trim()}
+                          className="shrink-0 px-3 py-2.5 rounded-xl bg-amber-600/25 hover:bg-amber-600/35 border border-amber-500/35 text-amber-100 text-sm disabled:opacity-50"
+                        >
+                          {guestValidating ? '校验…' : '校验'}
+                        </button>
+                      </div>
+                      {guestHostMode && guestValidatedCode && (
+                        <div className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-100/90">
+                          已绑定访客码 <span className="font-mono">{guestValidatedCode}</span>
+                          · 模式{' '}
+                          {guestHostMode === 'agora' ? '声网' : guestHostMode === 'volc' ? '火山' : 'WebRTC'}
+                        </div>
+                      )}
+                      {guestHostMode === 'volc' && (
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-0.5 bg-gray-900/50 border border-gray-700/45 rounded-lg p-0.5">
+                            {SCREEN_ENCODE_MODE_OPTIONS.map(o => (
+                              <button
+                                key={o.id}
+                                type="button"
+                                title={o.hint}
+                                onClick={() => { setScreenEncodeMode(o.id); screenEncodeModeRef.current = o.id }}
+                                className={`flex-1 px-1 py-1 rounded text-[11px] font-medium transition-colors ${
+                                  screenEncodeMode === o.id ? 'bg-orange-600/40 text-orange-200' : 'text-gray-500 hover:text-gray-300'
+                                }`}
+                              >
+                                {o.label}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="flex items-center gap-0.5 bg-gray-900/50 border border-gray-700/45 rounded-lg p-0.5">
+                            {SCREEN_QUALITY_OPTIONS.map(o => (
+                              <button
+                                key={o.id}
+                                type="button"
+                                onClick={() => { setScreenQuality(o.id); screenQualityRef.current = o.id }}
+                                className={`flex-1 px-1 py-1 rounded text-[11px] font-medium transition-colors ${
+                                  screenQuality === o.id ? 'bg-orange-600/40 text-orange-200' : 'text-gray-500 hover:text-gray-300'
+                                }`}
+                              >
+                                {o.label}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="flex items-center gap-0.5 bg-gray-900/50 border border-gray-700/45 rounded-lg p-0.5">
+                            {SCREEN_FPS_OPTIONS.map(o => (
+                              <button
+                                key={o.id}
+                                type="button"
+                                onClick={() => { setScreenFpsChoice(o.id); screenFpsChoiceRef.current = o.id }}
+                                className={`flex-1 px-1 py-1 rounded text-[11px] font-medium transition-colors ${
+                                  screenFpsChoice === o.id ? 'bg-orange-600/40 text-orange-200' : 'text-gray-500 hover:text-gray-300'
+                                }`}
+                              >
+                                {o.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <button
+                        onClick={handleStartHost}
+                        disabled={!guestHostMode || !guestValidatedCode}
+                        className="w-full py-2.5 bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 text-white rounded-lg font-medium transition-all text-sm"
+                      >
+                        开始共享
+                      </button>
+                    </>
+                  ) : (
+                    <>
                   <div className="grid grid-cols-3 gap-1.5">
                     {([
                       { key: 'peerjs' as const, label: 'WebRTC', icon: Wifi, color: 'emerald' },
@@ -2285,95 +3094,421 @@ export default function ScreenShare() {
                       </button>
                     ) : null}
                   </div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
           </div>
+          </div>
 
-          {/* Admin: pending RTC requests */}
-          {userType === 'admin' && pendingRequests.length > 0 && (
-            <div className="mt-5 bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 anim-reveal-2">
-              <h3 className="text-amber-400 text-sm font-semibold mb-3 flex items-center gap-2">
-                <Clock size={16} />
-                待审批的连接方式申请 ({pendingRequests.length})
-              </h3>
-              <div className="space-y-2">
-                {pendingRequests.map((req, i) => (
-                  <div key={i} className="flex items-center justify-between bg-gray-800/60 rounded-lg px-4 py-2.5">
-                    <div>
-                      <span className="text-white text-sm font-medium">{req.username}</span>
-                      <span className="text-gray-400 text-sm mx-2">申请使用</span>
-                      <span className="text-sm font-medium" style={{ color: rtcModeColor(req.mode) }}>
-                        {rtcModeLabel(req.mode)}
-                      </span>
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => handleApprove(req.username, req.mode)}
-                        disabled={!!actionLoading}
-                        className={`flex items-center gap-1 px-3 py-1 border rounded-md text-xs font-medium transition-colors ${
-                          actionLoading === `approve-${req.username}-${req.mode}`
-                            ? 'bg-green-600/30 border-green-500/40 text-green-300 cursor-wait'
-                            : actionLoading ? 'opacity-50 cursor-not-allowed bg-green-600/20 border-green-500/30 text-green-400'
-                            : 'bg-green-600/20 hover:bg-green-600/30 border-green-500/30 text-green-400'
-                        }`}>
-                        <CheckCircle size={14} /> {actionLoading === `approve-${req.username}-${req.mode}` ? '处理中...' : '批准'}
-                      </button>
-                      <button onClick={() => handleReject(req.username, req.mode)}
-                        disabled={!!actionLoading}
-                        className={`flex items-center gap-1 px-3 py-1 border rounded-md text-xs font-medium transition-colors ${
-                          actionLoading === `reject-${req.username}-${req.mode}`
-                            ? 'bg-red-600/30 border-red-500/40 text-red-300 cursor-wait'
-                            : actionLoading ? 'opacity-50 cursor-not-allowed bg-red-600/20 border-red-500/30 text-red-400'
-                            : 'bg-red-600/20 hover:bg-red-600/30 border-red-500/30 text-red-400'
-                        }`}>
-                        <XCircle size={14} /> {actionLoading === `reject-${req.username}-${req.mode}` ? '处理中...' : '拒绝'}
-                      </button>
-                    </div>
+          {/* 会议房入口（腾讯会议式）：管理可创建，所有人可加入 */}
+          {!isGuest && (
+            <div className={`mt-4 w-full mx-auto ${userType === 'admin' || (userType === 'student' && rtcPerm.isAssistant) ? 'max-w-5xl' : 'max-w-4xl'}`}>
+              <div className="anim-reveal-2 rounded-2xl border border-cyan-500/20 bg-gray-800/30 backdrop-blur-sm p-5 sm:p-6">
+                <div className="flex items-center gap-2 mb-1">
+                  <Video size={16} className="text-cyan-400" />
+                  <h2 className="text-base font-bold text-white">会议房间</h2>
+                  <span className="text-[10px] uppercase tracking-wider text-cyan-400/70">Meeting</span>
+                </div>
+                <p className="text-gray-500 text-xs mb-4">
+                  多人语音会议 + 轮流共享屏幕。仅管理员可创建；助教共享扣次数，普通成员需管理员批准。
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  {userType === 'admin' && (
+                    <button
+                      type="button"
+                      disabled={meetingCreating}
+                      onClick={async () => {
+                        setMeetingCreating(true)
+                        setErrorMsg('')
+                        try {
+                          const r = await fetch(`${API_URL}/meeting/create`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              adminName: myName.current,
+                              userType: 'admin',
+                              title: '紫夜会议',
+                            }),
+                          })
+                          const d = await r.json()
+                          if (!r.ok || !d.success) throw new Error(d.error || '创建失败')
+                          setMeetingCode(d.code)
+                          setMode('meeting')
+                          setSearchParams({ meeting: d.code }, { replace: true })
+                        } catch (e: any) {
+                          setErrorMsg(e?.message || '创建会议失败')
+                        } finally {
+                          setMeetingCreating(false)
+                        }
+                      }}
+                      className="sm:w-40 shrink-0 py-3 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 hover:from-cyan-500 hover:to-teal-500 disabled:from-gray-700 disabled:to-gray-700 text-white text-sm font-semibold transition-all"
+                    >
+                      {meetingCreating ? '创建中…' : '创建会议'}
+                    </button>
+                  )}
+                  <div className="flex-1 flex gap-2 min-w-0">
+                    <input
+                      type="text"
+                      value={meetingInput}
+                      onChange={(e) => setMeetingInput(e.target.value.toUpperCase().slice(0, 6))}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && meetingInput.length === 6) {
+                          ;(e.currentTarget.nextElementSibling as HTMLButtonElement | null)?.click()
+                        }
+                      }}
+                      placeholder="会 议 号"
+                      maxLength={6}
+                      className="meeting-code-input flex-1 min-w-0 bg-gray-950/60 border border-gray-600/40 rounded-xl px-3 py-3 text-white placeholder-gray-600 focus:outline-none focus:border-cyan-500/50 font-mono text-lg tracking-[0.3em] text-center uppercase"
+                    />
+                    <button
+                      type="button"
+                      disabled={meetingInput.length !== 6 || meetingJoining}
+                      onClick={async () => {
+                        const c = meetingInput.trim().toUpperCase()
+                        if (c.length !== 6) return
+                        setMeetingJoining(true)
+                        setErrorMsg('')
+                        try {
+                          const r = await fetch(`${API_URL}/meeting/${c}`)
+                          const d = await r.json()
+                          if (!r.ok || !d.exists) throw new Error(d.error || '会议不存在或已结束')
+                          setMeetingCode(c)
+                          setMode('meeting')
+                          setSearchParams({ meeting: c }, { replace: true })
+                        } catch (e: any) {
+                          setErrorMsg(e?.message || '加入会议失败')
+                        } finally {
+                          setMeetingJoining(false)
+                        }
+                      }}
+                      className="w-24 shrink-0 py-3 rounded-xl bg-cyan-600/25 hover:bg-cyan-600/40 border border-cyan-500/35 text-cyan-100 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                    >
+                      {meetingJoining ? '…' : '进会议'}
+                    </button>
                   </div>
-                ))}
+                </div>
+
+                {/* 会议记录（meeting_rooms） */}
+                {userType === 'admin' && (() => {
+                  const filtered = meetingLogs.filter((l) => {
+                    if (!meetingLogSearch) return true
+                    const q = meetingLogSearch.toLowerCase()
+                    return (
+                      l.code.toLowerCase().includes(q) ||
+                      (l.title || '').toLowerCase().includes(q) ||
+                      (l.created_by || '').toLowerCase().includes(q)
+                    )
+                  })
+                  const totalPages = Math.max(1, Math.ceil(filtered.length / MEETING_LOG_PAGE_SIZE))
+                  const safePage = Math.min(meetingLogPage, totalPages)
+                  const paged = filtered.slice((safePage - 1) * MEETING_LOG_PAGE_SIZE, safePage * MEETING_LOG_PAGE_SIZE)
+                  const handleDeleteClick = (id: number) => {
+                    if (meetingDeleteConfirmId === id) {
+                      setMeetingDeleteConfirmId(null)
+                      setMeetingDeletePassword('')
+                      setMeetingDeleteError('')
+                      return
+                    }
+                    setMeetingDeleteConfirmId(id)
+                    setMeetingDeletePassword('')
+                    setMeetingDeleteError('')
+                  }
+                  const handleDeleteSubmit = async (id: number) => {
+                    if (meetingDeletingId) return
+                    if (!meetingDeletePassword) {
+                      setMeetingDeleteError('请输入密码')
+                      return
+                    }
+                    setMeetingDeletingId(id)
+                    setMeetingDeleteError('')
+                    const r = await fetch(`${API_URL}/meeting/logs/${id}`, {
+                      method: 'DELETE',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ password: meetingDeletePassword }),
+                    }).catch(() => null)
+                    setMeetingDeletingId(null)
+                    if (!r || !r.ok) {
+                      if (r && r.status === 403) {
+                        setMeetingDeleteError('密码错误')
+                        return
+                      }
+                      const d = r ? await r.json().catch(() => ({})) : {}
+                      setMeetingDeleteError(d.error || '删除失败')
+                      return
+                    }
+                    setMeetingLogs((prev) => prev.filter((l) => l.id !== id))
+                    setMeetingDeleteConfirmId(null)
+                    setMeetingDeletePassword('')
+                  }
+                  const confirmEndMeeting = async () => {
+                    if (!meetingEndConfirm || meetingEnding) return
+                    setMeetingEnding(true)
+                    try {
+                      const r = await fetch(`${API_URL}/meeting/${meetingEndConfirm.code}/close`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          adminName: getCurrentUsername(),
+                          userType: 'admin',
+                        }),
+                      })
+                      const d = await r.json()
+                      if (!r.ok || d.success === false) throw new Error(d.error || '结束失败')
+                      setMeetingLogs((prev) =>
+                        prev.map((l) =>
+                          l.code === meetingEndConfirm.code
+                            ? { ...l, live: false, status: 'closed', closed_at: new Date().toISOString(), memberCount: null }
+                            : l
+                        )
+                      )
+                      setMeetingEndConfirm(null)
+                    } catch (e: any) {
+                      setErrorMsg(e?.message || '结束会议失败')
+                    } finally {
+                      setMeetingEnding(false)
+                    }
+                  }
+                  return (
+                    <div className="mt-4 rounded-xl border border-cyan-500/15 bg-black/20 overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => setMeetingLogsOpen((v) => !v)}
+                        className="w-full flex items-center justify-between px-3.5 py-2.5 hover:bg-white/[0.03] transition-colors"
+                      >
+                        <span className="text-gray-300 text-sm font-semibold flex items-center gap-2">
+                          <Video size={15} className="text-cyan-400" />
+                          会议记录
+                          <span className="text-gray-600 text-xs font-normal">({meetingLogs.length})</span>
+                        </span>
+                        <ChevronDown size={15} className={`text-gray-500 transition-transform duration-300 ${meetingLogsOpen ? 'rotate-180' : ''}`} />
+                      </button>
+                      {meetingLogsOpen && (
+                        <div className="border-t border-cyan-500/10 px-3.5 py-3 max-h-[min(42vh,22rem)] overflow-y-auto sidebar-scrollbar">
+                          <div className="relative mb-2.5">
+                            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
+                            <input
+                              value={meetingLogSearch}
+                              onChange={(e) => {
+                                setMeetingLogSearch(e.target.value)
+                                setMeetingLogPage(1)
+                              }}
+                              placeholder="搜索会议号 / 标题 / 发起人"
+                              className="w-full pl-8 pr-3 py-1.5 bg-gray-950/50 border border-gray-700/45 rounded-lg text-xs text-white placeholder-gray-600 focus:outline-none focus:border-cyan-500/40"
+                            />
+                          </div>
+                          {filtered.length === 0 ? (
+                            <p className="text-gray-600 text-xs text-center py-4">
+                              {meetingLogs.length === 0 ? '暂无会议记录' : '无匹配记录'}
+                            </p>
+                          ) : (
+                            <>
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-xs">
+                                  <thead className="sticky top-0 bg-[#12161c]/95 backdrop-blur-sm z-10">
+                                    <tr className="text-gray-500 border-b border-gray-700/40">
+                                      <th className="text-left py-2 px-1.5 font-medium">会议号</th>
+                                      <th className="text-left py-2 px-1.5 font-medium">标题</th>
+                                      <th className="text-left py-2 px-1.5 font-medium">发起人</th>
+                                      <th className="text-left py-2 px-1.5 font-medium">时间</th>
+                                      <th className="text-left py-2 px-1.5 font-medium">状态</th>
+                                      <th className="text-right py-2 px-1.5 font-medium w-16">操作</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {paged.map((log) => {
+                                      const startTime = new Date(log.created_at).toLocaleString('zh-CN', {
+                                        month: '2-digit',
+                                        day: '2-digit',
+                                        hour: '2-digit',
+                                        minute: '2-digit',
+                                      })
+                                      const isLive = !!log.live
+                                      let duration = ''
+                                      if (log.closed_at) {
+                                        const ms = new Date(log.closed_at).getTime() - new Date(log.created_at).getTime()
+                                        const mins = Math.floor(ms / 60000)
+                                        duration =
+                                          mins < 1
+                                            ? '<1分钟'
+                                            : mins < 60
+                                              ? `${mins}分钟`
+                                              : `${Math.floor(mins / 60)}小时${mins % 60}分`
+                                      }
+                                      return (
+                                        <React.Fragment key={log.id}>
+                                          <tr className="border-b border-gray-800/40 hover:bg-white/[0.02] group">
+                                            <td className="py-2 px-1.5 font-mono tracking-wider text-cyan-200/90">{log.code}</td>
+                                            <td className="py-2 px-1.5 text-white/80 truncate max-w-[7rem]" title={log.title}>{log.title}</td>
+                                            <td className="py-2 px-1.5 text-gray-300">{log.created_by}</td>
+                                            <td className="py-2 px-1.5 text-gray-400 whitespace-nowrap">{startTime}</td>
+                                            <td className="py-2 px-1.5">
+                                              {isLive ? (
+                                                <span className="inline-flex items-center gap-1 text-cyan-300">
+                                                  <span className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-pulse" />
+                                                  进行中{typeof log.memberCount === 'number' ? ` · ${log.memberCount}人` : ''}
+                                                </span>
+                                              ) : (
+                                                <span className="text-gray-500">{duration || '已结束'}</span>
+                                              )}
+                                            </td>
+                                            <td className="py-2 px-1.5 text-right">
+                                              {isLive ? (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setMeetingEndConfirm({ code: log.code })}
+                                                  title="结束会议"
+                                                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[11px] text-red-300 hover:bg-red-600/20 border border-red-500/25"
+                                                >
+                                                  <PhoneOff size={11} />
+                                                  结束
+                                                </button>
+                                              ) : (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleDeleteClick(log.id)}
+                                                  title="删除"
+                                                  className={`p-1 rounded transition-all ${
+                                                    meetingDeleteConfirmId === log.id
+                                                      ? 'opacity-100 bg-red-600/20 text-red-400'
+                                                      : 'opacity-0 group-hover:opacity-100 hover:bg-red-600/20 text-gray-600 hover:text-red-400'
+                                                  }`}
+                                                >
+                                                  <Trash2 size={13} />
+                                                </button>
+                                              )}
+                                            </td>
+                                          </tr>
+                                          {meetingDeleteConfirmId === log.id && (
+                                            <tr className="bg-gray-900/40">
+                                              <td colSpan={6} className="p-0">
+                                                <div className="flex items-center gap-2 px-2 py-2">
+                                                  <input
+                                                    type="password"
+                                                    value={meetingDeletePassword}
+                                                    onChange={(e) => {
+                                                      setMeetingDeletePassword(e.target.value)
+                                                      setMeetingDeleteError('')
+                                                    }}
+                                                    onKeyDown={(e) => e.key === 'Enter' && handleDeleteSubmit(log.id)}
+                                                    placeholder="输入删除密码"
+                                                    autoFocus
+                                                    className="bg-gray-800/60 border border-gray-600/50 rounded px-2 py-1 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-red-500/50 w-32"
+                                                  />
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleDeleteSubmit(log.id)}
+                                                    disabled={!!meetingDeletingId}
+                                                    className="px-2.5 py-1 rounded text-xs font-medium bg-red-600/20 hover:bg-red-600/30 text-red-400"
+                                                  >
+                                                    {meetingDeletingId === log.id ? '删除中...' : '确认删除'}
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                      setMeetingDeleteConfirmId(null)
+                                                      setMeetingDeletePassword('')
+                                                      setMeetingDeleteError('')
+                                                    }}
+                                                    className="px-2 py-1 rounded text-xs text-gray-500 hover:text-gray-300"
+                                                  >
+                                                    取消
+                                                  </button>
+                                                  {meetingDeleteError && (
+                                                    <span className="text-red-400 text-xs">{meetingDeleteError}</span>
+                                                  )}
+                                                </div>
+                                              </td>
+                                            </tr>
+                                          )}
+                                        </React.Fragment>
+                                      )
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                              {totalPages > 1 && (
+                                <div className="flex items-center justify-between mt-2.5">
+                                  <span className="text-gray-600 text-[11px]">共 {filtered.length} 条</span>
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => setMeetingLogPage((p) => Math.max(1, p - 1))}
+                                      disabled={safePage <= 1}
+                                      className="px-2 py-0.5 rounded text-xs text-gray-400 hover:text-white disabled:text-gray-700 disabled:cursor-not-allowed"
+                                    >
+                                      上一页
+                                    </button>
+                                    <span className="text-gray-500 text-xs">{safePage} / {totalPages}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setMeetingLogPage((p) => Math.min(totalPages, p + 1))}
+                                      disabled={safePage >= totalPages}
+                                      className="px-2 py-0.5 rounded text-xs text-gray-400 hover:text-white disabled:text-gray-700 disabled:cursor-not-allowed"
+                                    >
+                                      下一页
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )}
+
+                      {meetingEndConfirm && createPortal(
+                        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/60 backdrop-blur-[2px]">
+                          <div className="w-full max-w-sm rounded-2xl bg-[#1a1a22] ring-1 ring-white/10 shadow-2xl p-5 space-y-4">
+                            <h3 className="text-white font-semibold text-base">结束会议</h3>
+                            <p className="text-sm text-white/65 leading-relaxed">
+                              确定结束会议{' '}
+                              <span className="font-mono text-cyan-300 tracking-wider">{meetingEndConfirm.code}</span>
+                              ？所有成员将被移出。
+                            </p>
+                            <div className="flex gap-2 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => setMeetingEndConfirm(null)}
+                                disabled={meetingEnding}
+                                className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 text-sm"
+                              >
+                                取消
+                              </button>
+                              <button
+                                type="button"
+                                onClick={confirmEndMeeting}
+                                disabled={meetingEnding}
+                                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-sm font-medium disabled:opacity-50"
+                              >
+                                {meetingEnding ? '结束中…' : '确定结束'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>,
+                        document.body
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
             </div>
           )}
 
-          {/* Student: assistant status */}
-          {userType === 'student' && rtcPerm.isAssistant && (
-            <div className={`mt-5 rounded-xl p-4 anim-reveal-2 border ${
-              rtcPerm.canUseRtc
-                ? 'bg-emerald-500/5 border-emerald-500/20'
-                : 'bg-gray-800/40 border-gray-700/40'
-            }`}>
-              <h3 className={`text-sm font-semibold mb-1 flex items-center gap-2 ${
-                rtcPerm.canUseRtc ? 'text-emerald-400' : 'text-gray-400'
-              }`}>
-                <GraduationCap size={16} />
-                助教身份
-              </h3>
-              {rtcPerm.canUseRtc ? (
-                <p className="text-gray-400 text-xs">
-                  可直接使用声网 / 火山引擎分享，无需逐次审批。
-                  {rtcPerm.quotaRemaining == null
-                    ? ' 次数不限。'
-                    : ` 剩余 ${rtcPerm.quotaRemaining} 次（已用 ${rtcPerm.screenShareUsed ?? 0} 次）。`}
-                </p>
-              ) : !rtcPerm.screenShareEnabled ? (
-                <p className="text-gray-500 text-xs">管理员已关闭您的屏幕共享权限，请联系管理员。</p>
-              ) : (
-                <p className="text-gray-500 text-xs">声网 / 火山共享次数已用完，请联系管理员增加配额或清零次数。</p>
-              )}
-            </div>
-          )}
-
-          {/* Admin: assistant management */}
+          {/* 下行：助教管理 | 共享记录 | 访客码 */}
           {userType === 'admin' && (
-            <ScreenShareAssistantPanel
-              assistants={assistants}
-              candidates={assistantCandidates}
-              onRefresh={refreshAssistants}
-            />
-          )}
+            <div className="mt-4 grid grid-cols-1 xl:grid-cols-3 gap-4 items-start">
+              <aside className="anim-slide-l min-w-0">
+                <ScreenShareAssistantPanel
+                  defaultOpen
+                  assistants={assistants}
+                  candidates={assistantCandidates}
+                  onRefresh={refreshAssistants}
+                />
+              </aside>
 
-          {/* Admin: share logs (collapsible) */}
-          {userType === 'admin' && (() => {
+              <div className="min-w-0">
+            {(() => {
             const filtered = shareLogs.filter(l => {
               if (logModeFilter !== 'all' && l.mode !== logModeFilter) return false
               if (logSearch) {
@@ -2407,9 +3542,12 @@ export default function ScreenShare() {
               setDeleteConfirmId(null); setDeletePassword('')
             }
             return (
-              <div className="mt-6 bg-gray-800/30 border border-gray-700/40 rounded-xl overflow-hidden anim-fade-last">
-                <button onClick={() => setLogsOpen(!logsOpen)}
-                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-800/40 transition-colors">
+              <div className="bg-gray-800/30 border border-gray-700/40 rounded-xl overflow-hidden anim-fade-last w-full">
+                <button
+                  type="button"
+                  onClick={() => setLogsOpen(v => !v)}
+                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-800/40 transition-colors"
+                >
                   <span className="text-gray-300 text-sm font-semibold flex items-center gap-2">
                     <Monitor size={16} className="text-purple-400" />
                     共享记录
@@ -2419,15 +3557,15 @@ export default function ScreenShare() {
                 </button>
                 <div className={`collapsible ${logsOpen ? 'open' : ''}`}>
                   <div>
-                    <div className="px-4 pb-4">
-                    <div className="flex flex-wrap items-center gap-2 mb-3">
-                      <div className="relative flex-1 min-w-[140px]">
+                    <div className="px-4 pb-4 max-h-[min(50vh,28rem)] overflow-y-auto sidebar-scrollbar flex flex-col">
+                    <div className="flex flex-wrap items-center gap-2 mb-3 shrink-0">
+                      <div className="relative flex-1 min-w-[120px]">
                         <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
                         <input value={logSearch} onChange={e => { setLogSearch(e.target.value); setLogPage(1) }}
                           placeholder="搜索发起人或房间号"
                           className="w-full pl-8 pr-3 py-1.5 bg-gray-900/50 border border-gray-700/50 rounded-lg text-xs text-white placeholder-gray-600 focus:outline-none focus:border-purple-500/40" />
                       </div>
-                      <div className="flex gap-1">
+                      <div className="flex flex-wrap gap-1">
                         {([['all', '全部'], ['peerjs', 'WebRTC'], ['agora', '声网'], ['volc', '火山']] as const).map(([k, label]) => (
                           <button key={k} onClick={() => { setLogModeFilter(k); setLogPage(1) }}
                             className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors border ${
@@ -2444,7 +3582,7 @@ export default function ScreenShare() {
                       <>
                         <div className="overflow-x-auto">
                           <table className="w-full text-xs">
-                            <thead>
+                            <thead className="sticky top-0 bg-gray-900/95 backdrop-blur-sm z-10">
                               <tr className="text-gray-500 border-b border-gray-700/50">
                                 <th className="text-left py-2 px-2 font-medium">发起人</th>
                                 <th className="text-left py-2 px-2 font-medium">方式</th>
@@ -2545,7 +3683,7 @@ export default function ScreenShare() {
                           </table>
                         </div>
                         {totalPages > 1 && (
-                          <div className="flex items-center justify-between mt-3">
+                          <div className="flex items-center justify-between mt-3 shrink-0">
                             <span className="text-gray-600 text-xs">共 {filtered.length} 条</span>
                             <div className="flex items-center gap-1">
                               <button onClick={() => setLogPage(p => Math.max(1, p - 1))} disabled={safePage <= 1}
@@ -2563,7 +3701,127 @@ export default function ScreenShare() {
                 </div>
               </div>
             )
-          })()}
+            })()}
+              </div>
+
+              <aside className="anim-slide-r min-w-0">
+                <ScreenShareGuestCodesPanel
+                  role="admin"
+                  defaultOpen
+                  creatorName={myName.current}
+                />
+              </aside>
+            </div>
+          )}
+
+          {/* 助教：操作台下方访客码 */}
+          {userType === 'student' && rtcPerm.isAssistant && (memberIdRef.current || getStudentMemberId()) && (
+            <div className="mt-4 max-w-5xl mx-auto anim-slide-r">
+              <ScreenShareGuestCodesPanel
+                role="assistant"
+                defaultOpen
+                memberId={memberIdRef.current || getStudentMemberId() || undefined}
+                creatorName={myName.current}
+                onConsumedQuota={async () => {
+                  const mid = memberIdRef.current || getStudentMemberId()
+                  const q = mid ? `?memberId=${mid}` : ''
+                  const r = await fetch(`${API_URL}/room/rtc-permission/${encodeURIComponent(myName.current)}${q}`)
+                  const d = await r.json()
+                  setRtcPerm(d)
+                }}
+              />
+            </div>
+          )}
+
+          {isGuest && (
+            <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 anim-fade-last">
+              <div className="min-w-0 text-sm text-amber-100/90">
+                访客身份：<span className="font-medium text-white">{guestSession?.nickname}</span>
+                <span className="text-gray-500 text-xs ml-2">可观看；共享需访客码</span>
+              </div>
+              <button
+                type="button"
+                onClick={exitGuest}
+                className="shrink-0 text-xs text-gray-400 hover:text-white px-2 py-1 rounded-md border border-gray-700/60"
+              >
+                退出访客
+              </button>
+            </div>
+          )}
+
+          {/* Admin: pending RTC requests */}
+          {userType === 'admin' && pendingRequests.length > 0 && (
+            <div className="mt-5 bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 anim-reveal-2">
+              <h3 className="text-amber-400 text-sm font-semibold mb-3 flex items-center gap-2">
+                <Clock size={16} />
+                待审批的连接方式申请 ({pendingRequests.length})
+              </h3>
+              <div className="space-y-2">
+                {pendingRequests.map((req, i) => (
+                  <div key={i} className="flex items-center justify-between bg-gray-800/60 rounded-lg px-4 py-2.5">
+                    <div>
+                      <span className="text-white text-sm font-medium">{req.username}</span>
+                      <span className="text-gray-400 text-sm mx-2">申请使用</span>
+                      <span className="text-sm font-medium" style={{ color: rtcModeColor(req.mode) }}>
+                        {rtcModeLabel(req.mode)}
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => handleApprove(req.username, req.mode)}
+                        disabled={!!actionLoading}
+                        className={`flex items-center gap-1 px-3 py-1 border rounded-md text-xs font-medium transition-colors ${
+                          actionLoading === `approve-${req.username}-${req.mode}`
+                            ? 'bg-green-600/30 border-green-500/40 text-green-300 cursor-wait'
+                            : actionLoading ? 'opacity-50 cursor-not-allowed bg-green-600/20 border-green-500/30 text-green-400'
+                            : 'bg-green-600/20 hover:bg-green-600/30 border-green-500/30 text-green-400'
+                        }`}>
+                        <CheckCircle size={14} /> {actionLoading === `approve-${req.username}-${req.mode}` ? '处理中...' : '批准'}
+                      </button>
+                      <button onClick={() => handleReject(req.username, req.mode)}
+                        disabled={!!actionLoading}
+                        className={`flex items-center gap-1 px-3 py-1 border rounded-md text-xs font-medium transition-colors ${
+                          actionLoading === `reject-${req.username}-${req.mode}`
+                            ? 'bg-red-600/30 border-red-500/40 text-red-300 cursor-wait'
+                            : actionLoading ? 'opacity-50 cursor-not-allowed bg-red-600/20 border-red-500/30 text-red-400'
+                            : 'bg-red-600/20 hover:bg-red-600/30 border-red-500/30 text-red-400'
+                        }`}>
+                        <XCircle size={14} /> {actionLoading === `reject-${req.username}-${req.mode}` ? '处理中...' : '拒绝'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Student: assistant status */}
+          {userType === 'student' && rtcPerm.isAssistant && (
+            <div className={`mt-5 rounded-xl p-4 anim-reveal-2 border ${
+              rtcPerm.canUseRtc
+                ? 'bg-emerald-500/5 border-emerald-500/20'
+                : 'bg-gray-800/40 border-gray-700/40'
+            }`}>
+              <h3 className={`text-sm font-semibold mb-1 flex items-center gap-2 ${
+                rtcPerm.canUseRtc ? 'text-emerald-400' : 'text-gray-400'
+              }`}>
+                <GraduationCap size={16} />
+                助教身份
+              </h3>
+              {rtcPerm.canUseRtc ? (
+                <p className="text-gray-400 text-xs">
+                  可直接使用声网 / 火山引擎分享，无需逐次审批。
+                  {rtcPerm.quotaRemaining == null
+                    ? ' 次数不限。'
+                    : ` 剩余 ${rtcPerm.quotaRemaining} 次（已用 ${rtcPerm.screenShareUsed ?? 0} 次）。`}
+                  {' '}也可生成访客码给无账号访客发起共享（生成时扣一次次数）。
+                </p>
+              ) : !rtcPerm.screenShareEnabled ? (
+                <p className="text-gray-500 text-xs">管理员已关闭您的屏幕共享权限，请联系管理员。</p>
+              ) : (
+                <p className="text-gray-500 text-xs">声网 / 火山共享次数已用完，请联系管理员增加配额或重置次数。</p>
+              )}
+            </div>
+          )}
 
           {/* Author */}
           <div className="mt-6 text-center anim-fade-last">
@@ -2655,24 +3913,218 @@ export default function ScreenShare() {
     '[&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:h-3 [&::-moz-range-thumb]:rounded-full ' +
     '[&::-moz-range-thumb]:bg-purple-400 [&::-moz-range-thumb]:border-0'
 
-  const peerListenVolume = (userId: string) => (
-    <div className="flex items-center gap-1.5 w-full mt-1.5" title="听感音量：只改你这边听到的大小">
-      <Volume2 size={11} className="text-gray-600 shrink-0" />
-      <input
-        type="range"
-        min={0}
-        max={VOLC_MIC_VOLUME_MAX}
-        step={5}
-        value={peerVolumes[userId] ?? VOLC_MIC_VOLUME_DEFAULT}
-        onChange={(e) => handlePeerVolumeChange(userId, Number(e.target.value))}
-        className={volumeSliderClass}
-        onClick={(e) => e.stopPropagation()}
-      />
-      <span className="text-gray-500 text-[10px] tabular-nums w-9 text-right">
-        {peerVolumes[userId] ?? VOLC_MIC_VOLUME_DEFAULT}%
-      </span>
-    </div>
-  )
+  const peerListenVolume = (userId: string) => {
+    const vol = peerVolumes[userId] ?? VOLC_MIC_VOLUME_DEFAULT
+    const muted = vol <= 0
+    return (
+      <div className="flex items-center gap-1.5 w-full mt-1.5" title="听感音量：只改你这边听到的大小">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            togglePeerListenMute(userId)
+          }}
+          className={`shrink-0 p-0.5 rounded transition-colors ${
+            muted ? 'text-orange-400 hover:text-orange-300' : 'text-gray-500 hover:text-white'
+          }`}
+          title={muted ? '取消静音此人' : '静音此人（仅本机听感）'}
+        >
+          {muted ? <VolumeX size={12} /> : <Volume2 size={12} />}
+        </button>
+        <input
+          type="range"
+          min={0}
+          max={VOLC_MIC_VOLUME_MAX}
+          step={5}
+          value={vol}
+          onChange={(e) => handlePeerVolumeChange(userId, Number(e.target.value))}
+          className={volumeSliderClass}
+          onClick={(e) => e.stopPropagation()}
+        />
+        <span className="text-gray-500 text-[10px] tabular-nums w-9 text-right">
+          {vol}%
+        </span>
+      </div>
+    )
+  }
+
+  const renderNameWithAvatar = (name: string, opts?: {
+    badge?: string
+    micOn?: boolean
+    forcedMute?: boolean
+    size?: 'sm' | 'md'
+  }) => {
+    const profile = resolveProfile(name)
+    const size = opts?.size || 'sm'
+    const forced = !!opts?.forcedMute
+    return (
+      <div className="flex items-center gap-2 min-w-0 flex-1">
+        <MemberAvatar
+          avatar={profile.avatar}
+          qq={profile.qq}
+          name={profile.nickname || name}
+          size={size}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 min-w-0">
+            {typeof opts?.micOn === 'boolean' && (
+              <div
+                className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                  forced ? 'bg-orange-400' : opts.micOn ? 'bg-green-500' : 'bg-gray-500'
+                }`}
+              />
+            )}
+            <span
+              className={`text-sm truncate ${forced ? 'text-orange-200/90' : 'text-gray-200'}`}
+              title={profile.nickname || name}
+            >
+              {profile.nickname || name}
+            </span>
+            {forced && (
+              <span className="inline-flex items-center gap-0.5 text-[10px] text-orange-400 shrink-0" title="已被主播禁言">
+                <MicOff size={10} />
+                禁言
+              </span>
+            )}
+            {opts?.badge && !forced && (
+              <span className="text-[10px] text-gray-500 shrink-0">{opts.badge}</span>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  /** 左侧在线成员（展示用） */
+  const onlineMemberRows: {
+    key: string
+    name: string
+    micOn?: boolean
+    badge?: string
+    forcedMute?: boolean
+  }[] = []
+  if (mode === 'viewer' && (hostName || volcHostUserId)) {
+    onlineMemberRows.push({ key: 'host', name: hostName || '主播', badge: '主播', micOn: true })
+  }
+  if (mode === 'host') {
+    onlineMemberRows.push({
+      key: 'self-host',
+      name: myName.current || '主播',
+      badge: '我',
+      micOn: micOn && !micForcedOff,
+      forcedMute: micForcedOff,
+    })
+  }
+  if (mode === 'viewer') {
+    onlineMemberRows.push({
+      key: 'self-viewer',
+      name: myName.current || '我',
+      badge: '我',
+      micOn: micOn && !micForcedOff,
+      forcedMute: micForcedOff,
+    })
+  }
+  if (activeStreamMode === 'volc' && volcPeers.length > 0) {
+    for (const p of volcPeers) {
+      const forced = forcedMutedIds.has(p.userId)
+      onlineMemberRows.push({
+        key: p.userId,
+        name: p.name,
+        micOn: p.micOn && !forced,
+        forcedMute: forced,
+      })
+    }
+  } else {
+    for (const n of viewerNames) {
+      if (n && n !== myName.current) onlineMemberRows.push({ key: `vn-${n}`, name: n, micOn: true })
+    }
+  }
+
+  /** 右侧可调听感的远端 */
+  const remoteVolumeTargets: { userId: string; name: string }[] = []
+  if (activeStreamMode === 'volc') {
+    if (mode === 'viewer' && volcHostUserId) {
+      remoteVolumeTargets.push({ userId: volcHostUserId, name: hostName || '主播' })
+    }
+    for (const p of volcPeers) {
+      remoteVolumeTargets.push({ userId: p.userId, name: p.name })
+    }
+  }
+
+  const showSidePanels =
+    (status === 'streaming' || status === 'watching') && !isFullscreen
+
+  const leftMembersPanel = showSidePanels ? (
+    <aside className="w-52 shrink-0 flex flex-col student-glass-panel student-glass-panel--static overflow-hidden self-stretch min-h-0">
+      <div className="px-3 py-2.5 border-b border-white/10 flex items-center gap-2">
+        <Users size={14} className="text-purple-300" />
+        <span className="text-white text-sm font-medium">在线成员</span>
+        <span className="text-gray-500 text-xs ml-auto">{onlineMemberRows.length}</span>
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1 sidebar-scrollbar">
+        {onlineMemberRows.length === 0 ? (
+          <p className="text-gray-500 text-xs px-2 py-4 text-center">暂无在线成员</p>
+        ) : (
+          onlineMemberRows.map((row) => (
+            <div
+              key={row.key}
+              className={`flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 ${
+                row.forcedMute ? 'bg-orange-500/10 border border-orange-500/20' : ''
+              }`}
+            >
+              {renderNameWithAvatar(row.name, {
+                badge: row.badge,
+                micOn: row.micOn,
+                forcedMute: row.forcedMute,
+              })}
+            </div>
+          ))
+        )}
+      </div>
+    </aside>
+  ) : null
+
+  const rightVolumePanel = showSidePanels ? (
+    <aside className="w-64 shrink-0 flex flex-col student-glass-panel student-glass-panel--static overflow-hidden self-stretch min-h-0">
+      <div className="px-3 py-2.5 border-b border-white/10 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <Volume2 size={14} className="text-purple-300 shrink-0" />
+          <span className="text-white text-sm font-medium truncate">听感音量</span>
+        </div>
+        {activeStreamMode === 'volc' && remoteVolumeTargets.length > 0 && (
+          <button
+            type="button"
+            onClick={toggleMuteAllListen}
+            className={`shrink-0 text-xs px-2 py-1 rounded-md inline-flex items-center gap-1 transition-colors ${
+              allListenMuted
+                ? 'bg-orange-600/30 text-orange-200 hover:bg-orange-600/40'
+                : 'bg-white/5 text-gray-300 hover:bg-white/10 hover:text-white'
+            }`}
+            title={allListenMuted ? '恢复远端听感' : '一键静音远端语音（仅本机）'}
+          >
+            {allListenMuted ? <Volume2 size={12} /> : <VolumeX size={12} />}
+            {allListenMuted ? '取消静音' : '一键静音'}
+          </button>
+        )}
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-2 sidebar-scrollbar">
+        {activeStreamMode !== 'volc' ? (
+          <p className="text-gray-500 text-xs px-2 py-4 text-center leading-relaxed">
+            语音仅火山引擎可用
+          </p>
+        ) : remoteVolumeTargets.length === 0 ? (
+          <p className="text-gray-500 text-xs px-2 py-4 text-center">暂无可调音量的远端成员</p>
+        ) : (
+          remoteVolumeTargets.map((t) => (
+            <div key={t.userId} className="px-2 py-2 rounded-lg bg-white/[0.03] border border-white/5">
+              {renderNameWithAvatar(t.name)}
+              {peerListenVolume(t.userId)}
+            </div>
+          ))
+        )}
+      </div>
+    </aside>
+  ) : null
 
   const volcMicControl = activeStreamMode === 'volc' ? (
     <div className="relative flex items-stretch" ref={micMenuRef}>
@@ -2769,8 +4221,138 @@ export default function ScreenShare() {
     </div>
   ) : null
 
+  const inviteFiltered = inviteCandidates.filter((c) => {
+    const q = inviteQuery.trim().toLowerCase()
+    if (!q) return true
+    return (
+      c.nickname.toLowerCase().includes(q) ||
+      c.username.toLowerCase().includes(q) ||
+      (c.qq || '').includes(q) ||
+      (c.stageRole || '').toLowerCase().includes(q)
+    )
+  })
+  const inviteAllFilteredSelected =
+    inviteFiltered.length > 0 && inviteFiltered.every((c) => inviteSelected.has(c.id))
+
   return (
-    <div className={`flex flex-col ${isFullscreen ? 'h-screen bg-black' : 'min-h-[calc(100vh-8rem)] px-6 py-4 max-w-[1600px] mx-auto w-full'}`} ref={containerRef}>
+    <div className={`flex flex-col ${isFullscreen ? 'h-screen bg-black' : 'min-h-[calc(100vh-8rem)] h-[calc(100vh-8rem)] px-3 sm:px-4 py-3 w-full'}`} ref={containerRef}>
+      {/* 邀请观看面板 */}
+      {inviteOpen && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/55 backdrop-blur-[2px]">
+          <div className="w-full max-w-md max-h-[min(80vh,36rem)] flex flex-col rounded-2xl bg-[#18181e] shadow-2xl shadow-black/50 ring-1 ring-white/10 overflow-hidden">
+            <div className="px-4 py-3 flex items-center justify-between bg-[#1e1e26]">
+              <div>
+                <h3 className="text-sm font-semibold text-white">邀请观看</h3>
+                <p className="text-[11px] text-white/40 mt-0.5">选择后对方页面将弹出进入提示，无需输入房间号</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setInviteOpen(false)}
+                className="p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/5"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="px-3 pt-3 pb-2">
+              <div className="relative">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/35" />
+                <input
+                  value={inviteQuery}
+                  onChange={(e) => setInviteQuery(e.target.value)}
+                  placeholder="搜索昵称 / QQ / 阶段…"
+                  className="w-full bg-black/30 rounded-xl pl-9 pr-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:ring-1 focus:ring-purple-500/40"
+                />
+              </div>
+              <div className="mt-2 flex items-center justify-between text-[11px] text-white/45 px-0.5">
+                <button
+                  type="button"
+                  disabled={inviteFiltered.length === 0}
+                  onClick={() => {
+                    if (inviteAllFilteredSelected) {
+                      setInviteSelected((prev) => {
+                        const next = new Set(prev)
+                        inviteFiltered.forEach((c) => next.delete(c.id))
+                        return next
+                      })
+                    } else {
+                      setInviteSelected((prev) => {
+                        const next = new Set(prev)
+                        inviteFiltered.forEach((c) => next.add(c.id))
+                        return next
+                      })
+                    }
+                  }}
+                  className="inline-flex items-center gap-1.5 hover:text-purple-200 disabled:opacity-40"
+                >
+                  {inviteAllFilteredSelected ? <CheckSquare size={14} className="text-purple-400" /> : <Square size={14} />}
+                  {inviteAllFilteredSelected ? '取消全选' : '全选当前列表'}
+                </button>
+                <span>已选 {inviteSelected.size} 人</span>
+              </div>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-2 space-y-0.5">
+              {inviteLoading ? (
+                <div className="flex items-center justify-center gap-2 py-10 text-white/45 text-sm">
+                  <Loader2 size={16} className="animate-spin" />
+                  加载中…
+                </div>
+              ) : inviteFiltered.length === 0 ? (
+                <p className="text-center text-white/40 text-sm py-10">
+                  {inviteCandidates.length === 0 ? '暂无可邀请成员' : '无匹配结果'}
+                </p>
+              ) : (
+                inviteFiltered.map((c) => {
+                  const selected = inviteSelected.has(c.id)
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => toggleInviteSelect(c.id)}
+                      className={`w-full flex items-center gap-3 px-2.5 py-2 rounded-xl text-left transition-colors ${
+                        selected ? 'bg-purple-500/15' : 'hover:bg-white/5'
+                      }`}
+                    >
+                      {selected ? (
+                        <CheckSquare size={18} className="text-purple-400 shrink-0" />
+                      ) : (
+                        <Square size={18} className="text-white/35 shrink-0" />
+                      )}
+                      <MemberAvatar avatar={c.avatar} qq={c.qq} name={c.nickname} size="sm" />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm text-white truncate">{c.nickname}</div>
+                        <div className="text-[10px] text-white/40 truncate">
+                          {[c.username && c.username !== c.nickname ? `@${c.username}` : null, c.stageRole, c.qq ? `QQ ${c.qq}` : null]
+                            .filter(Boolean)
+                            .join(' · ') || '学员'}
+                        </div>
+                      </div>
+                    </button>
+                  )
+                })
+              )}
+            </div>
+            <div className="p-3 bg-[#1e1e26] flex gap-2">
+              <button
+                type="button"
+                onClick={() => setInviteOpen(false)}
+                className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 text-sm"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={inviteSelected.size === 0 || inviteBusy}
+                onClick={() => void sendInvites()}
+                className="flex-1 py-2.5 rounded-xl bg-purple-600/40 hover:bg-purple-600/55 disabled:opacity-40 text-purple-50 text-sm font-medium inline-flex items-center justify-center gap-1.5"
+              >
+                {inviteBusy ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />}
+                {inviteBusy ? '发送中…' : `发送邀请 (${inviteSelected.size})`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Top bar */}
       <div className={`flex items-center justify-between gap-3 ${isFullscreen ? 'absolute top-0 left-0 right-0 z-10 p-3 bg-gradient-to-b from-black/80 to-transparent opacity-0 hover:opacity-100 transition-opacity duration-300' : 'mb-3'}`}>
         <div className="flex items-center gap-2 sm:gap-3 flex-wrap min-w-0 flex-1">
@@ -2789,12 +4371,21 @@ export default function ScreenShare() {
                   {copied ? <Check size={15} className="text-green-400" /> : <Copy size={15} />}
                 </button>
               </div>
+              <button
+                type="button"
+                onClick={() => void openInvitePanel()}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-purple-600/20 border border-purple-500/30 text-purple-300 hover:bg-purple-600/30 text-sm transition-colors"
+                title="邀请成员观看（无需输入房间号）"
+              >
+                <UserPlus size={15} />
+                <span className="hidden sm:inline">邀请</span>
+              </button>
               <div className="relative flex items-center gap-1 text-gray-400 text-sm" ref={peersMenuRef}>
                 <button
                   type="button"
                   onClick={() => { setMicMenuOpen(false); setPeersMenuOpen(v => !v) }}
                   className="flex items-center gap-1 hover:text-white transition-colors"
-                  title="观看成员（点击展开，可禁言 / 调听感音量）"
+                  title="观看成员（点击展开，可禁言 / 踢人 / 调听感音量）"
                 >
                   <Users size={15} />
                   <span>{viewerCount}</span>
@@ -2814,8 +4405,7 @@ export default function ScreenShare() {
                           return (
                           <div key={p.userId} className="px-3 py-1.5">
                             <div className="flex items-center gap-2">
-                              <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${p.micOn && !forced ? 'bg-green-500' : 'bg-gray-500'}`} />
-                              <span className="text-gray-300 text-sm whitespace-nowrap flex-1 truncate" title={p.name}>{p.name}</span>
+                              {renderNameWithAvatar(p.name, { micOn: p.micOn && !forced, forcedMute: forced })}
                               <button
                                 type="button"
                                 title={forced ? '解除禁言' : '禁言'}
@@ -2829,6 +4419,17 @@ export default function ScreenShare() {
                               >
                                 {forced ? <Mic size={13} /> : <MicOff size={13} />}
                               </button>
+                              <button
+                                type="button"
+                                title="移出房间"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  void hostKickViewer(p.userId, p.name)
+                                }}
+                                className="p-0.5 shrink-0 text-gray-500 hover:text-red-400 transition-colors"
+                              >
+                                <UserX size={13} />
+                              </button>
                             </div>
                             {peerListenVolume(p.userId)}
                           </div>
@@ -2837,8 +4438,7 @@ export default function ScreenShare() {
                         : viewerNames.length > 0
                           ? viewerNames.map((name, i) => (
                           <div key={i} className="flex items-center gap-2 px-3 py-1.5">
-                            <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                            <span className="text-gray-300 text-sm whitespace-nowrap">{name}</span>
+                            {renderNameWithAvatar(name, { micOn: true })}
                           </div>
                         ))
                           : (
@@ -2905,11 +4505,7 @@ export default function ScreenShare() {
                       {activeStreamMode === 'volc' && volcHostUserId && (
                         <div className="px-3 py-1.5">
                           <div className="flex items-center gap-2">
-                            <div className="w-1.5 h-1.5 rounded-full bg-orange-400 shrink-0" />
-                            <span className="text-gray-300 text-sm whitespace-nowrap flex-1 truncate" title={hostName || '主播'}>
-                              {hostName || '主播'}
-                              <span className="text-gray-600 text-[10px] ml-1">主播</span>
-                            </span>
+                            {renderNameWithAvatar(hostName || '主播', { badge: '主播', micOn: true })}
                           </div>
                           {peerListenVolume(volcHostUserId)}
                         </div>
@@ -2918,8 +4514,7 @@ export default function ScreenShare() {
                         ? volcPeers.map((p) => (
                           <div key={p.userId} className="px-3 py-1.5">
                             <div className="flex items-center gap-2">
-                              <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${p.micOn ? 'bg-green-500' : 'bg-gray-500'}`} />
-                              <span className="text-gray-300 text-sm whitespace-nowrap flex-1 truncate" title={p.name}>{p.name}</span>
+                              {renderNameWithAvatar(p.name, { micOn: p.micOn })}
                             </div>
                             {peerListenVolume(p.userId)}
                           </div>
@@ -2927,8 +4522,7 @@ export default function ScreenShare() {
                         : !volcHostUserId && viewerNames.length > 0
                           ? viewerNames.map((name, i) => (
                             <div key={i} className="flex items-center gap-2 px-3 py-1.5">
-                              <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                              <span className="text-gray-300 text-sm whitespace-nowrap">{name}</span>
+                              {renderNameWithAvatar(name, { micOn: true })}
                             </div>
                           ))
                           : !volcHostUserId && (
@@ -2967,57 +4561,61 @@ export default function ScreenShare() {
         </div>
       </div>
 
-      {/* Video area */}
-      <div className={`flex-1 overflow-hidden flex items-center justify-center relative ${isFullscreen ? 'w-full h-full' : 'bg-gray-900/80 rounded-2xl border border-gray-700/50 min-h-[60vh]'}`}>
-        {status === 'error' ? (
-          <div className="text-center p-8">
-            <div className="w-16 h-16 rounded-full bg-red-600/20 flex items-center justify-center mx-auto mb-4">
-              <X size={32} className="text-red-400" />
-            </div>
-            <p className="text-red-400 text-lg mb-2">{errorMsg}</p>
-            <button
-              onClick={handleStop}
-              className="mt-4 px-6 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors"
-            >
-              返回
-            </button>
-          </div>
-        ) : status === 'connecting' ? (
-          <div className="text-center p-8">
-            <div className="w-16 h-16 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-            <p className="text-gray-400 text-lg">
-              {mode === 'host' ? '准备共享屏幕...' : '正在连接到房间...'}
-            </p>
-          </div>
-        ) : (
-          <>
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              className={`w-full h-full object-contain ${activeStreamMode === 'volc' ? 'hidden' : ''}`}
-              style={isFullscreen ? { width: '100vw', height: '100vh' } : { maxHeight: 'calc(100vh - 12rem)' }}
-            />
-            <div
-              ref={volcContainerRef}
-              className={`absolute inset-0 ${activeStreamMode !== 'volc' ? 'hidden' : ''}`}
-            />
-            {activeStreamMode === 'volc' && mediaToast && (
-              <div
-                className={`absolute bottom-4 left-4 z-30 pointer-events-none flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium shadow-lg backdrop-blur-sm transition-opacity ${
-                  mediaToast.kind === 'loading'
-                    ? 'bg-black/70 text-white border border-white/10'
-                    : 'bg-emerald-600/90 text-white border border-emerald-400/30'
-                }`}
-              >
-                {mediaToast.kind === 'loading' && (
-                  <span className="w-3.5 h-3.5 border-2 border-white/80 border-t-transparent rounded-full animate-spin shrink-0" />
-                )}
-                {mediaToast.text}
+      {/* Video + side panels */}
+      <div className={`flex-1 min-h-0 flex gap-3 ${isFullscreen ? 'w-full h-full' : ''}`}>
+        {leftMembersPanel}
+        <div className={`flex-1 overflow-hidden flex items-center justify-center relative min-w-0 ${isFullscreen ? 'w-full h-full' : 'bg-gray-900/80 rounded-2xl border border-gray-700/50'}`}>
+          {status === 'error' ? (
+            <div className="text-center p-8">
+              <div className="w-16 h-16 rounded-full bg-red-600/20 flex items-center justify-center mx-auto mb-4">
+                <X size={32} className="text-red-400" />
               </div>
-            )}
-          </>
-        )}
+              <p className="text-red-400 text-lg mb-2">{errorMsg}</p>
+              <button
+                onClick={handleStop}
+                className="mt-4 px-6 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors"
+              >
+                返回
+              </button>
+            </div>
+          ) : status === 'connecting' ? (
+            <div className="text-center p-8">
+              <div className="w-16 h-16 border-4 border-purple-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+              <p className="text-gray-400 text-lg">
+                {mode === 'host' ? '准备共享屏幕...' : '正在连接到房间...'}
+              </p>
+            </div>
+          ) : (
+            <>
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                className={`w-full h-full object-contain ${activeStreamMode === 'volc' ? 'hidden' : ''}`}
+                style={isFullscreen ? { width: '100vw', height: '100vh' } : undefined}
+              />
+              <div
+                ref={volcContainerRef}
+                className={`absolute inset-0 ${activeStreamMode !== 'volc' ? 'hidden' : ''}`}
+              />
+              {activeStreamMode === 'volc' && mediaToast && (
+                <div
+                  className={`absolute bottom-4 left-4 z-30 pointer-events-none flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium shadow-lg backdrop-blur-sm transition-opacity ${
+                    mediaToast.kind === 'loading'
+                      ? 'bg-black/70 text-white border border-white/10'
+                      : 'bg-emerald-600/90 text-white border border-emerald-400/30'
+                  }`}
+                >
+                  {mediaToast.kind === 'loading' && (
+                    <span className="w-3.5 h-3.5 border-2 border-white/80 border-t-transparent rounded-full animate-spin shrink-0" />
+                  )}
+                  {mediaToast.text}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        {rightVolumePanel}
       </div>
     </div>
   )

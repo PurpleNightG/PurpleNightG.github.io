@@ -41,6 +41,8 @@ router.get('/tickets/available', async (req, res) => {
         aa.id,
         aa.member_id,
         aa.member_name,
+        m.avatar AS avatar,
+        m.qq AS qq,
         aa.admission_ticket,
         aa.preferred_date,
         aa.approved_at,
@@ -48,6 +50,7 @@ router.get('/tickets/available', async (req, res) => {
         CASE WHEN ec.id IS NOT NULL THEN 1 ELSE 0 END AS imported
       FROM assessment_applications aa
       LEFT JOIN exam_configs ec ON aa.admission_ticket = ec.admission_ticket
+      LEFT JOIN members m ON m.id = aa.member_id
       WHERE aa.status = '已通过' AND aa.admission_ticket IS NOT NULL
       ORDER BY aa.approved_at DESC
     `)
@@ -130,8 +133,11 @@ router.get('/configs', async (req, res) => {
     const [rows] = await pool.query(`
       SELECT
         ec.*,
+        MAX(m.avatar) AS avatar,
+        MAX(m.qq) AS qq,
         COUNT(mc.id) AS mod_count
       FROM exam_configs ec
+      LEFT JOIN members m ON m.id = ec.member_id
       LEFT JOIN mod_configs mc ON ec.id = mc.exam_config_id
       GROUP BY ec.id
       ORDER BY ec.created_at DESC
@@ -331,7 +337,10 @@ router.get('/sessions', async (req, res) => {
         es.screenshot_requested,
         es.created_at,
         ec.admission_ticket,
+        ec.member_id,
         ec.member_name,
+        m.avatar AS avatar,
+        m.qq AS qq,
         ec.exam_status,
         CASE
           WHEN es.end_time IS NOT NULL THEN 0
@@ -341,6 +350,7 @@ router.get('/sessions', async (req, res) => {
         END AS is_alive
       FROM exam_sessions es
       JOIN exam_configs ec ON es.exam_config_id = ec.id
+      LEFT JOIN members m ON m.id = ec.member_id
       ORDER BY es.start_time DESC
       LIMIT ?
     `, [limit])
@@ -486,6 +496,8 @@ router.get('/sessions/:id', async (req, res) => {
         ec.admission_ticket,
         ec.member_name,
         ec.member_id,
+        m.avatar AS avatar,
+        m.qq AS qq,
         ec.exam_status,
         ec.valid_from,
         ec.valid_until,
@@ -505,6 +517,7 @@ router.get('/sessions/:id', async (req, res) => {
         (SELECT COUNT(*) FROM client_logs WHERE session_id = es.id) AS client_log_count
       FROM exam_sessions es
       JOIN exam_configs ec ON es.exam_config_id = ec.id
+      LEFT JOIN members m ON m.id = ec.member_id
       WHERE es.id = ?
     `, [req.params.id])
     if (!rows.length) {
@@ -766,7 +779,8 @@ router.get('/dll-whitelist', async (req, res) => {
       SELECT
         w.id, w.member_id, w.dll_name, w.dll_path, w.note, w.created_by, w.created_at,
         m.nickname AS member_name,
-        m.qq AS member_qq
+        m.qq AS member_qq,
+        m.avatar AS avatar
       FROM dll_whitelist w
       LEFT JOIN members m ON m.id = w.member_id
       ${where}

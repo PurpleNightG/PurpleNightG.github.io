@@ -6,11 +6,13 @@ import ConfirmDialog from '../../components/ConfirmDialog'
 import { formatDate } from '../../utils/dateFormat'
 import { getRoleColor } from '../../utils/roleColors'
 import SearchableSelect from '../../components/SearchableSelect'
+import MemberNameCell from '../../components/MemberNameCell'
 
 interface RetentionRecord {
   id: number
   member_id: number
   member_name: string
+  avatar?: string | null
   qq: string
   stage_role: string
   last_training_date: string | null
@@ -415,7 +417,7 @@ export default function RetentionManagement() {
                         {selectedIds.has(record.id) ? <CheckSquare size={18} className="text-purple-400" /> : <Square size={18} className="text-gray-400" />}
                       </button>
                     </td>
-                    <td>{record.member_name}</td>
+                    <td><MemberNameCell name={record.member_name} avatar={record.avatar} qq={record.qq} /></td>
                     <td>{record.qq}</td>
                     <td>
                       <span className={`status-badge ${getRoleColor(record.stage_role)}`}>

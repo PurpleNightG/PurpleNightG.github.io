@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 
 const LIGHT_SELECTOR =
-  '.student-glass-panel, .student-glass-chip, .student-glass-btn, .student-glass-nav-item, .student-glass-sidebar, .student-glass-modal'
+  '.student-glass-panel:not(.student-glass-popover), .student-glass-chip, .student-glass-btn, .student-glass-nav-item, .student-glass-sidebar, .student-glass-modal'
 const TILT_SELECTOR =
   '.student-glass-panel:not(.student-glass-panel--static), .glass-modal-tilt'
 

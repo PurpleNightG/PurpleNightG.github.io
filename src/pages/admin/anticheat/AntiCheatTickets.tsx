@@ -4,12 +4,15 @@ import { anticheatAPI } from '../../../utils/api'
 import { toast } from '../../../utils/toast'
 import { formatDate, formatDateTime } from '../../../utils/dateFormat'
 import ConfirmDialog from '../../../components/ConfirmDialog'
+import MemberNameCell from '../../../components/MemberNameCell'
 import { Loader2, RefreshCw, Download, CheckSquare, Square } from 'lucide-react'
 
 interface Ticket {
   id: number
   member_id: number
   member_name: string
+  avatar?: string | null
+  qq?: string | null
   admission_ticket: string
   preferred_date: string
   approved_at: string
@@ -174,7 +177,7 @@ export default function AntiCheatTickets() {
                     )}
                   </td>
                   <td className="px-3 py-2 font-mono">{t.admission_ticket}</td>
-                  <td className="px-3 py-2">{t.member_name}</td>
+                  <td className="px-3 py-2"><MemberNameCell name={t.member_name} avatar={t.avatar} qq={t.qq} /></td>
                   <td className="px-3 py-2">{formatDate(t.preferred_date)}</td>
                   <td className="px-3 py-2">{formatDateTime(t.approved_at)}</td>
                   <td className="px-3 py-2">

@@ -21,6 +21,7 @@ router.get('/', async (req, res) => {
         last_training_date,
         phase3_reached_at,
         remarks,
+        avatar,
         created_at
       FROM members
       ORDER BY created_at DESC
@@ -57,7 +58,7 @@ router.get('/exam-candidates', async (req, res) => {
     
     // 获取所有新训三期的成员（不包括新训准考和特殊职位）
     const [members] = await pool.query(`
-      SELECT id, nickname, qq, stage_role, join_date 
+      SELECT id, nickname, qq, stage_role, join_date, avatar 
       FROM members 
       WHERE stage_role = '新训三期' AND status != '已退队'
       ORDER BY join_date DESC
@@ -364,6 +365,42 @@ router.delete('/:id', async (req, res) => {
       success: false,
       message: '删除成员失败'
     })
+  }
+})
+
+// 管理员更新学员头像
+router.put('/:id/avatar', async (req, res) => {
+  try {
+    const { id } = req.params
+    let avatar = req.body?.avatar
+
+    const [existing] = await pool.query('SELECT id FROM members WHERE id = ?', [id])
+    if (existing.length === 0) {
+      return res.status(404).json({ success: false, message: '成员不存在' })
+    }
+
+    if (avatar === null || avatar === '') {
+      avatar = null
+    } else if (typeof avatar === 'string') {
+      if (!avatar.startsWith('data:image/')) {
+        return res.status(400).json({ success: false, message: '头像格式无效' })
+      }
+      if (avatar.length > 350_000) {
+        return res.status(400).json({ success: false, message: '头像过大，请选用更小的图片' })
+      }
+    } else {
+      return res.status(400).json({ success: false, message: '请提供头像数据' })
+    }
+
+    await pool.query('UPDATE members SET avatar = ? WHERE id = ?', [avatar, id])
+    res.json({
+      success: true,
+      message: avatar ? '头像已更新' : '头像已清除',
+      data: { avatar },
+    })
+  } catch (error) {
+    console.error('更新成员头像失败:', error)
+    res.status(500).json({ success: false, message: '更新成员头像失败' })
   }
 })
 

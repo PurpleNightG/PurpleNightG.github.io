@@ -12,11 +12,14 @@ import NumberInput from '../../components/NumberInput'
 import { formatDate, formatDateTime, toInputDate } from '../../utils/dateFormat'
 import PublicAssessmentReportDetail, { normalizePublicAssessment } from '../../components/PublicAssessmentReportDetail'
 import FullscreenReportModal from '../../components/FullscreenReportModal'
+import MemberNameCell from '../../components/MemberNameCell'
 
 interface Assessment {
   id: number
   member_id: number
   member_name: string
+  avatar?: string | null
+  qq?: string | null
   assessment_date: string
   status: '待处理' | '已通过' | '未通过' | '未完成' | '模拟考'
   map: string
@@ -43,6 +46,7 @@ interface DeductionRecord {
 interface Member {
   id: number
   nickname: string
+  qq?: string
 }
 
 function AssessmentVideoPreview({ url }: { url: string }) {
@@ -656,7 +660,7 @@ export default function AssessmentRecords() {
                         }
                       </button>
                     </td>
-                    <td className="font-medium">{assessment.member_name}</td>
+                    <td className="font-medium"><MemberNameCell name={assessment.member_name} avatar={assessment.avatar} qq={assessment.qq ?? members.find(m => m.id === assessment.member_id)?.qq} /></td>
                     <td>{formatDate(assessment.assessment_date)}</td>
                     <td>
                       <span className={`status-badge ${getStatusBadge(assessment.status)}`}>

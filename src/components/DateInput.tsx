@@ -56,10 +56,11 @@ function isAfter(a: string, b: string) {
 
 function computePanelStyle(el: HTMLElement): React.CSSProperties {
   const rect = el.getBoundingClientRect()
-  const panelHeight = 380
+  const panelHeight = 340
   const spaceBelow = window.innerHeight - rect.bottom
   const openUp = spaceBelow < panelHeight && rect.top > spaceBelow
-  const width = Math.max(rect.width, 300)
+  // 日历用固定紧凑宽度，避免跟满宽表单项同宽把格子撑成大正方形
+  const width = 288
   let left = rect.left
   if (left + width > window.innerWidth - 8) {
     left = Math.max(8, window.innerWidth - width - 8)

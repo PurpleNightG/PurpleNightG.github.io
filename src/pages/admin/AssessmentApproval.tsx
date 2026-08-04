@@ -4,11 +4,14 @@ import { toast } from '../../utils/toast'
 import { CheckCircle, XCircle, Clock, Search, Filter, X, Calendar, Users, Trash2, CheckSquare, Square, Loader2, ChevronUp, ChevronDown } from 'lucide-react'
 import { formatDate, formatDateTime } from '../../utils/dateFormat'
 import { useBadges } from '../../contexts/BadgeContext'
+import MemberNameCell from '../../components/MemberNameCell'
 
 interface Application {
   id: number
   member_id: number
   member_name: string
+  avatar?: string | null
+  qq?: string | null
   companion: string
   preferred_date: string
   preferred_time: string
@@ -468,7 +471,7 @@ export default function AssessmentApproval() {
                           <Square size={18} className="text-gray-400" />}
                       </button>
                     </td>
-                    <td className="font-medium">{application.member_name}</td>
+                    <td className="font-medium"><MemberNameCell name={application.member_name} avatar={application.avatar} qq={application.qq} /></td>
                     <td>{application.companion}</td>
                     <td>
                       <div className="flex items-center gap-1">
@@ -858,8 +861,7 @@ export default function AssessmentApproval() {
                     .filter(app => selectedIds.includes(app.id))
                     .map(app => (
                       <div key={app.id} className="flex items-center gap-2 text-sm text-white student-glass-chip px-3 py-2">
-                        <Users size={14} className="text-gray-400" />
-                        <span>{app.member_name}</span>
+                        <MemberNameCell name={app.member_name} avatar={app.avatar} qq={app.qq} />
                         <span className="text-gray-500">·</span>
                         <span className="text-gray-400">{formatDate(app.preferred_date)}</span>
                         <span className={`ml-auto status-badge ${getStatusBadge(app.status)}`}>

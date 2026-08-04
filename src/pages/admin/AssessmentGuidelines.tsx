@@ -125,7 +125,7 @@ export default function AssessmentGuidelines() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className={`grid gap-6 ${showPreview ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'}`}>
         {/* 左侧：编辑器 */}
         <div className="student-glass-panel student-glass-panel--static overflow-hidden">
           <div className="bg-white/5 px-4 py-3 border-b border-white/10">

@@ -3,6 +3,7 @@ import { surveyAPI } from '../utils/api'
 import { toast } from '../utils/toast'
 import { isFieldVisible, NOT_ATTENDED } from '../utils/surveyHelpers'
 import { useSurveyPending } from '../contexts/SurveyPendingContext'
+import { formatDateTime } from '../utils/dateFormat'
 import {
   Loader2,
   ClipboardList,
@@ -645,12 +646,12 @@ export default function StudentSurveys() {
               onClick={() => openSurvey(s.id)}
               className="student-glass-btn !items-start w-full"
             >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="font-medium text-white flex items-center gap-2">
-                    {s.title}
+              <div className="flex items-start justify-between gap-3 w-full min-w-0">
+                <div className="min-w-0 flex-1 text-left">
+                  <div className="font-medium text-white flex flex-wrap items-center gap-2">
+                    <span className="break-words">{s.title}</span>
                     {s.my_status === 'ended' && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 shrink-0">
                         已过期
                       </span>
                     )}
@@ -668,9 +669,18 @@ export default function StudentSurveys() {
                     <span className="text-gray-500">{s.field_count} 题</span>
                   </div>
                 </div>
-                <span className="text-xs px-2 py-1 rounded bg-white/10 text-gray-300 shrink-0">
-                  {STATUS_LABEL[s.my_status] || s.my_status}
-                </span>
+                <div className="shrink-0 text-right flex flex-col items-end gap-1 pt-0.5">
+                  <span className="text-xs px-2 py-1 rounded bg-white/10 text-gray-300 whitespace-nowrap">
+                    {STATUS_LABEL[s.my_status] || s.my_status}
+                  </span>
+                  {s.end_at ? (
+                    <span className="text-[11px] text-gray-500 whitespace-nowrap tabular-nums">
+                      截止 {formatDateTime(s.end_at)}
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-gray-600 whitespace-nowrap">不限截止</span>
+                  )}
+                </div>
               </div>
             </button>
           ))}

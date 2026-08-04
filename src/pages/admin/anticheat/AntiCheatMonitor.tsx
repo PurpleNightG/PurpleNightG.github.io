@@ -4,6 +4,7 @@ import { anticheatAPI } from '../../../utils/api'
 import { toast } from '../../../utils/toast'
 import { formatDateTime } from '../../../utils/dateFormat'
 import ConfirmDialog from '../../../components/ConfirmDialog'
+import MemberNameCell from '../../../components/MemberNameCell'
 import { Loader2, RefreshCw, CheckSquare, Square, Eye, Camera, Trash2, StopCircle, CheckCircle } from 'lucide-react'
 
 interface Session {
@@ -16,6 +17,8 @@ interface Session {
   last_heartbeat: string | null
   admission_ticket: string
   member_name: string
+  avatar?: string | null
+  qq?: string | null
   exam_status: string
   is_alive: number
 }
@@ -199,7 +202,7 @@ export default function AntiCheatMonitor() {
                         )}
                       </button>
                     </td>
-                    <td className="px-3 py-2">{s.member_name}</td>
+                    <td className="px-3 py-2"><MemberNameCell name={s.member_name} avatar={s.avatar} qq={s.qq} /></td>
                     <td className="px-3 py-2 font-mono text-xs">{s.admission_ticket}</td>
                     <td className="px-3 py-2">{s.steam_username || '-'}</td>
                     <td className="px-3 py-2 text-xs">{formatDateTime(s.start_time)}</td>

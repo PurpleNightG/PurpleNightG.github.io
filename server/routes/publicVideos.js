@@ -22,6 +22,8 @@ function formatAssessmentRow(row) {
     id: row.assessment_id,
     member_id: row.a_member_id,
     member_name: row.a_member_name,
+    avatar: row.a_member_avatar || null,
+    qq: row.a_member_qq || null,
     assessment_date: row.a_assessment_date,
     status: row.a_status,
     map: row.a_map,
@@ -57,6 +59,8 @@ const PUBLIC_VIDEO_SELECT = `
     a.id as assessment_id,
     a.member_id as a_member_id,
     a.member_name as a_member_name,
+    am.avatar as a_member_avatar,
+    am.qq as a_member_qq,
     a.assessment_date as a_assessment_date,
     a.status as a_status,
     a.map as a_map,
@@ -73,6 +77,7 @@ const PUBLIC_VIDEO_SELECT = `
   FROM public_videos pv
   LEFT JOIN members m ON pv.created_by = m.id
   LEFT JOIN assessments a ON pv.assessment_id = a.id
+  LEFT JOIN members am ON a.member_id = am.id
 `
 
 // 获取所有公开视频

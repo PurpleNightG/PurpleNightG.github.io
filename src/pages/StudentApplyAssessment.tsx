@@ -203,7 +203,28 @@ export default function StudentApplyAssessment() {
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* 左侧：申请表单 */}
+        {/* 左侧：考核须知 */}
+        <div className="student-glass-panel p-6">
+          <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+            <FileCheck size={20} className="text-purple-400" />
+            考核须知
+          </h2>
+          <div className="markdown-content prose prose-invert max-w-none">
+            {guidelines ? (
+              <ReactMarkdown>{guidelines.content}</ReactMarkdown>
+            ) : (
+              <div className="text-gray-500">暂无考核须知</div>
+            )}
+          </div>
+          {guidelines?.updated_at && (
+            <div className="mt-4 pt-4 border-t border-gray-700 text-sm text-gray-500">
+              最后更新：{new Date(guidelines.updated_at).toLocaleString('zh-CN')}
+              {guidelines.updated_by && ` by ${guidelines.updated_by}`}
+            </div>
+          )}
+        </div>
+
+        {/* 右侧：申请表单 */}
         <div className="student-glass-panel p-6">
           <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
             <Send size={20} className="text-purple-400" />
@@ -325,27 +346,6 @@ export default function StudentApplyAssessment() {
               </div>
             )}
           </div>
-        </div>
-
-        {/* 右侧：考核须知 */}
-        <div className="student-glass-panel p-6">
-          <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-            <FileCheck size={20} className="text-purple-400" />
-            考核须知
-          </h2>
-          <div className="markdown-content prose prose-invert max-w-none">
-            {guidelines ? (
-              <ReactMarkdown>{guidelines.content}</ReactMarkdown>
-            ) : (
-              <div className="text-gray-500">暂无考核须知</div>
-            )}
-          </div>
-          {guidelines?.updated_at && (
-            <div className="mt-4 pt-4 border-t border-gray-700 text-sm text-gray-500">
-              最后更新：{new Date(guidelines.updated_at).toLocaleString('zh-CN')}
-              {guidelines.updated_by && ` by ${guidelines.updated_by}`}
-            </div>
-          )}
         </div>
       </div>
     </div>

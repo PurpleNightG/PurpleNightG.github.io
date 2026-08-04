@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
-import { Shield, User, Eye, EyeOff, AlertCircle } from 'lucide-react'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
+import { Shield, User, Eye, EyeOff, AlertCircle, Monitor } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -154,7 +154,7 @@ export default function Login() {
       const response = await fetch(`${API_URL}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password, userType }),
+        body: JSON.stringify({ username, password, userType, rememberMe }),
       })
       const data = await response.json()
       if (data.success) {
@@ -564,6 +564,14 @@ export default function Login() {
                 '登录'
               )}
             </Button>
+
+            <Link
+              to="/screen-share?guest=1"
+              className="flex items-center justify-center gap-2 w-full h-11 text-sm font-medium text-amber-200/90 bg-amber-600/10 hover:bg-amber-600/20 border border-amber-500/25 rounded-lg transition-colors"
+            >
+              <Monitor size={16} />
+              以访客身份进入屏幕共享
+            </Link>
           </form>
         </div>
       </div>

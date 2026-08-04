@@ -26,8 +26,10 @@ function generateAdmissionTicket(date) {
 router.get('/', async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT * FROM assessment_applications
-      ORDER BY created_at DESC
+      SELECT aa.*, m.avatar AS avatar, m.qq AS qq
+      FROM assessment_applications aa
+      LEFT JOIN members m ON m.id = aa.member_id
+      ORDER BY aa.created_at DESC
     `)
     
     res.json({

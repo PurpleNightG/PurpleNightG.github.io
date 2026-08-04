@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
-import { User, LogOut, KeyRound, Edit, Shield, ChevronDown } from 'lucide-react'
+import { LogOut, KeyRound, Edit, ChevronDown } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { toast } from '../utils/toast'
+import { accountSecurityAPI } from '../utils/api'
+import MemberAvatar from './MemberAvatar'
 
 const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3000/api'
 
@@ -15,6 +17,8 @@ export default function UserDropdown({ userType }: UserDropdownProps) {
   const [showUsernameModal, setShowUsernameModal] = useState(false)
   const [username, setUsername] = useState('')
   const [nickname, setNickname] = useState('')
+  const [avatar, setAvatar] = useState<string | null>(null)
+  const [qq, setQq] = useState<string | null>(null)
   const [passwordForm, setPasswordForm] = useState({
     oldPassword: '',
     newPassword: '',
@@ -26,6 +30,13 @@ export default function UserDropdown({ userType }: UserDropdownProps) {
 
   useEffect(() => {
     loadUserInfo()
+    const onStorage = () => loadUserInfo()
+    window.addEventListener('storage', onStorage)
+    window.addEventListener('avatar-updated', onStorage)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      window.removeEventListener('avatar-updated', onStorage)
+    }
   }, [userType])
 
   useEffect(() => {
@@ -46,18 +57,27 @@ export default function UserDropdown({ userType }: UserDropdownProps) {
         const user = JSON.parse(userStr)
         setUsername(user.username || '')
         setNickname(user.nickname || user.username || '学员')
+        setAvatar(user.avatar || null)
+        setQq(user.qq || null)
       }
     } else {
       const userStr = localStorage.getItem('user') || sessionStorage.getItem('user')
       if (userStr) {
         const user = JSON.parse(userStr)
         setUsername(user.username || '')
-        setNickname(user.username || '管理员')
+        setNickname(user.name || user.username || '管理员')
+        setAvatar(user.avatar || null)
+        setQq(null)
       }
     }
   }
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await accountSecurityAPI.logoutCurrent()
+    } catch {
+      /* 网络失败也继续清本地，避免卡在退出 */
+    }
     if (userType === 'student') {
       localStorage.removeItem('studentToken')
       localStorage.removeItem('studentUser')
@@ -165,17 +185,9 @@ export default function UserDropdown({ userType }: UserDropdownProps) {
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`student-glass-chip student-glass-chip--ghost flex items-center gap-3 px-4 py-2${isOpen ? ' is-open' : ''}`}
+        className={`student-glass-chip student-glass-chip--ghost flex items-center gap-3 px-3 py-2 border-0 bg-transparent hover:bg-white/5${isOpen ? ' is-open' : ''}`}
       >
-        <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${
-          userType === 'student' ? 'from-purple-600 to-purple-800' : 'from-blue-600 to-blue-800'
-        } flex items-center justify-center shrink-0`}>
-          {userType === 'student' ? (
-            <User size={20} className="text-white" />
-          ) : (
-            <Shield size={20} className="text-white" />
-          )}
-        </div>
+        <MemberAvatar avatar={avatar} qq={qq} name={nickname} size="md" />
         <div className="text-left min-w-0">
           <p className="text-white text-sm font-semibold truncate">{nickname}</p>
           <p className="text-gray-400 text-xs">{userType === 'student' ? '学员' : '管理员'}</p>

@@ -197,6 +197,111 @@ async function runMigrations() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
       COMMENT='考勤催促忽略名单'
   `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS login_sessions (
+      id BIGINT AUTO_INCREMENT PRIMARY KEY,
+      user_type ENUM('admin','student') NOT NULL,
+      user_id INT NOT NULL,
+      session_id CHAR(36) NOT NULL,
+      device_name VARCHAR(160) NULL,
+      user_agent VARCHAR(512) NULL,
+      ip VARCHAR(45) NULL,
+      remember_me TINYINT(1) NOT NULL DEFAULT 1 COMMENT '1=记住登录7天 0=临时会话',
+      last_active_at DATETIME NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      revoked_at DATETIME NULL,
+      UNIQUE KEY uk_session_id (session_id),
+      INDEX idx_ls_user (user_type, user_id),
+      INDEX idx_ls_active (user_type, user_id, revoked_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      COMMENT='登录设备会话'
+  `)
+
+  {
+    const [rememberCol] = await pool.query(`
+      SELECT COLUMN_NAME FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'login_sessions'
+        AND COLUMN_NAME = 'remember_me'
+    `)
+    if (rememberCol.length === 0) {
+      await pool.query(`
+        ALTER TABLE login_sessions
+          ADD COLUMN remember_me TINYINT(1) NOT NULL DEFAULT 1
+            COMMENT '1=记住登录7天 0=临时会话'
+            AFTER ip
+      `)
+      console.log('✅ login_sessions.remember_me 字段迁移完成')
+    }
+  }
+
+  for (const table of ['members', 'admins']) {
+    const [avatarCol] = await pool.query(`
+      SELECT COLUMN_NAME FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = ?
+        AND COLUMN_NAME = 'avatar'
+    `, [table])
+    if (avatarCol.length === 0) {
+      await pool.query(`
+        ALTER TABLE ${table}
+          ADD COLUMN avatar MEDIUMTEXT NULL COMMENT '头像 data URL' AFTER password
+      `)
+      console.log(`✅ ${table}.avatar 字段迁移完成`)
+    }
+  }
+  console.log('✅ login_sessions / avatar 迁移完成')
+
+  // 屏幕共享访客码
+  const [guestMaxCol] = await pool.query(`
+    SELECT COLUMN_NAME FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'members'
+      AND COLUMN_NAME = 'guest_code_max'
+  `)
+  if (guestMaxCol.length === 0) {
+    await pool.query(`
+      ALTER TABLE members
+        ADD COLUMN guest_code_max INT NOT NULL DEFAULT 1
+          COMMENT '助教一次最多可生成的未使用访客码数量'
+          AFTER screen_share_used
+    `)
+    console.log('✅ members.guest_code_max 字段迁移完成')
+  }
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS screen_share_guest_codes (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      code VARCHAR(16) NOT NULL,
+      mode ENUM('peerjs', 'agora', 'volc') NOT NULL DEFAULT 'peerjs',
+      created_by_type ENUM('admin', 'assistant') NOT NULL,
+      created_by_member_id INT NULL,
+      created_by_name VARCHAR(128) NOT NULL,
+      status ENUM('active', 'used', 'revoked') NOT NULL DEFAULT 'active',
+      used_by_nickname VARCHAR(128) NULL,
+      used_at TIMESTAMP NULL,
+      room_id VARCHAR(16) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_guest_code (code),
+      INDEX idx_guest_status (status),
+      INDEX idx_guest_creator (created_by_member_id, status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='屏幕共享访客码'
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS meeting_rooms (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      code VARCHAR(8) NOT NULL,
+      title VARCHAR(128) NOT NULL DEFAULT '紫夜会议',
+      created_by VARCHAR(128) NOT NULL,
+      status ENUM('open', 'closed') NOT NULL DEFAULT 'open',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      closed_at TIMESTAMP NULL,
+      UNIQUE KEY uk_meeting_code (code),
+      INDEX idx_meeting_status (status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='多人会议房间'
+  `)
 }
 
 // 测试数据库连接

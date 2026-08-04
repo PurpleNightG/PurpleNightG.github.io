@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 会议号输入框：placeholder 中文勿继承 font-mono（Windows 会回落宋体） */
+.meeting-code-input::placeholder {
+  font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
 /* ====== 管理后台表格统一样式 ====== */
 @layer components {
   /* 管理后台表格容器 */
@@ -766,6 +773,14 @@
   box-shadow:
     0 18px 48px -16px rgba(0, 0, 0, 0.75),
     inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+/* 可滚动浮层关掉边缘光：否则 ::after 按内容高度铺开，滚动时亮边会横在列表中间 */
+.student-glass-popover::after,
+.student-glass-popover:hover::after {
+  content: none !important;
+  display: none !important;
+  opacity: 0 !important;
 }
 
 /* 全屏遮罩：轻压暗 + 淡模糊；面板毛玻璃单独由 .student-glass-modal 控制 */

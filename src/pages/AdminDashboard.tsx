@@ -29,6 +29,7 @@ import AntiCheatDllWhitelist from './admin/anticheat/AntiCheatDllWhitelist'
 import SurveyManagement from './admin/SurveyManagement'
 import SurveyResults from './admin/SurveyResults'
 import OpinionBoxManagement from './admin/OpinionBoxManagement'
+import AccountSecurity from './AccountSecurity'
 
 function AdminDashboardContent() {
   const [isMobile, setIsMobile] = useState(false)
@@ -99,6 +100,7 @@ function AdminDashboardContent() {
             <Route path="/surveys" element={<SurveyManagement />} />
             <Route path="/surveys/:id/results" element={<SurveyResults />} />
             <Route path="/opinion-box" element={<OpinionBoxManagement />} />
+            <Route path="/account-security" element={<AccountSecurity />} />
           </Routes>
         </main>
       </div>

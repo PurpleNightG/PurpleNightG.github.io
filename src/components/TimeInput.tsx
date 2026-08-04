@@ -35,12 +35,18 @@ function computePanelStyle(el: HTMLElement): React.CSSProperties {
   const panelHeight = 280
   const spaceBelow = window.innerHeight - rect.bottom
   const openUp = spaceBelow < panelHeight && rect.top > spaceBelow
+  // 固定紧凑宽度，避免跟满宽表单项同宽把时/分列撑开
+  const width = 220
+  let left = rect.left
+  if (left + width > window.innerWidth - 8) {
+    left = Math.max(8, window.innerWidth - width - 8)
+  }
   return {
     position: 'fixed',
     top: openUp ? undefined : rect.bottom + 4,
     bottom: openUp ? window.innerHeight - rect.top + 4 : undefined,
-    left: rect.left,
-    width: Math.max(rect.width, 220),
+    left,
+    width,
     zIndex: 9999,
   }
 }

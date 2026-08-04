@@ -5,6 +5,7 @@ import { anticheatAPI } from '../../../utils/api'
 import { toast } from '../../../utils/toast'
 import { formatDateTime } from '../../../utils/dateFormat'
 import ConfirmDialog from '../../../components/ConfirmDialog'
+import MemberNameCell from '../../../components/MemberNameCell'
 import { filterPakFiles, hashPakFiles, type ModFileMeta } from '../../../utils/modHash'
 import {
   Loader2,
@@ -30,6 +31,8 @@ interface ExamConfig {
   id: number
   admission_ticket: string
   member_name: string
+  avatar?: string | null
+  qq?: string | null
   member_id: number
   valid_from: string
   valid_until: string
@@ -389,7 +392,7 @@ export default function AntiCheatConfigs() {
                       )}
                     </span>
                   </td>
-                  <td className="px-3 py-2">{c.member_name}</td>
+                  <td className="px-3 py-2"><MemberNameCell name={c.member_name} avatar={c.avatar} qq={c.qq} /></td>
                   <td className="px-3 py-2">
                     <span className={expired ? 'text-red-300' : ''}>{c.exam_status}</span>
                     {expired && (

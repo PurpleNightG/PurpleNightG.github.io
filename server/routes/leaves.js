@@ -29,7 +29,10 @@ router.get('/my', async (req, res) => {
 router.get('/applications', async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT * FROM leave_applications ORDER BY created_at DESC
+      SELECT la.*, m.avatar AS avatar
+      FROM leave_applications la
+      LEFT JOIN members m ON m.id = la.member_id
+      ORDER BY la.created_at DESC
     `)
     res.json({ success: true, data: rows })
   } catch (error) {
@@ -176,8 +179,10 @@ router.get('/', async (req, res) => {
     const [rows] = await pool.query(`
       SELECT 
         lr.*,
-        DATEDIFF(lr.end_date, CURDATE()) as remaining_days
+        DATEDIFF(lr.end_date, CURDATE()) as remaining_days,
+        m.avatar AS avatar
       FROM leave_records lr
+      LEFT JOIN members m ON m.id = lr.member_id
       ORDER BY lr.created_at DESC
     `)
     

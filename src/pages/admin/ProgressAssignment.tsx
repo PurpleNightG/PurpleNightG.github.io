@@ -2,13 +2,16 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { progressAPI, memberAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
-import { CheckSquare, Square, User, X, Search, Filter, ChevronUp, ChevronDown } from 'lucide-react'
+import { CheckSquare, Square, X, Search, Filter, ChevronUp, ChevronDown } from 'lucide-react'
 import { formatDate } from '../../utils/dateFormat'
 import { getRoleColor } from '../../utils/roleColors'
+import MemberNameCell from '../../components/MemberNameCell'
 
 interface Member {
   id: number
   name: string
+  avatar?: string | null
+  qq?: string | null
   status: string
   join_date: string
   last_training_date: string
@@ -23,7 +26,9 @@ interface Course {
   category: string
   difficulty: string
   hours: number
-  progress: number
+  progress: number | null
+  /** 批量场景：选中成员该课进度不一致 */
+  mixed?: boolean
 }
 
 const progressOptions = [0, 10, 20, 50, 75, 100]
@@ -151,8 +156,9 @@ export default function ProgressAssignment() {
   const loadBatchCourses = async () => {
     setLoadingBatchCourses(true)
     try {
-      const response = await progressAPI.getMemberProgress(String(Array.from(selectedMemberIds)[0]))
-      setBatchCourses(response.data)
+      const ids = Array.from(selectedMemberIds)
+      const response = await progressAPI.getBatchCoursesPreview(ids)
+      setBatchCourses(response.data || [])
     } catch (error: any) {
       console.error('加载课程列表失败:', error)
       toast.error('加载课程列表失败')
@@ -169,9 +175,9 @@ export default function ProgressAssignment() {
       return newMap
     })
     
-    // 更新显示的进度
+    // 更新显示：选定后视为已统一，清除 mixed
     setBatchCourses(prev =>
-      prev.map(c => (c.id === courseId ? { ...c, progress } : c))
+      prev.map(c => (c.id === courseId ? { ...c, progress, mixed: false } : c))
     )
   }
   
@@ -582,10 +588,7 @@ export default function ProgressAssignment() {
                       </button>
                     </td>
                     <td>
-                      <div className="flex items-center gap-2">
-                        <User size={16} className="text-purple-400" />
-                        <span className="text-white">{member.name}</span>
-                      </div>
+                      <MemberNameCell name={member.name} avatar={member.avatar} qq={member.qq} />
                     </td>
                     <td>
                       <span className={`status-badge ${getRoleColor(member.status)}`}>
@@ -626,10 +629,10 @@ export default function ProgressAssignment() {
           onClick={closeProgressModal}
         >
           <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
-          <div className="relative z-10 glass-modal-frame w-full max-w-4xl" onClick={(e) => e.stopPropagation()}>
-            <div className="glass-modal-tilt">
-          <div className="student-glass-panel student-glass-panel--static student-glass-modal w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white/5 border-b border-white/10 px-6 py-4 flex justify-between items-center">
+          <div className="relative z-10 glass-modal-frame w-full max-w-4xl max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+            <div className="glass-modal-tilt max-h-[90vh]">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal w-full max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="shrink-0 bg-white/5 border-b border-white/10 px-6 py-4 flex justify-between items-center">
               <h2 className="text-xl font-bold text-white">
                 {selectedMember.name} - 课程进度
               </h2>
@@ -638,7 +641,7 @@ export default function ProgressAssignment() {
               </button>
             </div>
 
-            <div className="p-6">
+            <div className="flex-1 min-h-0 overflow-y-auto scrollbar-none p-6">
               {loadingCourses ? (
                 <div className="text-center text-gray-400 py-12">加载课程中...</div>
               ) : (
@@ -701,7 +704,7 @@ export default function ProgressAssignment() {
             </div>
 
             {/* 确认按钮区域 */}
-            <div className="sticky bottom-0 bg-white/5 border-t border-white/10 px-6 py-4 flex justify-between items-center">
+            <div className="shrink-0 bg-white/5 border-t border-white/10 px-6 py-4 flex justify-between items-center">
               <div className="text-sm text-gray-400">
                 {pendingChanges.size > 0 ? (
                   <span className="text-yellow-400">
@@ -740,10 +743,10 @@ export default function ProgressAssignment() {
           onClick={closeBatchModal}
         >
           <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
-          <div className="relative z-10 glass-modal-frame w-full max-w-4xl" onClick={(e) => e.stopPropagation()}>
-            <div className="glass-modal-tilt">
-          <div className="student-glass-panel student-glass-panel--static student-glass-modal w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white/5 border-b border-white/10 px-6 py-4 flex justify-between items-center">
+          <div className="relative z-10 glass-modal-frame w-full max-w-4xl max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+            <div className="glass-modal-tilt max-h-[90vh]">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal w-full max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="shrink-0 bg-white/5 border-b border-white/10 px-6 py-4 flex justify-between items-center">
               <h2 className="text-xl font-bold text-white">
                 批量修改进度 - 已选择 {selectedMemberIds.size} 名成员
               </h2>
@@ -752,14 +755,15 @@ export default function ProgressAssignment() {
               </button>
             </div>
 
-            <div className="p-6">
+            <div className="flex-1 min-h-0 overflow-y-auto scrollbar-none p-6">
               {loadingBatchCourses ? (
                 <div className="text-center text-gray-400 py-12">加载课程中...</div>
               ) : (
                 <div className="space-y-4">
                   <div className="bg-blue-600/10 border border-blue-600/30 rounded-lg p-4 mb-4">
                     <p className="text-blue-300 text-sm">
-                      💡 点击任意课程的进度按钮，将为所有选中的 <span className="font-bold">{selectedMemberIds.size}</span> 名成员设置该课程的进度
+                      💡 点击进度按钮，将为所有选中的 <span className="font-bold">{selectedMemberIds.size}</span> 名成员统一设置该课进度。
+                      若显示「进度不一致」，说明这些人当前进度不同，需点选后才会写入。
                     </p>
                   </div>
                   
@@ -773,15 +777,30 @@ export default function ProgressAssignment() {
                           {category}
                         </h3>
                         <div className="grid gap-3">
-                          {categoryCourses.map((course) => (
+                          {categoryCourses.map((course) => {
+                            const isMixed = !!course.mixed
+                            const isPending = batchPendingChanges.has(course.id)
+                            return (
                             <div
                               key={course.id}
-                              className="flex items-center justify-between p-3 student-glass-chip transition-colors"
+                              className={`flex items-center justify-between gap-3 p-3 student-glass-chip transition-colors ${
+                                isMixed ? 'ring-1 ring-amber-400/35' : ''
+                              }`}
                             >
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
                                   <span className="text-purple-400 font-mono text-sm">{course.code}</span>
                                   <span className="text-white">{course.name}</span>
+                                  {isMixed && (
+                                    <span className="text-[11px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-400/30">
+                                      进度不一致
+                                    </span>
+                                  )}
+                                  {isPending && (
+                                    <span className="text-[11px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-200 border border-purple-400/30">
+                                      将统一
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="flex items-center gap-3 mt-1 text-sm text-gray-400">
                                   <span className={`status-badge ${
@@ -795,23 +814,29 @@ export default function ProgressAssignment() {
                                 </div>
                               </div>
 
-                              <div className="flex items-center gap-2">
-                                {progressOptions.map((option) => (
+                              <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                                {progressOptions.map((option) => {
+                                  const selected = !isMixed && course.progress === option
+                                  return (
                                   <button
                                     key={option}
                                     onClick={() => updateBatchTempProgress(course.id, option)}
                                     className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                                      course.progress === option
+                                      selected
                                         ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
-                                        : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700 hover:text-white'
+                                        : isMixed
+                                          ? 'bg-gray-700/40 text-gray-300 hover:bg-amber-500/20 hover:text-amber-100 border border-dashed border-white/15'
+                                          : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700 hover:text-white'
                                     }`}
                                   >
                                     {option === 0 ? '未开始' : `${option}%`}
                                   </button>
-                                ))}
+                                  )
+                                })}
                               </div>
                             </div>
-                          ))}
+                            )
+                          })}
                         </div>
                       </div>
                     )
@@ -821,7 +846,7 @@ export default function ProgressAssignment() {
             </div>
 
             {/* 确认按钮区域 */}
-            <div className="sticky bottom-0 bg-white/5 border-t border-white/10 px-6 py-4 flex justify-between items-center">
+            <div className="shrink-0 bg-white/5 border-t border-white/10 px-6 py-4 flex justify-between items-center">
               <div className="text-sm text-gray-400">
                 {batchPendingChanges.size > 0 ? (
                   <span className="text-yellow-400">

@@ -8,9 +8,12 @@ import AdminDashboard from './pages/AdminDashboard'
 import StudentDashboard from './pages/StudentDashboard'
 import Login from './pages/Login'
 import ToastContainer from './components/ToastContainer'
-import ProtectedRoute from './components/ProtectedRoute'
+import { MeetingInviteFloat, AdminMeetingsFloat } from './components/MeetingFloats'
+import { useSessionHeartbeat } from './hooks/useSessionHeartbeat'
 
 function App() {
+  useSessionHeartbeat()
+
   return (
     <>
       <Router
@@ -19,6 +22,8 @@ function App() {
           v7_relativeSplatPath: true,
         }}
       >
+        <MeetingInviteFloat />
+        <AdminMeetingsFloat />
         <Routes>
         {/* Login Route - No Layout */}
         <Route path="/login" element={<Login />} />
@@ -37,7 +42,7 @@ function App() {
               <Route path="/downloads" element={<Downloads />} />
               <Route path="/docs" element={<DocsLayout />} />
               <Route path="/docs/*" element={<DocsLayout />} />
-              <Route path="/screen-share" element={<ProtectedRoute><ScreenShare /></ProtectedRoute>} />
+              <Route path="/screen-share" element={<ScreenShare />} />
             </Routes>
           </Layout>
         } />

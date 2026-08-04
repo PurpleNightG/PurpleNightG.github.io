@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Smartphone } from 'lucide-react'
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, useLocation } from 'react-router-dom'
 import ProtectedRoute from '../components/ProtectedRoute'
 import { StudentSidebar } from '../components/ui/sidebar'
 import SurveyReminderBanner from '../components/SurveyReminderBanner'
@@ -15,10 +15,13 @@ import StudentBlackPoints from './StudentBlackPoints'
 import StudentLeave from './StudentLeave'
 import StudentSurveys from './StudentSurveys'
 import StudentOpinionBox from './StudentOpinionBox'
+import AccountSecurity from './AccountSecurity'
 
 function StudentDashboardContent() {
   const [isMobile, setIsMobile] = useState(false)
   const { onGlassPointerMove, resetGlassTilt } = useStudentGlassPointer()
+  const location = useLocation()
+  const mainRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768)
@@ -26,6 +29,11 @@ function StudentDashboardContent() {
     window.addEventListener('resize', checkMobile)
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
+
+  // 切换路由时把主区域滚回顶部，避免问卷提示条被卷走只剩一条缝
+  useEffect(() => {
+    mainRef.current?.scrollTo({ top: 0, left: 0 })
+  }, [location.pathname])
 
   if (isMobile) {
     return (
@@ -58,7 +66,10 @@ function StudentDashboardContent() {
     >
       <StudentSidebar />
 
-      <main className="flex-1 min-h-0 md:ml-[17.25rem] overflow-y-auto overflow-x-hidden flex flex-col">
+      <main
+        ref={mainRef}
+        className="flex-1 min-h-0 md:ml-[17.25rem] overflow-y-auto overflow-x-hidden flex flex-col"
+      >
         <SurveyReminderBanner />
         <div className="flex-1 w-full min-w-0">
           <Routes>
@@ -72,6 +83,7 @@ function StudentDashboardContent() {
             <Route path="videos" element={<PublicVideos />} />
             <Route path="surveys" element={<StudentSurveys />} />
             <Route path="opinion-box" element={<StudentOpinionBox />} />
+            <Route path="account-security" element={<AccountSecurity />} />
           </Routes>
         </div>
       </main>

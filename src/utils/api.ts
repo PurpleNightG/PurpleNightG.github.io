@@ -111,7 +111,15 @@ export const memberAPI = {
   },
   getExamCandidates: () => {
     return request('/members/exam-candidates')
-  }
+  },
+  updateAvatar: async (id: number, avatar: string | null) => {
+    const result = await request(`/members/${id}/avatar`, {
+      method: 'PUT',
+      body: JSON.stringify({ avatar }),
+    })
+    clearCache('/members')
+    return result
+  },
 }
 
 // 学员端 API
@@ -511,6 +519,13 @@ export const progressAPI = {
   
   // 获取单个成员的所有课程进度
   getMemberProgress: (memberId: string) => request(`/progress/member/${memberId}`),
+
+  /** 批量预览：多成员进度汇总（一致则 progress，不一致则 mixed） */
+  getBatchCoursesPreview: (memberIds: string[] | number[]) =>
+    request('/progress/batch/courses', {
+      method: 'POST',
+      body: JSON.stringify({ memberIds }),
+    }),
   
   // 更新单个成员的单个课程进度
   updateProgress: async (memberId: string, courseId: string, progress: number) => {
@@ -550,6 +565,93 @@ export const authAPI = {
       method: 'POST',
       body: JSON.stringify({ username, password, userType }),
     }),
+}
+
+function accountSecurityToken() {
+  return (
+    localStorage.getItem('studentToken') ||
+    sessionStorage.getItem('studentToken') ||
+    localStorage.getItem('token') ||
+    sessionStorage.getItem('token') ||
+    ''
+  )
+}
+
+/** 账户安全（学员 / 管理共用） */
+export const accountSecurityAPI = {
+  getProfile: () => {
+    const token = accountSecurityToken()
+    return request('/account-security/profile', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+  changePassword: async (oldPassword: string, newPassword: string) => {
+    const token = accountSecurityToken()
+    const result = await request('/account-security/password', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ oldPassword, newPassword }),
+    })
+    clearCache('/account-security/sessions')
+    return result
+  },
+  updateAvatar: (avatar: string | null) => {
+    const token = accountSecurityToken()
+    return request('/account-security/avatar', {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ avatar }),
+    })
+  },
+  getSessions: () => {
+    const token = accountSecurityToken()
+    return request('/account-security/sessions', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+  /** 退出当前设备（服务端标记会话失效） */
+  logoutCurrent: () => {
+    const token = accountSecurityToken()
+    return request('/account-security/logout', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+  revokeSession: async (id: number) => {
+    const token = accountSecurityToken()
+    const result = await request(`/account-security/sessions/${id}/logout`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    clearCache('/account-security/sessions')
+    return result
+  },
+  deleteSession: async (id: number) => {
+    const token = accountSecurityToken()
+    const result = await request(`/account-security/sessions/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    clearCache('/account-security/sessions')
+    return result
+  },
+  revokeOtherSessions: async () => {
+    const token = accountSecurityToken()
+    const result = await request('/account-security/sessions/others', {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    clearCache('/account-security/sessions')
+    return result
+  },
+  /** 未记住登录时的标签页保活 */
+  heartbeat: () => {
+    const token = accountSecurityToken()
+    return request('/account-security/heartbeat', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
 }
 
 // 考核记录 API

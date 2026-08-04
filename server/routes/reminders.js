@@ -25,6 +25,7 @@ async function loadAttendanceContext() {
     SELECT
       m.id, m.nickname, m.qq, m.stage_role, m.status,
       m.join_date, m.last_training_date, m.phase3_reached_at,
+      m.avatar,
       CASE WHEN ret.id IS NOT NULL THEN 1 ELSE 0 END AS in_retention
     FROM members m
     LEFT JOIN retention_records ret ON m.id = ret.member_id

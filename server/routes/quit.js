@@ -10,10 +10,12 @@ router.get('/', async (req, res) => {
       SELECT 
         qa.*,
         COALESCE(a.name, qa.source_admin_name) as source_admin_name,
-        COALESCE(b.name, qa.approver_name) as approver_name
+        COALESCE(b.name, qa.approver_name) as approver_name,
+        m.avatar AS avatar
       FROM quit_approvals qa
       LEFT JOIN admins a ON qa.source_admin_id = a.id
       LEFT JOIN admins b ON qa.approver_id = b.id
+      LEFT JOIN members m ON m.id = qa.member_id
       ORDER BY qa.apply_date DESC
     `)
     

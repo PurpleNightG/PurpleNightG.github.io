@@ -5,6 +5,7 @@ import { surveyAPI, memberAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
 import { formatDateTime } from '../../utils/dateFormat'
 import ConfirmDialog from '../../components/ConfirmDialog'
+import MemberAvatar from '../../components/MemberAvatar'
 import {
   Loader2,
   Plus,
@@ -233,7 +234,7 @@ export default function SurveyManagement() {
   const [saving, setSaving] = useState(false)
   const [selectedIdx, setSelectedIdx] = useState<number | null>(0)
   const [showSettings, setShowSettings] = useState(false)
-  const [members, setMembers] = useState<{ id: number; nickname: string; stage_role: string }[]>([])
+  const [members, setMembers] = useState<{ id: number; nickname: string; stage_role: string; avatar?: string | null; qq?: string }[]>([])
   const [memberFilter, setMemberFilter] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; title: string } | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -1022,9 +1023,12 @@ export default function SurveyManagement() {
                               on ? 'bg-blue-50 text-blue-800' : 'hover:bg-gray-50 text-gray-700'
                             }`}
                           >
-                            <span>
-                              {m.nickname}
-                              <span className="text-gray-400 ml-2">{m.stage_role}</span>
+                            <span className="flex items-center gap-2 min-w-0">
+                              <MemberAvatar avatar={m.avatar} qq={m.qq} name={m.nickname} size="sm" />
+                              <span className="truncate">
+                                {m.nickname}
+                                <span className="text-gray-400 ml-2">{m.stage_role}</span>
+                              </span>
                             </span>
                             <span>{on ? '已选' : '+'}</span>
                           </button>

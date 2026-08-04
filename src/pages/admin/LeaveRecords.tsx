@@ -7,11 +7,13 @@ import ConfirmDialog from '../../components/ConfirmDialog'
 import SearchableSelect from '../../components/SearchableSelect'
 import DateInput from '../../components/DateInput'
 import { useBadges } from '../../contexts/BadgeContext'
+import MemberNameCell from '../../components/MemberNameCell'
 
 interface LeaveRecord {
   id: number
   member_id: number
   member_name: string
+  avatar?: string | null
   qq: string
   reason: string
   start_date: string
@@ -27,6 +29,7 @@ interface LeaveApplication {
   id: number
   member_id: number
   member_name: string
+  avatar?: string | null
   qq: string
   reason: string
   start_date: string
@@ -587,7 +590,7 @@ export default function LeaveRecords() {
                 <tbody>
                   {endApprovalRecords.map(record => (
                     <tr key={record.id}>
-                      <td>{record.member_name}</td>
+                      <td><MemberNameCell name={record.member_name} avatar={record.avatar} qq={record.qq} /></td>
                       <td>{record.qq}</td>
                       <td className="max-w-[160px] truncate" title={record.reason}>{record.reason || '—'}</td>
                       <td>{formatDate(record.start_date)}</td>
@@ -644,7 +647,7 @@ export default function LeaveRecords() {
                 <tbody>
                   {applications.map(app => (
                     <tr key={app.id}>
-                      <td>{app.member_name}</td>
+                      <td><MemberNameCell name={app.member_name} avatar={app.avatar} qq={app.qq} /></td>
                       <td>{app.qq}</td>
                       <td className="max-w-[160px] truncate" title={app.reason}>{app.reason || '—'}</td>
                       <td>{formatDate(app.start_date)}</td>
@@ -742,7 +745,7 @@ export default function LeaveRecords() {
                         {selectedIds.has(record.id) ? <CheckSquare size={18} className="text-purple-400" /> : <Square size={18} className="text-gray-400" />}
                       </button>
                     </td>
-                    <td>{record.member_name}</td>
+                    <td><MemberNameCell name={record.member_name} avatar={record.avatar} qq={record.qq} /></td>
                     <td>{record.qq}</td>
                     <td>{formatDate(record.start_date)}</td>
                     <td>{formatDate(record.end_date)}</td>

@@ -18,6 +18,7 @@ import {
   ChevronRight,
 } from 'lucide-react'
 import ConfirmDialog from '../../components/ConfirmDialog'
+import MemberNameCell from '../../components/MemberNameCell'
 import { isFieldVisible, NOT_ATTENDED } from '../../utils/surveyHelpers'
 
 interface RankItem {
@@ -742,8 +743,8 @@ export default function SurveyResults() {
                 </button>
                 <div className="flex items-center gap-2 text-xs px-2 shrink-0">
                   {!survey.is_anonymous && (
-                    <span className="px-2 py-1 rounded bg-amber-500/15 text-amber-300">
-                      {r.nickname || '-'}
+                    <span className="px-2 py-1 rounded bg-amber-500/15 text-amber-300 inline-flex items-center gap-1 text-xs">
+                      <MemberNameCell name={r.nickname} avatar={r.avatar} qq={r.qq} />
                       {r.qq ? ` · ${r.qq}` : ''}
                     </span>
                   )}

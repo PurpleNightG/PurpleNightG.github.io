@@ -6,11 +6,13 @@ import { toast } from '../../utils/toast'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import SearchableSelect from '../../components/SearchableSelect'
 import DateInput from '../../components/DateInput'
+import MemberNameCell from '../../components/MemberNameCell'
 
 interface BlackPointRecord {
   id: number
   member_id: number
   member_name: string
+  avatar?: string | null
   qq: string
   reason: string
   register_date: string
@@ -431,7 +433,7 @@ export default function BlackPointRecords() {
                         {selectedIds.has(record.id) ? <CheckSquare size={18} className="text-purple-400" /> : <Square size={18} className="text-gray-400" />}
                       </button>
                     </td>
-                    <td>{record.member_name}</td>
+                    <td><MemberNameCell name={record.member_name} avatar={record.avatar} qq={record.qq} /></td>
                     <td>{record.qq}</td>
                     <td className="max-w-xs truncate" title={record.reason}>{record.reason}</td>
                     <td>{formatDate(record.register_date)}</td>

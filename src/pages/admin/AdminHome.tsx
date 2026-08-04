@@ -10,6 +10,7 @@ import UserDropdown from '../../components/UserDropdown'
 import { formatDate } from '../../utils/dateFormat'
 import { getRoleColor } from '../../utils/roleColors'
 import { useBadges } from '../../contexts/BadgeContext'
+import MemberAvatar from '../../components/MemberAvatar'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
@@ -24,8 +25,10 @@ interface Statistics {
 
 interface ReminderMember {
   id: number
+  member_id?: number
   member_name: string
   nickname: string
+  avatar?: string | null
   qq: string
   stage_role: string
   last_training_date: string | null
@@ -56,6 +59,7 @@ export default function AdminHome() {
   const [stageDistribution, setStageDistribution] = useState<StageDistribution[]>([])
   const [reminderList, setReminderList] = useState<ReminderMember[]>([])
   const [examCandidates, setExamCandidates] = useState<any[]>([])
+  const [memberAvatarById, setMemberAvatarById] = useState<Record<number, string | null>>({})
   const [loading, setLoading] = useState(true)
   const [adminName, setAdminName] = useState('管理员')
   const [adminUsername, setAdminUsername] = useState('')
@@ -175,6 +179,9 @@ export default function AdminHome() {
 
       setReminderList(remindersData.slice(0, 6))
       setExamCandidates(examCandidatesData)
+      setMemberAvatarById(
+        Object.fromEntries(membersData.map((m: any) => [m.id, m.avatar || null]))
+      )
 
       const stages = [
         '未新训', '新训初期', '新训一期', '新训二期', '新训三期',
@@ -701,9 +708,7 @@ export default function AdminHome() {
                       className="group student-glass-chip student-glass-chip--yellow p-4 text-left hover:border-yellow-500/50"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="flex-shrink-0 w-10 h-10 rounded-full bg-yellow-600/20 flex items-center justify-center">
-                          <span className="text-yellow-400 font-bold">{member.nickname.charAt(0)}</span>
-                        </div>
+                        <MemberAvatar avatar={member.avatar} qq={member.qq} name={member.nickname} size="md" />
                         <div className="flex-1 min-w-0">
                           <div className="font-medium text-white truncate">{member.nickname}</div>
                           <div className="text-xs text-gray-400 truncate">QQ: {member.qq}</div>
@@ -758,9 +763,13 @@ export default function AdminHome() {
                         >
                           <div className="flex items-center justify-between gap-3">
                             <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-10 h-10 shrink-0 bg-gradient-to-br from-orange-500 to-red-500 rounded-full flex items-center justify-center text-white font-bold">
-                                {member.nickname?.charAt(0) || member.member_name?.charAt(0) || '?'}
-                              </div>
+                              <MemberAvatar
+                                avatar={member.avatar ?? memberAvatarById[member.member_id ?? member.id]}
+                                qq={member.qq}
+                                name={member.nickname || member.member_name}
+                                size="md"
+                                className="!w-[45px] !h-[45px] !text-base"
+                              />
                               <div className="min-w-0">
                                 <div className="flex flex-wrap items-center gap-2">
                                   <span className="text-white font-medium truncate">

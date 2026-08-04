@@ -5,6 +5,7 @@ import { formatDate } from '../../utils/dateFormat'
 import { getRoleColor } from '../../utils/roleColors'
 import { toast } from '../../utils/toast'
 import MemberDetail from './MemberDetail'
+import MemberNameCell from '../../components/MemberNameCell'
 import DateInput from '../../components/DateInput'
 import StyledSelect from '../../components/StyledSelect'
 
@@ -17,6 +18,7 @@ interface Member {
   stage_role: string
   status: string
   last_training_date: string
+  avatar?: string | null
 }
 
 export default function MemberList() {
@@ -836,7 +838,9 @@ export default function MemberList() {
                         {selectedIds.has(member.id) ? <CheckSquare size={18} className="text-purple-400" /> : <Square size={18} className="text-gray-400" />}
                       </button>
                     </td>
-                    <td>{member.nickname}</td>
+                    <td>
+                      <MemberNameCell name={member.nickname} avatar={member.avatar} qq={member.qq} />
+                    </td>
                     <td>{member.qq}</td>
                     <td>{member.game_id || '-'}</td>
                     <td>{formatDate(member.join_date)}</td>

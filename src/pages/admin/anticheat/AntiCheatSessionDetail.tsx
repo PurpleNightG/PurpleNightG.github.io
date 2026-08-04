@@ -5,6 +5,7 @@ import { anticheatAPI } from '../../../utils/api'
 import { toast } from '../../../utils/toast'
 import { formatDateTime } from '../../../utils/dateFormat'
 import ConfirmDialog from '../../../components/ConfirmDialog'
+import MemberNameCell from '../../../components/MemberNameCell'
 import { Loader2, ArrowLeft, Camera, ChevronLeft, ChevronRight, Download, ChevronDown, CheckSquare, Square, Plus, Trash2, Shield } from 'lucide-react'
 import { buildZipStore, base64ToUint8Array } from '../../../utils/zipStore'
 
@@ -536,8 +537,8 @@ export default function AntiCheatSessionDetail() {
           <ArrowLeft size={18} />
         </button>
         <div className="flex-1 min-w-0">
-          <h1 className="text-2xl font-bold text-white">
-            会话 #{session.id} · {session.member_name}
+          <h1 className="text-2xl font-bold text-white flex items-center gap-2 flex-wrap">
+            会话 #{session.id} · <MemberNameCell name={session.member_name} avatar={session.avatar} qq={session.qq} size="md" />
           </h1>
           <p className="text-sm text-gray-400 font-mono">{session.admission_ticket}</p>
         </div>
@@ -606,7 +607,7 @@ export default function AntiCheatSessionDetail() {
               </div>
               <div className="text-right space-y-1 min-w-[12rem]">
                 <div className="text-xs text-gray-500">学员</div>
-                <div className="text-lg font-semibold text-white">{session.member_name}</div>
+                <MemberNameCell name={session.member_name} avatar={session.avatar} qq={session.qq} className="text-lg font-semibold text-white" size="md" />
                 <div className="text-xs text-gray-500 font-mono">ID {session.member_id}</div>
                 <div className="text-xs text-purple-300/90 font-mono break-all">{session.admission_ticket}</div>
               </div>

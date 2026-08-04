@@ -22,7 +22,7 @@ router.get('/my-classmates/:memberId', async (req, res) => {
     
     // 获取当前学员信息
     const [currentMember] = await pool.query(
-      'SELECT id, nickname, stage_role FROM members WHERE id = ?',
+      'SELECT id, nickname, qq, avatar, stage_role FROM members WHERE id = ?',
       [memberId]
     )
     
@@ -48,6 +48,7 @@ router.get('/my-classmates/:memberId', async (req, res) => {
         id,
         nickname,
         qq,
+        avatar,
         stage_role,
         join_date,
         last_training_date
@@ -64,6 +65,7 @@ router.get('/my-classmates/:memberId', async (req, res) => {
           id,
           nickname,
           qq,
+          avatar,
           stage_role,
           join_date,
           last_training_date
@@ -82,6 +84,7 @@ router.get('/my-classmates/:memberId', async (req, res) => {
           id,
           nickname,
           qq,
+          avatar,
           stage_role,
           join_date,
           last_training_date

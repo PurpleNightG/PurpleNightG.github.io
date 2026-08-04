@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Users, TrendingUp, TrendingDown, User } from 'lucide-react'
+import { Users, TrendingUp, TrendingDown } from 'lucide-react'
 import { formatDate } from '../utils/dateFormat'
 import { getRoleColor } from '../utils/roleColors'
+import MemberAvatar from '../components/MemberAvatar'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
@@ -9,6 +10,7 @@ interface Member {
   id: number
   nickname: string
   qq: string
+  avatar?: string | null
   stage_role: string
   join_date: string
   last_training_date: string
@@ -111,11 +113,15 @@ export default function StudentClassmates() {
   const MemberCard = ({ member }: { member: Member }) => (
     <div className="student-glass-chip p-4">
       <div className="flex items-center gap-3 mb-3">
-        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-600 to-purple-400 flex items-center justify-center">
-          <User size={20} className="text-white" />
-        </div>
-        <div className="flex-1">
-          <div className="text-white font-semibold">{member.nickname}</div>
+        <MemberAvatar
+          avatar={member.avatar}
+          qq={member.qq}
+          name={member.nickname}
+          size="md"
+          className="!w-12 !h-12 !text-base"
+        />
+        <div className="flex-1 min-w-0">
+          <div className="text-white font-semibold truncate">{member.nickname}</div>
           <div className="text-sm text-gray-400">QQ: {member.qq}</div>
         </div>
       </div>
@@ -152,9 +158,13 @@ export default function StudentClassmates() {
 
       <div className="student-glass-panel p-6 mb-6">
         <div className="flex items-center gap-4">
-          <div className={`w-16 h-16 rounded-xl bg-gradient-to-br ${getStageColor(data.currentMember.stage_role)} flex items-center justify-center shadow-lg`}>
-            <User size={32} className="text-white" />
-          </div>
+          <MemberAvatar
+            avatar={data.currentMember.avatar}
+            qq={data.currentMember.qq}
+            name={data.currentMember.nickname}
+            size="lg"
+            className="!w-16 !h-16 !rounded-xl !text-xl shadow-lg"
+          />
           <div>
             <div className="text-sm text-gray-400 mb-1">你的当前阶段</div>
             <div className={`text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r ${getStageColor(data.currentMember.stage_role)}`}>

@@ -194,6 +194,7 @@ export function computeAttendanceForMember(member, leaves, opts = {}) {
   return {
     member_id: member.id,
     member_name: member.nickname,
+    avatar: member.avatar || null,
     qq: member.qq,
     stage_role: stage,
     join_date: member.join_date,

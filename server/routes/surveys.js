@@ -659,7 +659,7 @@ router.get('/:id/results', requireAdmin, async (req, res) => {
       }))
     } else {
       const [rows] = await pool.query(
-        `SELECT r.id, r.answers_json, r.submitted_at, r.member_id, m.nickname, m.qq
+        `SELECT r.id, r.answers_json, r.submitted_at, r.member_id, m.nickname, m.qq, m.avatar
          FROM survey_responses r
          LEFT JOIN members m ON m.id = r.member_id
          WHERE r.survey_id = ?
@@ -673,6 +673,7 @@ router.get('/:id/results', requireAdmin, async (req, res) => {
         member_id: r.member_id,
         nickname: r.nickname,
         qq: r.qq,
+        avatar: r.avatar || null,
       }))
     }
 

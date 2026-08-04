@@ -96,6 +96,7 @@ function mapAdminRow(row) {
     member_id: anonymous ? null : row.member_id,
     member_name: anonymous ? null : row.member_name,
     member_qq: anonymous ? null : row.member_qq,
+    avatar: anonymous ? null : (row.avatar || null),
     display_label: anonymous ? '匿名学员' : (row.member_name || `学员#${row.member_id}`),
   }
 }
@@ -177,7 +178,7 @@ router.get('/', requireAdmin, async (req, res) => {
       `SELECT
          o.id, o.member_id, o.is_anonymous, o.category, o.content,
          o.status, o.admin_note, o.created_at, o.updated_at,
-         m.nickname AS member_name, m.qq AS member_qq
+         m.nickname AS member_name, m.qq AS member_qq, m.avatar AS avatar
        FROM opinion_box o
        LEFT JOIN members m ON m.id = o.member_id
        ${where}

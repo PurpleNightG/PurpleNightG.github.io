@@ -10,19 +10,198 @@ export type VolcScreenCaptureResult = {
   mode: 'custom' | 'sdk'
 }
 
+export type ScreenQuality = 240 | 480 | 720 | 1080
+export type ScreenFps = 30 | 60
+/** 清晰=保细节(detail)；流畅=保帧率(motion) */
+export type ScreenEncodeMode = 'detail' | 'motion'
+
+export type VolcScreenEncoderConfig = {
+  width: number
+  height: number
+  frameRate: number
+  maxKbps?: number
+  contentHint?: ScreenEncodeMode
+}
+
+export const SCREEN_QUALITY_OPTIONS: {
+  id: ScreenQuality
+  label: string
+  height: number
+  maxKbpsDetail: number
+  maxKbpsMotion: number
+}[] = [
+  { id: 240, label: '240p', height: 240, maxKbpsDetail: 500, maxKbpsMotion: 900 },
+  { id: 480, label: '480p', height: 480, maxKbpsDetail: 1200, maxKbpsMotion: 2200 },
+  { id: 720, label: '720p', height: 720, maxKbpsDetail: 2800, maxKbpsMotion: 5000 },
+  { id: 1080, label: '1080p', height: 1080, maxKbpsDetail: 5000, maxKbpsMotion: 9000 },
+]
+
+export const SCREEN_ENCODE_MODE_OPTIONS: { id: ScreenEncodeMode; label: string; hint: string }[] = [
+  { id: 'motion', label: '流畅', hint: '优先保帧率，适合游戏/视频；高动态时更稳' },
+  { id: 'detail', label: '清晰', hint: '优先保细节，适合文档/PPT；高动态可能掉帧' },
+]
+
+export const SCREEN_FPS_OPTIONS: { id: ScreenFps; label: string }[] = [
+  { id: 30, label: '30fps' },
+  { id: 60, label: '60fps' },
+]
+
+export function getScreenQualityPreset(q: ScreenQuality) {
+  return SCREEN_QUALITY_OPTIONS.find((o) => o.id === q) || SCREEN_QUALITY_OPTIONS[3]
+}
+
+export function getVolcMaxKbps(quality: ScreenQuality, fps: ScreenFps, encodeMode: ScreenEncodeMode) {
+  const preset = getScreenQualityPreset(quality)
+  const base = encodeMode === 'motion' ? preset.maxKbpsMotion : preset.maxKbpsDetail
+  const brScale = fps === 30 ? 0.75 : 1
+  return Math.round(base * brScale)
+}
+
+export function getVolcEncoderConfig(
+  quality: ScreenQuality,
+  fps: ScreenFps,
+  encodeMode: ScreenEncodeMode
+): VolcScreenEncoderConfig {
+  const preset = getScreenQualityPreset(quality)
+  return {
+    width: Math.round((preset.height * 16) / 9),
+    height: preset.height,
+    frameRate: fps,
+    maxKbps: getVolcMaxKbps(quality, fps, encodeMode),
+    contentHint: encodeMode,
+  }
+}
+
 /** 点对点语音控制信令 */
 export type VolcVoiceMessage =
   | { t: 'ziye-voice'; action: 'force-mute'; by?: string }
   | { t: 'ziye-voice'; action: 'force-unmute'; by?: string }
+  | { t: 'ziye-voice'; action: 'force-kick'; by?: string; banned?: boolean }
+  | { t: 'ziye-voice'; action: 'share-approved'; by?: string; toSessionId?: string; toUserId?: string }
+  | { t: 'ziye-voice'; action: 'share-rejected'; by?: string; cooldownMs?: number; toSessionId?: string; toUserId?: string }
 
 export function parseVolcVoiceMessage(raw: string): VolcVoiceMessage | null {
   try {
     const data = JSON.parse(raw)
     if (data?.t !== 'ziye-voice') return null
-    if (data.action !== 'force-mute' && data.action !== 'force-unmute') return null
+    if (
+      data.action !== 'force-mute' &&
+      data.action !== 'force-unmute' &&
+      data.action !== 'force-kick' &&
+      data.action !== 'share-approved' &&
+      data.action !== 'share-rejected'
+    ) {
+      return null
+    }
     return data as VolcVoiceMessage
   } catch {
     return null
+  }
+}
+
+/**
+ * 仅申请屏幕采集，不绑定 RTC（便于等待审批；拒绝时停轨不会触发 SDK 报错）
+ */
+export async function acquireDisplayMedia(
+  enc: Pick<VolcScreenEncoderConfig, 'width' | 'height' | 'frameRate'>
+): Promise<VolcScreenCaptureResult> {
+  const displayConstraints: MediaStreamConstraints & Record<string, unknown> = {
+    video: {
+      width: { ideal: enc.width },
+      height: { ideal: enc.height },
+      frameRate: { ideal: enc.frameRate, max: enc.frameRate },
+    },
+    audio: {
+      restrictOwnAudio: true,
+      echoCancellation: true,
+      noiseSuppression: true,
+    } as MediaTrackConstraints,
+    systemAudio: 'include',
+    selfBrowserSurface: 'exclude',
+  }
+
+  const stream = await navigator.mediaDevices.getDisplayMedia(displayConstraints as MediaStreamConstraints)
+  const videoTrack = stream.getVideoTracks()[0]
+  if (!videoTrack) {
+    stream.getTracks().forEach((t) => t.stop())
+    throw new Error('未获取到屏幕视频轨道')
+  }
+  return { stream, hasSystemAudio: stream.getAudioTracks().length > 0, mode: 'custom' }
+}
+
+/**
+ * 将已有屏幕流绑定到火山引擎（审批通过后再调用）
+ */
+export async function bindVolcScreenCapture(
+  engine: any,
+  volcModule: any,
+  capture: VolcScreenCaptureResult,
+  enc: VolcScreenEncoderConfig
+): Promise<VolcScreenCaptureResult> {
+  const { StreamIndex, VideoSourceType, AudioSourceType } = volcModule
+  await engine.setScreenEncoderConfig?.(enc)
+
+  if (capture.mode === 'sdk' || !capture.stream) {
+    await engine.startScreenCapture({
+      enableAudio: true,
+      selfBrowserSurface: 'exclude',
+      systemAudio: 'include',
+    })
+    return { stream: null, hasSystemAudio: true, mode: 'sdk' }
+  }
+
+  const videoTrack = capture.stream.getVideoTracks()[0]
+  if (!videoTrack || videoTrack.readyState !== 'live') {
+    throw new Error('屏幕画面已失效，请重新选择')
+  }
+
+  await engine.setVideoSourceType(
+    StreamIndex.STREAM_INDEX_SCREEN,
+    VideoSourceType.VIDEO_SOURCE_TYPE_EXTERNAL
+  )
+  await engine.setExternalVideoTrack(StreamIndex.STREAM_INDEX_SCREEN, videoTrack)
+
+  const audioTrack = capture.stream.getAudioTracks()[0] || null
+  if (audioTrack && audioTrack.readyState === 'live') {
+    await engine.setAudioSourceType(
+      StreamIndex.STREAM_INDEX_SCREEN,
+      AudioSourceType.AUDIO_SOURCE_TYPE_EXTERNAL
+    )
+    await engine.setExternalAudioTrack(StreamIndex.STREAM_INDEX_SCREEN, audioTrack)
+  }
+
+  return {
+    stream: capture.stream,
+    hasSystemAudio: !!audioTrack,
+    mode: 'custom',
+  }
+}
+
+/** 解除屏幕轨绑定并停止本地流（拒绝/取消共享时调用） */
+export async function releaseVolcScreenCapture(
+  engine: any,
+  volcModule: any | null,
+  stream: MediaStream | null | undefined
+) {
+  if (engine) {
+    try {
+      await engine.setLocalVideoPlayer?.(1, { renderDom: null })
+    } catch {}
+    try {
+      if (volcModule?.StreamIndex != null) {
+        await engine.setExternalVideoTrack?.(volcModule.StreamIndex.STREAM_INDEX_SCREEN, null)
+      }
+    } catch {}
+    try {
+      await engine.stopScreenCapture?.()
+    } catch {}
+  }
+  if (stream) {
+    try {
+      stream.getTracks().forEach((t) => {
+        try { t.stop() } catch {}
+      })
+    } catch {}
   }
 }
 
@@ -33,61 +212,11 @@ export function parseVolcVoiceMessage(raw: string): VolcVoiceMessage | null {
 export async function startVolcScreenCapture(
   engine: any,
   volcModule: any,
-  enc: { width: number; height: number; frameRate: number }
+  enc: VolcScreenEncoderConfig
 ): Promise<VolcScreenCaptureResult> {
-  const { StreamIndex, VideoSourceType, AudioSourceType } = volcModule
-  await engine.setScreenEncoderConfig?.(enc)
-
   try {
-    const displayConstraints: MediaStreamConstraints & Record<string, unknown> = {
-      video: {
-        width: { ideal: enc.width },
-        height: { ideal: enc.height },
-        frameRate: { ideal: enc.frameRate, max: enc.frameRate },
-      },
-      audio: {
-        // Chrome 较新版本：排除当前标签页发出的声音，避免语音回声
-        restrictOwnAudio: true,
-        echoCancellation: true,
-        noiseSuppression: true,
-      } as MediaTrackConstraints,
-      // Chrome 扩展字段
-      systemAudio: 'include',
-      selfBrowserSurface: 'exclude',
-    }
-
-    const stream = await navigator.mediaDevices.getDisplayMedia(displayConstraints as MediaStreamConstraints)
-    const videoTrack = stream.getVideoTracks()[0]
-    if (!videoTrack) {
-      stream.getTracks().forEach((t) => t.stop())
-      throw new Error('未获取到屏幕视频轨道')
-    }
-
-    await engine.setVideoSourceType(
-      StreamIndex.STREAM_INDEX_SCREEN,
-      VideoSourceType.VIDEO_SOURCE_TYPE_EXTERNAL
-    )
-    await engine.setExternalVideoTrack(StreamIndex.STREAM_INDEX_SCREEN, videoTrack)
-
-    const audioTrack = stream.getAudioTracks()[0] || null
-    if (audioTrack) {
-      await engine.setAudioSourceType(
-        StreamIndex.STREAM_INDEX_SCREEN,
-        AudioSourceType.AUDIO_SOURCE_TYPE_EXTERNAL
-      )
-      await engine.setExternalAudioTrack(StreamIndex.STREAM_INDEX_SCREEN, audioTrack)
-      // 确认设置是否生效（不支持时浏览器会忽略）
-      try {
-        const settings = audioTrack.getSettings?.() as { restrictOwnAudio?: boolean }
-        if (settings && 'restrictOwnAudio' in settings) {
-          console.info('[Volc] restrictOwnAudio =', settings.restrictOwnAudio)
-        }
-      } catch {
-        // ignore
-      }
-    }
-
-    return { stream, hasSystemAudio: !!audioTrack, mode: 'custom' }
+    const acquired = await acquireDisplayMedia(enc)
+    return await bindVolcScreenCapture(engine, volcModule, acquired, enc)
   } catch (error: any) {
     if (error?.name === 'NotAllowedError' || error?.name === 'AbortError' || error?.name === 'NotFoundError') {
       throw error

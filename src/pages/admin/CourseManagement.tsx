@@ -1392,7 +1392,7 @@ export default function CourseManagement() {
                       value={memberSearchQuery}
                       onChange={(e) => setMemberSearchQuery(e.target.value)}
                       placeholder="搜索成员ID或昵称..."
-                      className="student-glass-field pl-10 pr-10"
+                      className="student-glass-field !pl-10 !pr-10"
                     />
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                     {memberSearchQuery && (

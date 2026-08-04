@@ -23,6 +23,7 @@ import turnRoutes from './routes/turn.js'
 import agoraRoutes from './routes/agora.js'
 import volcRoutes from './routes/volc.js'
 import roomRoutes from './routes/room.js'
+import meetingRoutes from './routes/meeting.js'
 import ziyeRoutes from './routes/ziye.js'
 import versionsRoutes from './routes/versions.js'
 import dutyRoutes from './routes/duty.js'
@@ -31,6 +32,7 @@ import badgesRoutes from './routes/badges.js'
 import anticheatRoutes from './routes/anticheat.js'
 import surveysRoutes from './routes/surveys.js'
 import opinionBoxRoutes from './routes/opinionBox.js'
+import accountSecurityRoutes from './routes/accountSecurity.js'
 
 dotenv.config()
 
@@ -76,7 +78,8 @@ app.use(cors({
 }))
 // 紫夜流媒体代理（WHIP/WHEP）须在 json 解析之前，保留 SDP 原始 body
 app.use('/api/ziye', express.raw({ type: () => true, limit: '2mb' }), ziyeRoutes)
-app.use(express.json())
+app.use(express.json({ limit: '512kb' }))
+app.use(express.urlencoded({ extended: true, limit: '512kb' }))
 app.use(express.urlencoded({ extended: true }))
 
 // 路由
@@ -101,6 +104,7 @@ app.use('/api/turn', turnRoutes)
 app.use('/api/agora', agoraRoutes)
 app.use('/api/volc', volcRoutes)
 app.use('/api/room', roomRoutes)
+app.use('/api/meeting', meetingRoutes)
 app.use('/api/versions', versionsRoutes)
 app.use('/api/duty', dutyRoutes)
 app.use('/api/docs', docsRoutes)
@@ -108,6 +112,7 @@ app.use('/api/badges', badgesRoutes)
 app.use('/api/anticheat', anticheatRoutes)
 app.use('/api/surveys', surveysRoutes)
 app.use('/api/opinion-box', opinionBoxRoutes)
+app.use('/api/account-security', accountSecurityRoutes)
 
 // 健康检查
 app.get('/api/health', (req, res) => {

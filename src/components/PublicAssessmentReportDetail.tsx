@@ -31,6 +31,8 @@ export interface PublicAssessment {
   id: number
   member_id: number
   member_name: string
+  avatar?: string | null
+  qq?: string | null
   assessment_date: string
   status: '待处理' | '已通过' | '未通过' | '未完成' | '模拟考'
   map: string

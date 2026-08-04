@@ -5,6 +5,7 @@ import { toast } from '../../../utils/toast'
 import { formatDateTime } from '../../../utils/dateFormat'
 import ConfirmDialog from '../../../components/ConfirmDialog'
 import SearchableSelect from '../../../components/SearchableSelect'
+import MemberNameCell from '../../../components/MemberNameCell'
 import { Loader2, Plus, Trash2, Shield, RefreshCw, Search } from 'lucide-react'
 
 interface WhitelistRow {
@@ -16,6 +17,7 @@ interface WhitelistRow {
   created_by?: string | null
   created_at?: string | null
   member_name?: string | null
+  avatar?: string | null
   member_qq?: string | null
 }
 
@@ -222,7 +224,7 @@ export default function AntiCheatDllWhitelist() {
               {rows.map((w) => (
                 <tr key={w.id} className="border-t border-white/5 text-gray-200">
                   <td className="px-3 py-2.5">
-                    <div className="text-white">{w.member_name || `学员 #${w.member_id}`}</div>
+                    <MemberNameCell name={w.member_name || `学员 #${w.member_id}`} avatar={w.avatar} qq={w.member_qq} />
                     <div className="text-[11px] text-gray-500">
                       ID {w.member_id}
                       {w.member_qq ? ` · QQ ${w.member_qq}` : ''}

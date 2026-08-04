@@ -26,8 +26,10 @@ function calculateRating(score) {
 router.get('/', async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT * FROM assessments
-      ORDER BY assessment_date DESC, created_at DESC
+      SELECT a.*, m.avatar AS avatar, m.qq AS qq
+      FROM assessments a
+      LEFT JOIN members m ON m.id = a.member_id
+      ORDER BY a.assessment_date DESC, a.created_at DESC
     `)
     
     // 解析JSON字段

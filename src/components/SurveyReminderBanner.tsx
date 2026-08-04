@@ -27,7 +27,7 @@ export default function SurveyReminderBanner({
 
   return (
     <div
-      className={`relative overflow-hidden border-b border-amber-400/40 bg-gradient-to-r from-amber-600 via-orange-500 to-rose-500 text-white shadow-lg shadow-amber-900/20 ${className}`}
+      className={`sticky top-0 z-20 shrink-0 relative overflow-hidden border-b border-amber-400/40 bg-gradient-to-r from-amber-600 via-orange-500 to-rose-500 text-white shadow-lg shadow-amber-900/20 ${className}`}
       role="status"
     >
       <div className="pointer-events-none absolute inset-0 opacity-30 bg-[radial-gradient(circle_at_20%_50%,white,transparent_45%)]" />

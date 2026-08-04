@@ -26,8 +26,10 @@ router.get('/my', async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT * FROM black_point_records
-      ORDER BY register_date DESC
+      SELECT bp.*, m.avatar AS avatar
+      FROM black_point_records bp
+      LEFT JOIN members m ON m.id = bp.member_id
+      ORDER BY bp.register_date DESC
     `)
     
     res.json({

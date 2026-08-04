@@ -5,6 +5,7 @@ import { toast } from '../../utils/toast'
 import { formatDateTime } from '../../utils/dateFormat'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { useBadges } from '../../contexts/BadgeContext'
+import MemberNameCell from '../../components/MemberNameCell'
 
 const STATUS_LABEL: Record<string, string> = {
   pending: '待查阅',
@@ -24,6 +25,7 @@ interface OpinionItem {
   member_id: number | null
   member_name: string | null
   member_qq: string | null
+  avatar?: string | null
 }
 
 export default function OpinionBoxManagement() {
@@ -156,16 +158,16 @@ export default function OpinionBoxManagement() {
               <div key={item.id} className="p-4 sm:p-5 space-y-3">
                 <div className="flex flex-wrap items-center gap-2 text-xs">
                   <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-200">{item.category}</span>
-                  <span
-                    className={`px-2 py-0.5 rounded ${
-                      item.is_anonymous
-                        ? 'bg-white/5 text-gray-300'
-                        : 'bg-sky-500/15 text-sky-200'
-                    }`}
-                  >
-                    {item.display_label}
-                    {!item.is_anonymous && item.member_qq ? ` · QQ ${item.member_qq}` : ''}
-                  </span>
+                  {item.is_anonymous ? (
+                    <span className="px-2 py-0.5 rounded bg-white/5 text-gray-300">
+                      {item.display_label}
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded bg-sky-500/15 text-sky-200 inline-flex items-center gap-1">
+                      <MemberNameCell name={item.member_name || item.display_label} avatar={item.avatar} qq={item.member_qq} />
+                      {item.member_qq ? ` · QQ ${item.member_qq}` : ''}
+                    </span>
+                  )}
                   <span className="px-2 py-0.5 rounded bg-white/5 text-gray-400">
                     {STATUS_LABEL[item.status] || item.status}
                   </span>

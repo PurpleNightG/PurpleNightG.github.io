@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS members (
   screen_share_enabled TINYINT(1) NOT NULL DEFAULT 1 COMMENT '助教是否允许使用声网/火山共享',
   screen_share_quota INT NULL COMMENT '助教声网/火山共享次数上限，NULL为不限',
   screen_share_used INT NOT NULL DEFAULT 0 COMMENT '助教已使用声网/火山共享次数',
+  guest_code_max INT NOT NULL DEFAULT 1 COMMENT '助教一次最多可生成的未使用访客码数量',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_username (username),
@@ -167,3 +168,21 @@ CREATE TABLE IF NOT EXISTS retention_records (
   INDEX idx_member (member_id),
   INDEX idx_approval_date (approval_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ��Ļ�����ÿ���
+CREATE TABLE IF NOT EXISTS screen_share_guest_codes (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  code VARCHAR(16) NOT NULL,
+  mode ENUM('peerjs', 'agora', 'volc') NOT NULL DEFAULT 'peerjs',
+  created_by_type ENUM('admin', 'assistant') NOT NULL,
+  created_by_member_id INT NULL,
+  created_by_name VARCHAR(128) NOT NULL,
+  status ENUM('active', 'used', 'revoked') NOT NULL DEFAULT 'active',
+  used_by_nickname VARCHAR(128) NULL,
+  used_at TIMESTAMP NULL,
+  room_id VARCHAR(16) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_guest_code (code),
+  INDEX idx_guest_status (status),
+  INDEX idx_guest_creator (created_by_member_id, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='��Ļ�����ÿ���';

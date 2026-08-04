@@ -2,6 +2,7 @@ import express from 'express'
 import { pool } from '../config/database.js'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
+import { createLoginSession, assertSessionActive, touchSession } from '../utils/loginSessions.js'
 
 const router = express.Router()
 
@@ -9,6 +10,7 @@ const router = express.Router()
 router.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body
+    const rememberMe = req.body?.rememberMe !== false && req.body?.rememberMe !== 0
     
     if (!username || !password) {
       return res.status(400).json({
@@ -49,6 +51,13 @@ router.post('/login', async (req, res) => {
         message: '用户名或密码错误'
       })
     }
+
+    const sessionId = await createLoginSession(req, {
+      userType: 'student',
+      userId: member.id,
+      deviceName: req.body?.deviceName,
+      rememberMe,
+    })
     
     // 生成JWT token
     const token = jwt.sign(
@@ -56,10 +65,11 @@ router.post('/login', async (req, res) => {
         id: member.id,
         username: member.username,
         nickname: member.nickname,
-        role: 'student'
+        role: 'student',
+        jti: sessionId,
       },
       process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '7d' }
+      { expiresIn: rememberMe ? '7d' : '1d' }
     )
     
     // 返回成员信息（不含密码）
@@ -95,6 +105,14 @@ router.get('/verify', async (req, res) => {
     }
     
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key')
+    const active = await assertSessionActive(decoded)
+    if (!active) {
+      return res.status(401).json({
+        success: false,
+        message: '会话已失效，请重新登录',
+      })
+    }
+    void touchSession(decoded.jti)
     
     // 查询最新的成员信息
     const [members] = await pool.query(

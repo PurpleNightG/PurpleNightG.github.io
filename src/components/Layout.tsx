@@ -1,8 +1,9 @@
 import { Link, useLocation } from 'react-router-dom'
-import { BookOpen, Home, LogIn, Smartphone, Download, Monitor, User, Shield } from 'lucide-react'
+import { BookOpen, Home, LogIn, Smartphone, Download, Monitor } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { DEFAULT_DOC_SLUG, docPath } from '../constants/docs'
 import SurveyReminderBanner from './SurveyReminderBanner'
+import MemberAvatar from './MemberAvatar'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -11,7 +12,12 @@ interface LayoutProps {
 export default function Layout({ children }: LayoutProps) {
   const location = useLocation()
   const [isMobile, setIsMobile] = useState(false)
-  const [loggedInUser, setLoggedInUser] = useState<{ name: string; type: 'admin' | 'student' } | null>(null)
+  const [loggedInUser, setLoggedInUser] = useState<{
+    name: string
+    type: 'admin' | 'student'
+    avatar?: string | null
+    qq?: string | null
+  } | null>(null)
 
   const detectLogin = () => {
     try {
@@ -19,10 +25,20 @@ export default function Layout({ children }: LayoutProps) {
       const studentStr = localStorage.getItem('studentUser') || sessionStorage.getItem('studentUser')
       if (adminStr) {
         const u = JSON.parse(adminStr)
-        setLoggedInUser({ name: u.username || '管理员', type: 'admin' })
+        setLoggedInUser({
+          name: u.name || u.username || '管理员',
+          type: 'admin',
+          avatar: u.avatar || null,
+          qq: null,
+        })
       } else if (studentStr) {
         const u = JSON.parse(studentStr)
-        setLoggedInUser({ name: u.nickname || u.username || '学员', type: 'student' })
+        setLoggedInUser({
+          name: u.nickname || u.username || '学员',
+          type: 'student',
+          avatar: u.avatar || null,
+          qq: u.qq || null,
+        })
       } else {
         setLoggedInUser(null)
       }
@@ -45,8 +61,59 @@ export default function Layout({ children }: LayoutProps) {
   useEffect(() => {
     detectLogin()
     window.addEventListener('storage', detectLogin)
-    return () => window.removeEventListener('storage', detectLogin)
+    window.addEventListener('avatar-updated', detectLogin)
+    return () => {
+      window.removeEventListener('storage', detectLogin)
+      window.removeEventListener('avatar-updated', detectLogin)
+    }
   }, [])
+
+  // 用服务端资料刷新头像（避免本地缓存缺少 avatar）
+  useEffect(() => {
+    const token =
+      localStorage.getItem('token') ||
+      sessionStorage.getItem('token') ||
+      localStorage.getItem('studentToken') ||
+      sessionStorage.getItem('studentToken')
+    if (!token) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(
+          `${(import.meta as any).env?.VITE_API_URL || 'http://localhost:3000/api'}/account-security/profile`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        )
+        const data = await res.json()
+        if (cancelled || !data?.success || !data.data) return
+        const p = data.data
+        const isStudent = p.user_type === 'student'
+        const key = isStudent ? 'studentUser' : 'user'
+        for (const store of [localStorage, sessionStorage]) {
+          const raw = store.getItem(key)
+          if (!raw) continue
+          try {
+            const obj = JSON.parse(raw)
+            obj.avatar = p.avatar ?? null
+            if (isStudent) {
+              if (p.display_name) obj.nickname = p.display_name
+              if (p.qq) obj.qq = p.qq
+            } else if (p.display_name) {
+              obj.name = p.display_name
+            }
+            store.setItem(key, JSON.stringify(obj))
+          } catch {
+            /* ignore */
+          }
+        }
+        if (!cancelled) detectLogin()
+      } catch {
+        /* ignore */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [location.pathname])
 
   const isActive = (path: string) => {
     return location.pathname === path || location.pathname.startsWith(path + '/')
@@ -157,13 +224,15 @@ export default function Layout({ children }: LayoutProps) {
               {loggedInUser ? (
                 <Link
                   to={loggedInUser.type === 'admin' ? '/admin' : '/student'}
-                  className="flex items-center gap-2 px-3 py-2 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 transition-colors"
+                  className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 transition-colors"
                 >
-                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-600 to-purple-800 flex items-center justify-center">
-                    {loggedInUser.type === 'admin'
-                      ? <Shield size={14} className="text-white" />
-                      : <User size={14} className="text-white" />}
-                  </div>
+                  <MemberAvatar
+                    avatar={loggedInUser.avatar}
+                    qq={loggedInUser.qq}
+                    name={loggedInUser.name}
+                    size="sm"
+                    className="!w-8 !h-8"
+                  />
                   <span className="text-white text-sm font-medium">{loggedInUser.name}</span>
                   <span className="text-gray-400 text-xs">{loggedInUser.type === 'admin' ? '管理员' : '学员'}</span>
                 </Link>

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useBadges } from "../../contexts/BadgeContext";
 import { useSurveyPending } from "../../contexts/SurveyPendingContext";
 import { motion, AnimatePresence } from "framer-motion";
-import { Home, Users, BookOpen, FileCheck, UserMinus, ChevronDown, FileText, Video, Monitor, AlertTriangle, Calendar, BookMarked, ClipboardList, Mailbox } from "lucide-react";
+import { Home, Users, BookOpen, FileCheck, UserMinus, ChevronDown, FileText, Video, Monitor, AlertTriangle, Calendar, BookMarked, ClipboardList, Mailbox, Shield } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 
 const AnimatedMenuToggle = ({
@@ -321,6 +321,7 @@ const AdminNav = ({ expandedMenus, toggleMenu }: AdminNavProps) => {
     <NavItem path="/admin/docs" icon={<BookMarked size={20} />} label="文档管理" />
     <NavItem path="/admin/surveys" icon={<ClipboardList size={20} />} label="填表管理" />
     <NavItem path="/admin/opinion-box" icon={<Mailbox size={20} />} label="意见箱" badge={badges.opinionPending} />
+    <NavItem path="/admin/account-security" icon={<Shield size={20} />} label="账户安全" />
     {/* Screen share - opens in new tab */}
     <a href="#/screen-share" target="_blank" rel="noopener noreferrer" className="group block mb-1">
       <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-all text-gray-400 hover:text-gray-200 hover:bg-gray-700/20">
@@ -425,6 +426,7 @@ const studentMenuItems = [
   { path: '/student/videos', icon: <Video size={20} />, label: '公开报告查看' },
   { path: '/student/surveys', icon: <ClipboardList size={20} />, label: '填表' },
   { path: '/student/opinion-box', icon: <Mailbox size={20} />, label: '意见箱' },
+  { path: '/student/account-security', icon: <Shield size={20} />, label: '账户安全' },
 ];
 
 const StudentNavItem = ({
