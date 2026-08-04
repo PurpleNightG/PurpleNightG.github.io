@@ -756,6 +756,9 @@
   transform: none !important;
   transform-style: flat !important;
   will-change: auto !important;
+  /* 覆盖 .student-glass-panel 的 overflow:hidden，否则列表无法滚动 */
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
   backdrop-filter: blur(28px) saturate(1.4) !important;
   -webkit-backdrop-filter: blur(28px) saturate(1.4) !important;
   background: rgba(18, 16, 28, 0.55) !important;

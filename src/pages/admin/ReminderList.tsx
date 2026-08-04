@@ -67,7 +67,7 @@ type AttendanceFilters = {
 
 const ATTENDANCE_REASON_OPTIONS = [
   { code: 'to_phase3', label: '达三期' },
-  { code: 'to_formal', label: '转正' },
+  { code: 'to_exam', label: '准考' },
   { code: 'formal_idle', label: '半年新训' },
 ]
 
@@ -452,8 +452,12 @@ export default function ReminderList() {
 
     if (attendanceFilters.reason_code.length > 0) {
       filtered = filtered.filter(item => {
-        const hit = item.reasons.some(r => attendanceFilters.reason_code.includes(r.reason_code))
-          || attendanceFilters.reason_code.includes(item.reason_code)
+        const codes = new Set(item.reasons.map(r => r.reason_code))
+        codes.add(item.reason_code)
+        // 旧数据 to_formal 与 to_exam 等价
+        if (codes.has('to_formal')) codes.add('to_exam')
+        if (codes.has('to_exam')) codes.add('to_formal')
+        const hit = attendanceFilters.reason_code.some(c => codes.has(c))
         return attendanceFilters.inverseMode ? !hit : hit
       })
     }
@@ -1099,7 +1103,7 @@ export default function ReminderList() {
 
         <div className="student-glass-panel student-glass-panel--static overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-700 text-xs text-gray-500">
-            加入后 60 天内达新训三期 → 再 45 天内转正（正式队员及以上，总上限 105 天）→ 正式队员半年需参加新训。请假暂停计时；留队 / 其他不计。剩余 ≤7 天进入名单。
+            加入后 60 天内达新训三期 → 再 45 天内达新训准考及以上（总上限 105 天）→ 准考 / 紫夜 / 紫夜尖兵半年需参加新训。请假暂停计时；留队 / 其他不计。剩余 ≤7 天进入名单。
           </div>
           {attendanceLoading ? (
             <div className="p-8 text-center text-gray-400">加载中...</div>
@@ -1205,11 +1209,11 @@ export default function ReminderList() {
                                 <div className="leading-relaxed">
                                   <span className={`inline-block align-middle text-xs px-1.5 py-0.5 rounded mr-1.5 ${
                                     r.reason_code === 'to_phase3' ? 'bg-yellow-600/20 text-yellow-300'
-                                      : r.reason_code === 'to_formal' ? 'bg-orange-600/20 text-orange-300'
+                                      : (r.reason_code === 'to_exam' || r.reason_code === 'to_formal') ? 'bg-orange-600/20 text-orange-300'
                                       : 'bg-purple-600/20 text-purple-300'
                                   }`}>
                                     {r.reason_code === 'to_phase3' ? '达三期'
-                                      : r.reason_code === 'to_formal' ? '转正'
+                                      : (r.reason_code === 'to_exam' || r.reason_code === 'to_formal') ? '准考'
                                       : '半年新训'}
                                   </span>
                                   <span className="align-middle">{r.reason_label}</span>

@@ -93,7 +93,6 @@ export default function StyledSelect({
   const open = useCallback(() => {
     const el = containerRef.current
     if (!el) return
-    // 同步算好 fixed 定位，避免首次以文档流插入导致滚动条闪烁
     setDropdownStyle(computeDropdownStyle(el, dropdownMinWidth))
     setIsOpen(true)
   }, [dropdownMinWidth])
@@ -176,24 +175,8 @@ export default function StyledSelect({
       <div
         ref={dropdownRef}
         style={dropdownStyle}
-        className="student-glass-panel student-glass-panel--static student-glass-popover max-h-72 overflow-y-auto picker-scrollbar shadow-2xl shadow-black/50"
+        className="student-glass-panel student-glass-panel--static student-glass-popover max-h-72 picker-scrollbar shadow-2xl shadow-black/50"
       >
-        {searchable && (
-          <div className="sticky top-0 z-10 p-2 bg-black/25 backdrop-blur-md border-b border-white/10">
-            <input
-              ref={inputRef}
-              type="text"
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value)
-                setHighlightedIndex(0)
-              }}
-              onKeyDown={handleKeyDown}
-              placeholder="搜索..."
-              className="student-glass-field text-sm py-1.5"
-            />
-          </div>
-        )}
         {filtered.length > 0 ? (
           filtered.map((option, index) => {
             const active = option.value === value
@@ -229,36 +212,88 @@ export default function StyledSelect({
 
   return (
     <div ref={containerRef} className={`relative ${className}`}>
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => {
-          if (disabled) return
-          if (isOpen) close()
-          else open()
-        }}
-        onKeyDown={handleKeyDown}
-        className={`
-          w-full student-glass-field
-          flex items-center justify-between gap-2 text-left
-          transition-all duration-200
-          ${triggerClass}
-          ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
-          ${isOpen ? 'border-purple-400/55 ring-2 ring-purple-500/25' : ''}
-        `}
-      >
-        <span className={`truncate ${selected ? 'text-white' : 'text-gray-400'}`}>
-          {selected ? (
-            selected.description
-              ? `${selected.label} · ${selected.description}`
-              : selected.label
-          ) : placeholder}
-        </span>
-        <ChevronDown
-          size={isSm ? 14 : 16}
-          className={`shrink-0 text-gray-400 transition-transform ${isOpen ? 'rotate-180 text-purple-300' : ''}`}
-        />
-      </button>
+      {searchable ? (
+        <div
+          onClick={() => {
+            if (disabled) return
+            if (!isOpen) open()
+          }}
+          className={`
+            w-full student-glass-field
+            flex items-center justify-between gap-2 text-left
+            transition-all duration-200
+            ${triggerClass}
+            ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+            ${isOpen ? 'border-purple-400/55 ring-2 ring-purple-500/25' : ''}
+          `}
+        >
+          {isOpen ? (
+            <input
+              ref={inputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value)
+                setHighlightedIndex(0)
+              }}
+              onKeyDown={handleKeyDown}
+              onClick={(e) => e.stopPropagation()}
+              placeholder="输入搜索..."
+              className="flex-1 min-w-0 bg-transparent outline-none text-white placeholder-gray-400"
+              disabled={disabled}
+            />
+          ) : (
+            <span className={`flex-1 truncate ${selected ? 'text-white' : 'text-gray-400'}`}>
+              {selected ? (
+                selected.description
+                  ? `${selected.label} · ${selected.description}`
+                  : selected.label
+              ) : placeholder}
+            </span>
+          )}
+          <ChevronDown
+            size={isSm ? 14 : 16}
+            className={`shrink-0 text-gray-400 transition-transform ${isOpen ? 'rotate-180 text-purple-300' : ''}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              if (disabled) return
+              if (isOpen) close()
+              else open()
+            }}
+          />
+        </div>
+      ) : (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => {
+            if (disabled) return
+            if (isOpen) close()
+            else open()
+          }}
+          onKeyDown={handleKeyDown}
+          className={`
+            w-full student-glass-field
+            flex items-center justify-between gap-2 text-left
+            transition-all duration-200
+            ${triggerClass}
+            ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+            ${isOpen ? 'border-purple-400/55 ring-2 ring-purple-500/25' : ''}
+          `}
+        >
+          <span className={`truncate ${selected ? 'text-white' : 'text-gray-400'}`}>
+            {selected ? (
+              selected.description
+                ? `${selected.label} · ${selected.description}`
+                : selected.label
+            ) : placeholder}
+          </span>
+          <ChevronDown
+            size={isSm ? 14 : 16}
+            className={`shrink-0 text-gray-400 transition-transform ${isOpen ? 'rotate-180 text-purple-300' : ''}`}
+          />
+        </button>
+      )}
 
       {dropdown && createPortal(dropdown, document.body)}
 

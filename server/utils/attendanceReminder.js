@@ -1,8 +1,8 @@
 /**
  * 考勤催促：
  * - 加入后 60 天内达到新训三期
- * - 达到三期后 45 天内成为正式队员及以上（下调仍按首次达三期计时，总上限 105 天）
- * - 紫夜/紫夜尖兵半年未参加新训
+ * - 达到三期后 45 天内成为新训准考及以上（下调仍按首次达三期计时，总上限 105 天）
+ * - 新训准考 / 紫夜 / 紫夜尖兵：半年未参加新训
  * - 请假期间暂停计时；留队 / 状态「其他」不计
  */
 
@@ -17,10 +17,11 @@ const PHASE3_STAGES = new Set([
   '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师',
 ])
 
-const FORMAL_STAGES = new Set(['紫夜', '紫夜尖兵'])
+const FORMAL_STAGES = new Set(['新训准考', '紫夜', '紫夜尖兵'])
 
-const FORMAL_OR_ABOVE = new Set([
-  '紫夜', '紫夜尖兵',
+/** 新训准考及以上（含干部）——达三期后 45 天目标 */
+const EXAM_OR_ABOVE = new Set([
+  '新训准考', '紫夜', '紫夜尖兵',
   '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师',
 ])
 
@@ -78,8 +79,13 @@ export function isPhase3OrAbove(stage) {
   return PHASE3_STAGES.has(stage)
 }
 
+export function isExamOrAbove(stage) {
+  return EXAM_OR_ABOVE.has(stage)
+}
+
+/** @deprecated 使用 isExamOrAbove；保留别名避免旧引用报错 */
 export function isFormalOrAbove(stage) {
-  return FORMAL_OR_ABOVE.has(stage)
+  return isExamOrAbove(stage)
 }
 
 export function isFormalMember(stage) {
@@ -127,17 +133,18 @@ export function computeAttendanceForMember(member, leaves, opts = {}) {
     })
   }
 
-  // 2) 已达三期但未转正：45 天（总上限 105）
-  if ((phase3At || isPhase3OrAbove(stage)) && !isFormalOrAbove(stage)) {
+  // 2) 已达三期但未达准考：45 天（总上限 105）
+  if ((phase3At || isPhase3OrAbove(stage)) && !isExamOrAbove(stage)) {
     const start = phase3At || joinDate
     const elapsedFromPhase3 = effectiveElapsedDays(start, today, leaves)
     const elapsedFromJoin = effectiveElapsedDays(joinDate, today, leaves)
-    const remainFormal = FORMAL_DEADLINE_DAYS - elapsedFromPhase3
+    const remainExam = FORMAL_DEADLINE_DAYS - elapsedFromPhase3
     const remainCap = MAX_TRACK_DAYS - elapsedFromJoin
-    const remaining = Math.min(remainFormal, remainCap)
+    const remaining = Math.min(remainExam, remainCap)
     clocks.push({
-      reason_code: 'to_formal',
-      reason_label: '达到三期后需在 45\u00A0天内成为正式队员及以上（总上限 105\u00A0天）',
+      // 兼容旧覆盖表 reason_code=to_formal
+      reason_code: 'to_exam',
+      reason_label: '达到三期后需在 45\u00A0天内成为新训准考及以上（总上限 105\u00A0天）',
       deadline_days: FORMAL_DEADLINE_DAYS,
       elapsed_days: elapsedFromPhase3,
       remaining_days: remaining,
@@ -145,12 +152,12 @@ export function computeAttendanceForMember(member, leaves, opts = {}) {
     })
   }
 
-  // 3) 紫夜 / 紫夜尖兵：半年未新训
+  // 3) 新训准考 / 紫夜 / 紫夜尖兵：半年未新训
   if (isFormalMember(stage)) {
     const elapsed = effectiveElapsedDays(lastTraining, today, leaves)
     clocks.push({
       reason_code: 'formal_idle',
-      reason_label: '正式队员半年内需至少参加一次新训',
+      reason_label: '准考及以上半年内需至少参加一次新训',
       deadline_days: FORMAL_IDLE_DAYS,
       elapsed_days: elapsed,
       remaining_days: FORMAL_IDLE_DAYS - elapsed,
@@ -162,7 +169,9 @@ export function computeAttendanceForMember(member, leaves, opts = {}) {
 
   // 应用自定义期限：还剩天数 = custom_deadline - elapsed
   for (const clock of clocks) {
-    const custom = overrides[clock.reason_code]
+    const custom =
+      overrides[clock.reason_code] ??
+      (clock.reason_code === 'to_exam' ? overrides.to_formal : undefined)
     if (custom != null && Number(custom) > 0) {
       const customDays = Number(custom)
       clock.deadline_days = customDays

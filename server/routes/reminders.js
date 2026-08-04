@@ -11,7 +11,7 @@ async function ensureAttendanceOverrideTable() {
     CREATE TABLE IF NOT EXISTS attendance_reminder_overrides (
       id INT PRIMARY KEY AUTO_INCREMENT,
       member_id INT NOT NULL,
-      reason_code VARCHAR(32) NOT NULL COMMENT 'to_phase3|to_formal|formal_idle',
+      reason_code VARCHAR(32) NOT NULL COMMENT 'to_phase3|to_exam|to_formal|formal_idle',
       custom_deadline_days INT NOT NULL COMMENT '绝对期限天数（已过+希望还剩）',
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       UNIQUE KEY uk_member_reason (member_id, reason_code),

@@ -453,7 +453,7 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
                       onChange={(value) => setEditedMember({...editedMember, phase3_reached_at: value})}
                     />
                     <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
-                      考勤「达三期后转正」从此日起算；清空则回退用加入日。下调阶段不会自动清除。
+                      考勤「达三期后准考」从此日起算；清空则回退用加入日。下调阶段不会自动清除。
                     </p>
                     <button
                       type="button"
