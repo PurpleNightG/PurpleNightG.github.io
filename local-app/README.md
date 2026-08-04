@@ -85,6 +85,56 @@ local-app/release/
 
 与 `npm run dev` 思路一致，但是**生产构建 + 内置运行时**，不经过 GitHub Pages 和 Vercel。
 
+## 自动更新（Gitee）
+
+本地版启动时会检查 Gitee 上的 `latest.json`，有新版本则自动下载便携包 ZIP、覆盖安装目录并重启。
+
+### 管理员一次性配置
+
+1. 在 Gitee 新建仓库（建议**私有**，安装包内含数据库凭据相关产物）
+2. 编辑 `local-app/portable/update-config.json`，把 `manifestUrl` 改成：
+
+```text
+https://gitee.com/你的用户名/仓库名/raw/master/latest.json
+```
+
+3. 重新打包：`cd local-app && npm run build:exe`
+4. 按 `local-app/release/Gitee发布说明.txt`：
+   - 把 `紫夜官网-本地版-便携包.zip` 上传到 Gitee **发行版/Release** 附件
+   - 把附件下载地址填进 `latest.json` 的 `downloadUrl`（或打包前设环境变量 `GITEE_DOWNLOAD_URL`）
+   - 将 `latest.json` 提交到仓库根目录
+5. **最后一次**把新的 `紫夜官网-本地版.exe` 发到 QQ 群（旧版没有更新器，必须手下一遍）
+
+之后每次打包，只需更新 Gitee 上的 ZIP + `latest.json`，成员重启本地版即可自动更新。
+
+### 成员侧
+
+- 启动画面会显示「正在检查更新…」
+- 有更新时自动下载（显示进度）并重启
+- 托盘右键也可「检查更新」
+- 无网/检查失败时仍会正常启动旧版本
+- 本机已修改的 `app/server/.env` 会在更新时保留
+
+### 文档自动同步
+
+本地版启动时会从 GitHub 仓库拉取最新「紫夜文档」（对比 `version.json`），并每分钟后台再检查一次。
+
+- 管理员在后台改文档 → 写入 GitHub → 本地版自动同步
+- **不需要**为此重新打包或发群
+- 无网时继续使用本地已缓存的文档
+- 同步源默认：`raw.githubusercontent.com/.../public`（可在 `update-config.json` 的 `docsRemoteBase` 修改）
+
+### latest.json 示例
+
+```json
+{
+  "version": "2026-08-03T06:00:00.000Z",
+  "downloadUrl": "https://gitee.com/user/repo/releases/download/v1/紫夜官网-本地版-便携包.zip",
+  "sha256": "打包时自动生成",
+  "notes": "屏幕共享流畅/清晰模式"
+}
+```
+
 ## 开发调试（管理员自用）
 
 | 命令 | 说明 |

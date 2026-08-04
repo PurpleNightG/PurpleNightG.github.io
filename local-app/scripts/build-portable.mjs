@@ -28,6 +28,12 @@ import {
   prepareServerRuntime,
 } from './build-server-bundle.mjs'
 import { ROOT_DIR, SERVER_ENV } from './paths.mjs'
+import {
+  copyUpdateConfig,
+  createBundleVersion,
+  writeBundleVersion,
+  writeLatestManifest,
+} from './write-latest-manifest.mjs'
 
 const PORTABLE_TEMPLATE = path.join(ROOT_DIR, 'local-app', 'portable')
 const NODE_CACHE_ZIP = path.join(CACHE_DIR, NODE_ZIP)
@@ -109,6 +115,7 @@ function compileLauncherExe(iconPath) {
     '/target:winexe',
     `/out:${output}`,
     '/reference:System.Windows.Forms.dll',
+    '/reference:System.IO.Compression.FileSystem.dll',
     `/win32icon:${iconPath}`,
     source,
   ]
@@ -146,6 +153,7 @@ function createZipArchive() {
 
   run(`powershell -NoProfile -Command "${psCommand}"`, ROOT_DIR)
   log(`✅ ZIP: ${zipPath}`)
+  return zipPath
 }
 
 async function main() {
@@ -157,6 +165,7 @@ async function main() {
   await ensurePortableNode()
   buildFrontend()
   const iconPath = await buildAppIcon()
+  const bundleVersion = createBundleVersion()
 
   log('\n📁 组装便携目录（仅运行产物，不含源码）...')
   removeDir(PORTABLE_DIR)
@@ -165,7 +174,10 @@ async function main() {
   copyFile(path.join(NODE_CACHE_DIR, 'node.exe'), path.join(PORTABLE_DIR, 'runtime', 'node.exe'))
   copyFile(path.join(PORTABLE_TEMPLATE, 'launcher.cjs'), path.join(PORTABLE_DIR, 'launcher.cjs'))
   copyFile(path.join(PORTABLE_TEMPLATE, 'static-server.cjs'), path.join(PORTABLE_DIR, 'static-server.cjs'))
+  copyFile(path.join(PORTABLE_TEMPLATE, 'docs-sync.cjs'), path.join(PORTABLE_DIR, 'docs-sync.cjs'))
   copyFile(iconPath, path.join(PORTABLE_DIR, 'app.ico'))
+  copyUpdateConfig()
+  writeBundleVersion(bundleVersion)
 
   copyDirectory(path.join(ROOT_DIR, 'dist'), path.join(PORTABLE_DIR, 'app', 'dist'), {
     excludeMaps: true,
@@ -181,12 +193,14 @@ async function main() {
 
   const hasExe = compileLauncherExe(iconPath)
   cleanupBuildArtifacts()
-  createZipArchive()
+  const zipPath = createZipArchive()
+  writeLatestManifest(bundleVersion, zipPath)
 
   log('\n========================================')
   log('  构建完成')
   log('========================================')
   log(`  便携目录: ${PORTABLE_DIR}`)
+  log(`  版本: ${bundleVersion}`)
   log('  安全: 未包含前端/后端源码、SQL 迁移脚本')
   if (hasExe) {
     log(`  双击运行: ${path.join(PORTABLE_DIR, '紫夜官网.exe')}`)
@@ -194,6 +208,7 @@ async function main() {
     log('  命令启动: runtime\\node.exe launcher.cjs')
   }
   log('\n下一步（可选）: npm run build:exe 生成单文件分发 EXE')
+  log('  自动更新: 按 release/Gitee发布说明.txt 上传 latest.json 与 ZIP')
   log('========================================\n')
 }
 

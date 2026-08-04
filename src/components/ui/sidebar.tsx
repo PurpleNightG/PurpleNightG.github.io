@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useBadges } from "../../contexts/BadgeContext";
 import { useSurveyPending } from "../../contexts/SurveyPendingContext";
 import { motion, AnimatePresence } from "framer-motion";
-import { Home, Users, BookOpen, FileCheck, UserMinus, ChevronDown, FileText, Video, Monitor, AlertTriangle, Calendar, BookMarked, ClipboardList } from "lucide-react";
+import { Home, Users, BookOpen, FileCheck, UserMinus, ChevronDown, FileText, Video, Monitor, AlertTriangle, Calendar, BookMarked, ClipboardList, Mailbox } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 
 const AnimatedMenuToggle = ({
@@ -80,24 +80,22 @@ export const CollapsibleSection = ({
 }: CollapsibleSectionProps) => (
   <div className="mb-1">
     <button
-      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-all group ${
-        isExpanded
-          ? "bg-gray-700/40 text-white"
-          : "text-gray-400 hover:text-gray-200 hover:bg-gray-700/20"
+      className={`student-glass-nav-item w-full justify-between ${
+        isExpanded ? "student-glass-nav-item--active" : ""
       }`}
       onClick={onToggle}
     >
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-2.5 min-w-0">
         <span
-          className={`transition-colors ${
-            isExpanded ? "text-purple-400" : "text-gray-500 group-hover:text-gray-400"
+          className={`transition-colors shrink-0 ${
+            isExpanded ? "text-purple-400" : "text-gray-500"
           }`}
         >
           {icon}
         </span>
-        <span className="text-sm font-medium">{title}</span>
+        <span className="text-sm font-medium truncate">{title}</span>
         {!!badge && badge > 0 && (
-          <span className="bg-purple-500 text-white text-xs font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 leading-none">
+          <span className="bg-purple-500 text-white text-xs font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 leading-none shrink-0">
             {badge > 99 ? "99+" : badge}
           </span>
         )}
@@ -105,6 +103,7 @@ export const CollapsibleSection = ({
       <motion.div
         animate={{ rotate: isExpanded ? 180 : 0 }}
         transition={{ duration: 0.25 }}
+        className="shrink-0"
       >
         <ChevronDown size={14} className={isExpanded ? "text-purple-400" : "text-gray-600"} />
       </motion.div>
@@ -147,21 +146,19 @@ export const NestedNavGroup = ({
         e.stopPropagation();
         onToggle();
       }}
-      className={`w-full flex items-center justify-between px-3 py-2 rounded-lg transition-all ${
-        isExpanded
-          ? "text-purple-300 bg-purple-600/10"
-          : "text-gray-500 hover:text-gray-300 hover:bg-gray-700/20"
+      className={`student-glass-nav-item w-full justify-between py-2 ${
+        isExpanded ? "student-glass-nav-item--active" : ""
       }`}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 min-w-0">
         <div
           className={`w-1 h-1 rounded-full flex-shrink-0 ${
             isExpanded ? "bg-purple-400" : "bg-gray-600"
           }`}
         />
-        <span className="text-sm">{title}</span>
+        <span className="text-sm truncate">{title}</span>
       </div>
-      <motion.div animate={{ rotate: isExpanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
+      <motion.div animate={{ rotate: isExpanded ? 180 : 0 }} transition={{ duration: 0.2 }} className="shrink-0">
         <ChevronDown size={12} className={isExpanded ? "text-purple-400" : "text-gray-600"} />
       </motion.div>
     </button>
@@ -175,7 +172,7 @@ export const NestedNavGroup = ({
           transition={{ duration: 0.2 }}
           className="overflow-hidden"
         >
-          <div className="ml-3 mt-0.5 space-y-0.5 border-l border-gray-700/60 pl-1">{children}</div>
+          <div className="ml-3 mt-0.5 space-y-0.5 border-l border-white/10 pl-1">{children}</div>
         </motion.div>
       )}
     </AnimatePresence>
@@ -195,10 +192,8 @@ export const SubNavItem = ({ path, label, badge }: SubNavItemProps) => {
   return (
     <Link to={path} className="group block">
       <div
-        className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all ${
-          isActive
-            ? "bg-purple-600/20 text-purple-300"
-            : "text-gray-500 hover:text-gray-300 hover:bg-gray-700/20"
+        className={`student-glass-nav-item py-2 ${
+          isActive ? "student-glass-nav-item--active" : ""
         }`}
       >
         <div
@@ -231,10 +226,8 @@ export const NavItem = ({ path, icon, label, badge }: NavItemProps) => {
   return (
     <Link to={path} className="group block mb-1">
       <div
-        className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-all ${
-          isActive
-            ? "bg-purple-600/20 text-purple-300"
-            : "text-gray-400 hover:text-gray-200 hover:bg-gray-700/20"
+        className={`student-glass-nav-item ${
+          isActive ? "student-glass-nav-item--active" : ""
         }`}
       >
         <span
@@ -261,8 +254,7 @@ const mobileSidebarVariants = {
 };
 
 const AdminSidebarLogo = () => (
-  <div className="relative h-16 flex items-center px-4 border-b border-gray-700/30 overflow-hidden">
-    <div className="absolute inset-0 bg-gradient-to-r from-purple-600/5 via-transparent to-transparent" />
+  <div className="relative h-16 flex items-center px-4 border-b border-white/10 overflow-hidden shrink-0">
     <div className="relative flex items-center gap-3 w-full">
       <div className="relative group">
         <div className="absolute inset-0 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg blur opacity-30 group-hover:opacity-50 transition-opacity" />
@@ -285,7 +277,7 @@ const AdminNav = ({ expandedMenus, toggleMenu }: AdminNavProps) => {
   const badges = useBadges();
   const leaveBadge = badges.leavePending + badges.leaveEndPending;
   return (
-  <nav className="flex-1 overflow-y-auto py-4 px-3">
+  <nav className="flex-1 min-h-0 overflow-y-auto py-4 px-3 sidebar-scrollbar">
     <NavItem path="/admin" icon={<Home size={20} />} label="首页" />
     <CollapsibleSection title="成员管理" icon={<Users size={20} />}
       isExpanded={expandedMenus.includes("成员管理")} onToggle={() => toggleMenu("成员管理")}
@@ -315,6 +307,7 @@ const AdminNav = ({ expandedMenus, toggleMenu }: AdminNavProps) => {
         <SubNavItem path="/admin/anticheat/tickets" label="准考证导入" />
         <SubNavItem path="/admin/anticheat/configs" label="考核配置" />
         <SubNavItem path="/admin/anticheat/monitor" label="考试监控" />
+        <SubNavItem path="/admin/anticheat/dll-whitelist" label="DLL白名单" />
         <SubNavItem path="/admin/anticheat/settings" label="反作弊设置" />
       </NestedNavGroup>
     </CollapsibleSection>
@@ -327,6 +320,7 @@ const AdminNav = ({ expandedMenus, toggleMenu }: AdminNavProps) => {
     </CollapsibleSection>
     <NavItem path="/admin/docs" icon={<BookMarked size={20} />} label="文档管理" />
     <NavItem path="/admin/surveys" icon={<ClipboardList size={20} />} label="填表管理" />
+    <NavItem path="/admin/opinion-box" icon={<Mailbox size={20} />} label="意见箱" badge={badges.opinionPending} />
     {/* Screen share - opens in new tab */}
     <a href="#/screen-share" target="_blank" rel="noopener noreferrer" className="group block mb-1">
       <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-all text-gray-400 hover:text-gray-200 hover:bg-gray-700/20">
@@ -371,11 +365,11 @@ export const AdminSidebar = () => {
             exit="hidden"
             variants={mobileSidebarVariants}
             transition={{ duration: 0.3, ease: "easeInOut" }}
-            className="md:hidden fixed inset-0 z-50 bg-gray-900 border-r border-gray-700/30 flex flex-col"
+            className="md:hidden fixed inset-0 z-50 student-glass-sidebar flex flex-col"
           >
             <AdminSidebarLogo />
             <AdminNav expandedMenus={expandedMenus} toggleMenu={toggleMenu} />
-            <div className="p-3 border-t border-gray-700/30">
+            <div className="p-3 border-t border-white/10">
               <p className="text-xs text-gray-500 text-center">紫夜战术公会 · 管理系统</p>
             </div>
           </motion.aside>
@@ -383,7 +377,7 @@ export const AdminSidebar = () => {
       </AnimatePresence>
 
       {/* Mobile top bar */}
-      <div className="md:hidden flex items-center justify-between px-4 h-14 bg-gray-800/50 border-b border-gray-700/30 fixed top-0 left-0 right-0 z-40">
+      <div className="md:hidden flex items-center justify-between px-4 h-14 student-glass-sidebar border-b border-white/10 fixed top-0 left-0 right-0 z-40">
         <div className="flex items-center gap-2">
           <img src="https://s21.ax1x.com/2024/12/08/pA72i5R.png" alt="紫夜队标" className="w-7 h-7 rounded-md" />
           <span className="text-white font-bold text-sm">紫夜管理</span>
@@ -391,11 +385,11 @@ export const AdminSidebar = () => {
         <AnimatedMenuToggle toggle={() => setIsOpen(!isOpen)} isOpen={isOpen} />
       </div>
 
-      {/* Desktop sidebar */}
-      <aside className="hidden md:flex flex-col w-64 bg-gray-800/30 backdrop-blur-xl border-r border-gray-700/30 fixed top-0 left-0 h-full">
+      {/* Desktop sidebar — 悬浮玻璃，过高时内部滚动 */}
+      <aside className="hidden md:flex flex-col w-60 student-glass-sidebar fixed z-40 top-3 left-3 max-h-[calc(100vh-1.5rem)]">
         <AdminSidebarLogo />
         <AdminNav expandedMenus={expandedMenus} toggleMenu={toggleMenu} />
-        <div className="p-3 border-t border-gray-700/30">
+        <div className="p-3 border-t border-white/10 shrink-0">
           <p className="text-xs text-gray-500 text-center">紫夜战术公会 · 管理系统</p>
         </div>
       </aside>
@@ -406,8 +400,7 @@ export const AdminSidebar = () => {
 export { AnimatedMenuToggle };
 
 const StudentSidebarLogo = () => (
-  <div className="relative h-16 flex items-center px-4 border-b border-gray-700/30 overflow-hidden">
-    <div className="absolute inset-0 bg-gradient-to-r from-purple-600/5 via-transparent to-transparent" />
+  <div className="relative h-16 flex items-center px-4 border-b border-white/10 overflow-hidden shrink-0">
     <div className="relative flex items-center gap-3 w-full">
       <div className="relative group">
         <div className="absolute inset-0 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg blur opacity-30 group-hover:opacity-50 transition-opacity" />
@@ -431,14 +424,56 @@ const studentMenuItems = [
   { path: '/student/leave', icon: <Calendar size={20} />, label: '请假记录' },
   { path: '/student/videos', icon: <Video size={20} />, label: '公开报告查看' },
   { path: '/student/surveys', icon: <ClipboardList size={20} />, label: '填表' },
+  { path: '/student/opinion-box', icon: <Mailbox size={20} />, label: '意见箱' },
 ];
+
+const StudentNavItem = ({
+  path,
+  icon,
+  label,
+  badge,
+}: {
+  path: string;
+  icon: React.ReactNode;
+  label: string;
+  badge?: number;
+}) => {
+  const location = useLocation();
+  const isActive =
+    location.pathname === path ||
+    (path !== "/student" && location.pathname.startsWith(path));
+
+  return (
+    <Link to={path} className="block">
+      <div
+        className={`student-glass-nav-item ${
+          isActive ? "student-glass-nav-item--active" : ""
+        }`}
+      >
+        <span
+          className={`transition-colors ${
+            isActive ? "text-purple-400" : "text-gray-500 group-hover:text-gray-400"
+          }`}
+        >
+          {icon}
+        </span>
+        <span className="text-sm font-medium flex-1">{label}</span>
+        {!!badge && badge > 0 && (
+          <span className="bg-amber-500 text-white text-xs font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 leading-none animate-pulse">
+            {badge > 99 ? "99+" : badge}
+          </span>
+        )}
+      </div>
+    </Link>
+  );
+};
 
 const StudentNav = () => {
   const { count } = useSurveyPending();
   return (
-  <nav className="flex-1 overflow-y-auto py-4 px-3">
+  <nav className="overflow-x-hidden py-4 px-3">
     {studentMenuItems.map((item) => (
-      <NavItem
+      <StudentNavItem
         key={item.path}
         path={item.path}
         icon={item.icon}
@@ -446,10 +481,9 @@ const StudentNav = () => {
         badge={item.path === '/student/surveys' ? count : undefined}
       />
     ))}
-    {/* Screen share - opens in new tab */}
-    <a href="#/screen-share" target="_blank" rel="noopener noreferrer" className="group block mb-1">
-      <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-all text-gray-400 hover:text-gray-200 hover:bg-gray-700/20">
-        <span className="text-gray-500 group-hover:text-gray-400 transition-colors"><Monitor size={20} /></span>
+    <a href="#/screen-share" target="_blank" rel="noopener noreferrer" className="block">
+      <div className="student-glass-nav-item">
+        <span className="text-gray-500"><Monitor size={20} /></span>
         <span className="text-sm font-medium">屏幕共享</span>
       </div>
     </a>
@@ -472,11 +506,11 @@ export const StudentSidebar = () => {
             exit="hidden"
             variants={{ hidden: { x: "-100%" }, visible: { x: 0 } }}
             transition={{ duration: 0.3, ease: "easeInOut" }}
-            className="md:hidden fixed inset-0 z-50 bg-gray-900 border-r border-gray-700/30 flex flex-col"
+            className="md:hidden fixed inset-0 z-50 student-glass-sidebar flex flex-col"
           >
             <StudentSidebarLogo />
             <StudentNav />
-            <div className="p-3 border-t border-gray-700/30">
+            <div className="p-3 border-t border-white/10">
               <p className="text-xs text-gray-500 text-center">紫夜战术公会 · 学员系统</p>
             </div>
           </motion.aside>
@@ -484,7 +518,7 @@ export const StudentSidebar = () => {
       </AnimatePresence>
 
       {/* Mobile top bar */}
-      <div className="md:hidden flex items-center justify-between px-4 h-14 bg-gray-800/50 border-b border-gray-700/30 fixed top-0 left-0 right-0 z-40">
+      <div className="md:hidden flex items-center justify-between px-4 h-14 student-glass-sidebar border-b border-white/10 fixed top-0 left-0 right-0 z-40">
         <div className="flex items-center gap-2">
           <img src="https://s21.ax1x.com/2024/12/08/pA72i5R.png" alt="紫夜队标" className="w-7 h-7 rounded-md" />
           <span className="text-white font-bold text-sm">学员中心</span>
@@ -492,11 +526,11 @@ export const StudentSidebar = () => {
         <AnimatedMenuToggle toggle={() => setIsOpen(!isOpen)} isOpen={isOpen} />
       </div>
 
-      {/* Desktop sidebar */}
-      <aside className="hidden md:flex flex-col w-64 bg-gray-800/30 backdrop-blur-xl border-r border-gray-700/30 fixed top-0 left-0 h-full">
+      {/* Desktop sidebar — 悬浮卡片，高度随内容 */}
+      <aside className="hidden md:flex flex-col w-60 student-glass-sidebar fixed z-40 top-3 left-3">
         <StudentSidebarLogo />
         <StudentNav />
-        <div className="p-3 border-t border-gray-700/30">
+        <div className="p-3 border-t border-white/10 shrink-0">
           <p className="text-xs text-gray-500 text-center">紫夜战术公会 · 学员系统</p>
         </div>
       </aside>

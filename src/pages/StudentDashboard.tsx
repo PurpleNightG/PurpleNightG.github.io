@@ -4,6 +4,7 @@ import { Routes, Route } from 'react-router-dom'
 import ProtectedRoute from '../components/ProtectedRoute'
 import { StudentSidebar } from '../components/ui/sidebar'
 import SurveyReminderBanner from '../components/SurveyReminderBanner'
+import { useStudentGlassPointer } from '../hooks/useStudentGlassPointer'
 import StudentProgress from './StudentProgress'
 import PublicVideos from './PublicVideos'
 import StudentApplyAssessment from './StudentApplyAssessment'
@@ -13,9 +14,11 @@ import StudentClassmates from './StudentClassmates'
 import StudentBlackPoints from './StudentBlackPoints'
 import StudentLeave from './StudentLeave'
 import StudentSurveys from './StudentSurveys'
+import StudentOpinionBox from './StudentOpinionBox'
 
 function StudentDashboardContent() {
   const [isMobile, setIsMobile] = useState(false)
+  const { onGlassPointerMove, resetGlassTilt } = useStudentGlassPointer()
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768)
@@ -48,12 +51,16 @@ function StudentDashboardContent() {
   }
 
   return (
-    <div className="flex h-screen bg-gradient-to-br from-gray-900 via-gray-900 to-purple-900">
+    <div
+      className="flex h-screen overflow-hidden bg-gradient-to-br from-gray-900 via-gray-900 to-purple-900"
+      onMouseMove={onGlassPointerMove}
+      onMouseLeave={resetGlassTilt}
+    >
       <StudentSidebar />
 
-      <main className="flex-1 md:ml-64 overflow-y-auto flex flex-col">
+      <main className="flex-1 min-h-0 md:ml-[17.25rem] overflow-y-auto overflow-x-hidden flex flex-col">
         <SurveyReminderBanner />
-        <div className="flex-1">
+        <div className="flex-1 w-full min-w-0">
           <Routes>
             <Route index element={<StudentHome />} />
             <Route path="progress" element={<StudentProgress />} />
@@ -64,6 +71,7 @@ function StudentDashboardContent() {
             <Route path="leave" element={<StudentLeave />} />
             <Route path="videos" element={<PublicVideos />} />
             <Route path="surveys" element={<StudentSurveys />} />
+            <Route path="opinion-box" element={<StudentOpinionBox />} />
           </Routes>
         </div>
       </main>

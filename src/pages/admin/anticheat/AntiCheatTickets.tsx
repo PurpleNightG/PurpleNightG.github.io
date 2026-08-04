@@ -112,7 +112,7 @@ export default function AntiCheatTickets() {
         </button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 bg-gray-800/40 border border-gray-700/50 rounded-xl p-4">
+      <div className="flex flex-wrap items-center gap-3 student-glass-chip p-4">
         <label className="text-sm text-gray-300 flex items-center gap-2">
           有效天数
           <input
@@ -150,9 +150,9 @@ export default function AntiCheatTickets() {
           <Loader2 className="animate-spin" />
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-700/50">
+        <div className="student-glass-panel student-glass-panel--static overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-gray-800/80 text-gray-300">
+            <thead className="bg-white/5 text-gray-300">
               <tr>
                 <th className="px-3 py-3 text-left w-10" />
                 <th className="px-3 py-3 text-left">准考证</th>

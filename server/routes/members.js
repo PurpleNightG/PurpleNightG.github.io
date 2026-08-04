@@ -1,5 +1,6 @@
 import express from 'express'
 import { pool } from '../config/database.js'
+import { ensurePhase3ReachedAt } from '../utils/attendanceReminder.js'
 import bcrypt from 'bcryptjs'
 import { toMySQLDate } from '../utils/date.js'
 
@@ -18,6 +19,7 @@ router.get('/', async (req, res) => {
         stage_role,
         status,
         last_training_date,
+        phase3_reached_at,
         remarks,
         created_at
       FROM members
@@ -211,6 +213,9 @@ router.post('/', async (req, res) => {
       status || '正常',
       toMySQLDate(last_training_date)
     ])
+
+    const newId = result.insertId
+    await ensurePhase3ReachedAt(pool, newId, stage_role || '未新训')
     
     res.json({
       success: true,
@@ -240,12 +245,13 @@ router.put('/:id', async (req, res) => {
       stage_role,
       status,
       last_training_date,
-      remarks
+      remarks,
+      phase3_reached_at,
     } = req.body
     
     // 检查成员是否存在
     const [existing] = await pool.query(
-      'SELECT id FROM members WHERE id = ?',
+      'SELECT id, stage_role FROM members WHERE id = ?',
       [id]
     )
     
@@ -255,30 +261,64 @@ router.put('/:id', async (req, res) => {
         message: '成员不存在'
       })
     }
+
+    const hasPhase3Field = Object.prototype.hasOwnProperty.call(req.body, 'phase3_reached_at')
     
     // 更新数据
-    await pool.query(`
-      UPDATE members SET
-        nickname = ?,
-        qq = ?,
-        game_id = ?,
-        join_date = ?,
-        stage_role = ?,
-        status = ?,
-        last_training_date = ?,
-        remarks = ?
-      WHERE id = ?
-    `, [
-      nickname,
-      qq,
-      game_id,
-      toMySQLDate(join_date),
-      stage_role,
-      status,
-      toMySQLDate(last_training_date),
-      remarks || null,
-      id
-    ])
+    if (hasPhase3Field) {
+      await pool.query(`
+        UPDATE members SET
+          nickname = ?,
+          qq = ?,
+          game_id = ?,
+          join_date = ?,
+          stage_role = ?,
+          status = ?,
+          last_training_date = ?,
+          remarks = ?,
+          phase3_reached_at = ?
+        WHERE id = ?
+      `, [
+        nickname,
+        qq,
+        game_id,
+        toMySQLDate(join_date),
+        stage_role,
+        status,
+        toMySQLDate(last_training_date),
+        remarks || null,
+        toMySQLDate(phase3_reached_at),
+        id
+      ])
+    } else {
+      await pool.query(`
+        UPDATE members SET
+          nickname = ?,
+          qq = ?,
+          game_id = ?,
+          join_date = ?,
+          stage_role = ?,
+          status = ?,
+          last_training_date = ?,
+          remarks = ?
+        WHERE id = ?
+      `, [
+        nickname,
+        qq,
+        game_id,
+        toMySQLDate(join_date),
+        stage_role,
+        status,
+        toMySQLDate(last_training_date),
+        remarks || null,
+        id
+      ])
+    }
+
+    // 阶段升到三期及以上时自动补首次达三期日；若本次已显式提交该字段则尊重管理员设置
+    if (stage_role && !hasPhase3Field) {
+      await ensurePhase3ReachedAt(pool, id, stage_role)
+    }
     
     res.json({
       success: true,
@@ -521,6 +561,7 @@ router.post('/sync-stage', async (req, res) => {
           'UPDATE members SET stage_role = ? WHERE id = ?',
           [newStage, member.id]
         )
+        await ensurePhase3ReachedAt(pool, member.id, newStage)
         updatedCount++
         updatedMemberIds.push(member.id)  // 记录被更新的成员ID
       } else {

@@ -171,9 +171,9 @@ export default function AntiCheatMonitor() {
           <Loader2 className="animate-spin" />
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-700/50">
+        <div className="student-glass-panel student-glass-panel--static overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-gray-800/80 text-gray-300">
+            <thead className="bg-white/5 text-gray-300">
               <tr>
                 <th className="px-3 py-3 w-10" />
                 <th className="px-3 py-3 text-left">学员</th>

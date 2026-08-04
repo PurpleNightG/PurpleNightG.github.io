@@ -67,7 +67,7 @@ export default function AssessmentGuidelines() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="p-6 w-full">
       {/* 页面标题 */}
       <div className="mb-6">
         <div className="flex items-center justify-between">
@@ -127,8 +127,8 @@ export default function AssessmentGuidelines() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* 左侧：编辑器 */}
-        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 overflow-hidden">
-          <div className="bg-gray-900/50 px-4 py-3 border-b border-gray-700">
+        <div className="student-glass-panel student-glass-panel--static overflow-hidden">
+          <div className="bg-white/5 px-4 py-3 border-b border-white/10">
             <h2 className="text-white font-semibold">Markdown 编辑器</h2>
             <p className="text-gray-400 text-sm mt-1">支持 Markdown 语法</p>
           </div>
@@ -143,8 +143,8 @@ export default function AssessmentGuidelines() {
 
         {/* 右侧：预览 */}
         {showPreview && (
-          <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 overflow-hidden">
-            <div className="bg-gray-900/50 px-4 py-3 border-b border-gray-700">
+          <div className="student-glass-panel student-glass-panel--static overflow-hidden">
+            <div className="bg-white/5 px-4 py-3 border-b border-white/10">
               <h2 className="text-white font-semibold">预览</h2>
               <p className="text-gray-400 text-sm mt-1">学员将看到的效果</p>
             </div>
@@ -163,14 +163,14 @@ export default function AssessmentGuidelines() {
 
       {/* 更新信息 */}
       {guidelines?.updated_at && (
-        <div className="mt-6 bg-gray-800/30 rounded-lg p-4 text-sm text-gray-400">
+        <div className="mt-6 student-glass-chip p-4 text-sm text-gray-400">
           最后更新：{formatDateTime(guidelines.updated_at)}
           {guidelines.updated_by && ` by ${guidelines.updated_by}`}
         </div>
       )}
 
       {/* Markdown 快速帮助 */}
-      <div className="mt-6 bg-gray-800/30 rounded-lg p-4">
+      <div className="mt-6 student-glass-chip p-4">
         <h3 className="text-white font-semibold mb-3">Markdown 快速参考</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
           <div>

@@ -144,7 +144,7 @@ export default function VideoUpload() {
       {/* 上传区域 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         {/* 本地上传 */}
-        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 p-6">
+        <div className="student-glass-panel student-glass-panel--static p-6">
           <div className="flex items-center gap-2 mb-4">
             <Upload className="text-purple-400" size={20} />
             <h2 className="text-white font-semibold">本地上传</h2>
@@ -185,7 +185,7 @@ export default function VideoUpload() {
         </div>
 
         {/* Google Drive 导入 */}
-        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 p-6">
+        <div className="student-glass-panel student-glass-panel--static p-6">
           <div className="flex items-center gap-2 mb-4">
             <Film className="text-blue-400" size={20} />
             <h2 className="text-white font-semibold">Google Drive 导入</h2>
@@ -196,7 +196,7 @@ export default function VideoUpload() {
             value={driveId}
             onChange={(e) => setDriveId(e.target.value)}
             placeholder="输入 Google Drive 文件 ID"
-            className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 mb-3 focus:outline-none focus:border-blue-500"
+            className="student-glass-field mb-3"
             disabled={importing}
           />
 
@@ -225,8 +225,8 @@ export default function VideoUpload() {
       </div>
 
       {/* 资源列表 */}
-      <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 overflow-hidden">
-        <div className="p-4 border-b border-gray-700 flex items-center justify-between">
+      <div className="student-glass-panel student-glass-panel--static overflow-hidden">
+        <div className="p-4 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Video className="text-purple-400" size={20} />
             <h2 className="text-white font-semibold">资源浏览</h2>
@@ -242,7 +242,7 @@ export default function VideoUpload() {
 
         {/* 面包屑导航 */}
         {(breadcrumbs.length > 0) && (
-          <div className="px-4 py-2 bg-gray-900/30 border-b border-gray-700 flex items-center gap-2 text-sm">
+          <div className="px-4 py-2 bg-white/5 border-b border-white/10 flex items-center gap-2 text-sm">
             <button
               onClick={() => handleBreadcrumbClick('')}
               className="text-gray-400 hover:text-white transition-colors flex items-center gap-1"
@@ -389,7 +389,7 @@ export default function VideoUpload() {
 
         {/* 分页 */}
         {!loading && totalPages > 1 && (
-          <div className="p-4 border-t border-gray-700 flex items-center justify-center gap-2">
+          <div className="p-4 border-t border-white/10 flex items-center justify-center gap-2">
             <button
               onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
               disabled={currentPage === 1}

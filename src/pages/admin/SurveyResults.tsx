@@ -63,7 +63,7 @@ function TextSamples({ samples }: { samples: string[] }) {
       {samples.map((text, i) => (
         <li
           key={`${i}-${text.slice(0, 24)}`}
-          className="rounded-lg border border-gray-700/40 bg-gray-950/50 px-3 py-2 text-sm text-gray-100 whitespace-pre-wrap break-words"
+          className="student-glass-chip px-3 py-2 text-sm text-gray-100 whitespace-pre-wrap break-words"
         >
           <span className="text-[10px] text-gray-500 mr-2">#{i + 1}</span>
           {text}
@@ -79,7 +79,7 @@ function StatCard({ st }: { st: any }) {
   const total = isText ? sampleCount : countTotal(st.counts)
   return (
     <div
-      className={`rounded-xl border border-gray-700/50 bg-gray-900/40 p-4 ${
+      className={`student-glass-panel student-glass-panel--static p-4 ${
         st.type === 'matrix' || isText ? 'md:col-span-2' : ''
       }`}
     >
@@ -465,7 +465,7 @@ export default function SurveyResults() {
       >
         {survey.is_satisfaction && (
           <aside className="xl:col-span-4 xl:sticky xl:top-4 space-y-4">
-            <section className="rounded-2xl border border-gray-700/60 bg-gray-800/40 p-5 space-y-4">
+            <section className="student-glass-panel student-glass-panel--static p-5 space-y-4">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                   <Users size={18} /> 满意度总览
@@ -567,14 +567,14 @@ export default function SurveyResults() {
                   <button
                     type="button"
                     onClick={expandAllGroups}
-                    className="px-2.5 py-1 rounded-lg bg-gray-800 text-gray-300 hover:text-white border border-gray-700"
+                    className="px-2.5 py-1 rounded-lg student-glass-chip text-gray-300 hover:text-white"
                   >
                     全部展开
                   </button>
                   <button
                     type="button"
                     onClick={collapseAllGroups}
-                    className="px-2.5 py-1 rounded-lg bg-gray-800 text-gray-300 hover:text-white border border-gray-700"
+                    className="px-2.5 py-1 rounded-lg student-glass-chip text-gray-300 hover:text-white"
                   >
                     全部折叠
                   </button>
@@ -594,12 +594,12 @@ export default function SurveyResults() {
                 return (
                   <div
                     key={group.key}
-                    className="rounded-2xl border border-gray-700/60 bg-gray-800/30 overflow-hidden"
+                    className="student-glass-panel student-glass-panel--static overflow-hidden"
                   >
                     <button
                       type="button"
                       onClick={() => toggleGroup(group.key)}
-                      className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-gray-900/50 hover:bg-gray-900/70 text-left transition-colors"
+                      className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-white/5 hover:bg-white/10 text-left transition-colors"
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         {collapsed ? (
@@ -681,7 +681,7 @@ export default function SurveyResults() {
                     for (const resp of data.responses || []) next[resp.id] = false
                     setCollapsedResponses(next)
                   }}
-                  className="px-2.5 py-1.5 rounded-lg bg-gray-800 text-gray-300 hover:text-white border border-gray-700"
+                  className="px-2.5 py-1.5 rounded-lg student-glass-chip text-gray-300 hover:text-white"
                 >
                   全部展开
                 </button>
@@ -692,7 +692,7 @@ export default function SurveyResults() {
                     for (const r of data.responses || []) next[r.id] = true
                     setCollapsedResponses(next)
                   }}
-                  className="px-2.5 py-1.5 rounded-lg bg-gray-800 text-gray-300 hover:text-white border border-gray-700"
+                  className="px-2.5 py-1.5 rounded-lg student-glass-chip text-gray-300 hover:text-white"
                 >
                   全部折叠
                 </button>
@@ -714,9 +714,9 @@ export default function SurveyResults() {
           return (
             <article
               key={r.id}
-              className="rounded-2xl border border-gray-700/60 bg-gray-800/30 overflow-hidden"
+              className="student-glass-panel student-glass-panel--static overflow-hidden"
             >
-              <div className="flex flex-wrap items-center gap-2 px-2 py-2 bg-gray-900/50 border-b border-gray-700/50">
+              <div className="flex flex-wrap items-center gap-2 px-2 py-2 bg-white/5 border-b border-white/10">
                 <button
                   type="button"
                   onClick={() =>
@@ -770,7 +770,7 @@ export default function SurveyResults() {
                     return (
                       <div
                         key={f.id}
-                        className={`rounded-xl border border-gray-700/40 bg-gray-900/40 p-3 ${
+                        className={`student-glass-chip p-3 ${
                           wide ? 'md:col-span-2 xl:col-span-3' : ''
                         } ${empty ? 'opacity-40' : ''}`}
                       >

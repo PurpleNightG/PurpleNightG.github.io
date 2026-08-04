@@ -5,7 +5,9 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const PORT = Number(process.env.FRONTEND_PORT || 3001)
-const DIST_DIR = path.join(__dirname, 'app', 'dist')
+const ROOT = __dirname
+const DIST_DIR = path.join(ROOT, 'app', 'dist')
+const DOCS_DIR = path.join(ROOT, 'app', 'docs')
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -38,14 +40,41 @@ function sendFile(filePath, response) {
       return
     }
 
-    response.writeHead(200, { 'Content-Type': type })
+    response.writeHead(200, {
+      'Content-Type': type,
+      'Cache-Control': 'no-store',
+    })
     response.end(data)
   })
+}
+
+function resolveDocsFile(urlPath) {
+  // /docs/xxx → prefer mutable app/docs, fallback app/dist/docs
+  const relative = urlPath.replace(/^\/docs\/?/, '')
+  const primary = path.join(DOCS_DIR, relative)
+  const fallback = path.join(DIST_DIR, 'docs', relative)
+
+  if (primary.startsWith(DOCS_DIR) && fs.existsSync(primary) && fs.statSync(primary).isFile()) {
+    return primary
+  }
+  if (fallback.startsWith(path.join(DIST_DIR, 'docs')) && fs.existsSync(fallback) && fs.statSync(fallback).isFile()) {
+    return fallback
+  }
+  return null
 }
 
 const server = http.createServer((request, response) => {
   const urlPath = decodeURIComponent(new URL(request.url, 'http://127.0.0.1').pathname)
   const safePath = path.normalize(urlPath).replace(/^(\.\.[/\\])+/, '')
+
+  if (safePath === '/docs' || safePath.startsWith('/docs/')) {
+    const docsFile = resolveDocsFile(safePath.endsWith('/') ? `${safePath}index.json` : safePath)
+    if (docsFile) {
+      sendFile(docsFile, response)
+      return
+    }
+  }
+
   let filePath = path.join(DIST_DIR, safePath)
 
   if (urlPath.endsWith('/')) {
@@ -67,11 +96,10 @@ const server = http.createServer((request, response) => {
     const indexPath = path.join(DIST_DIR, 'index.html')
     if (fs.existsSync(indexPath)) {
       sendFile(indexPath, response)
-      return
+    } else {
+      response.writeHead(404)
+      response.end('Not Found')
     }
-
-    response.writeHead(404)
-    response.end('Not Found')
   })
 })
 

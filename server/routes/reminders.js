@@ -1,94 +1,326 @@
 import express from 'express'
 import { pool } from '../config/database.js'
-import { TRAINING_STAGES, LEAVE_BUFFER_EXISTS, TRAINING_INACTIVITY_THRESHOLD_PER_MEMBER, DAYS_UNTIL_TIMEOUT_SQL, BUFFER_REMAINING_DAYS_SQL } from '../utils/reminderQuery.js'
+import { TRAINING_STAGES, TRAINING_WARN_DAYS } from '../utils/reminderQuery.js'
+import { computeAttendanceForMember, ATTENDANCE_WARN_DAYS } from '../utils/attendanceReminder.js'
+import { loadReminderConfig, queryTrainingReminders } from '../utils/trainingReminderList.js'
 
 const router = express.Router()
 
-// 获取催促名单（实时从成员表计算，含请假缓冲成员）
+async function ensureAttendanceOverrideTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS attendance_reminder_overrides (
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      member_id INT NOT NULL,
+      reason_code VARCHAR(32) NOT NULL COMMENT 'to_phase3|to_formal|formal_idle',
+      custom_deadline_days INT NOT NULL COMMENT '绝对期限天数（已过+希望还剩）',
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_member_reason (member_id, reason_code),
+      INDEX idx_aro_member (member_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `)
+}
+
+async function loadAttendanceContext() {
+  const [members] = await pool.query(`
+    SELECT
+      m.id, m.nickname, m.qq, m.stage_role, m.status,
+      m.join_date, m.last_training_date, m.phase3_reached_at,
+      CASE WHEN ret.id IS NOT NULL THEN 1 ELSE 0 END AS in_retention
+    FROM members m
+    LEFT JOIN retention_records ret ON m.id = ret.member_id
+    WHERE m.status != '已退队'
+  `)
+
+  const [leaves] = await pool.query(`
+    SELECT member_id, start_date, end_date, status
+    FROM leave_records
+    WHERE status IN ('请假中', '待结束审批', '已结束')
+  `)
+
+  const leaveMap = new Map()
+  for (const row of leaves) {
+    if (!leaveMap.has(row.member_id)) leaveMap.set(row.member_id, [])
+    leaveMap.get(row.member_id).push(row)
+  }
+
+  const [ignores] = await pool.query('SELECT member_id FROM attendance_reminder_ignores')
+  const ignoreSet = new Set(ignores.map(r => r.member_id))
+
+  let overrideMap = new Map()
+  try {
+    await ensureAttendanceOverrideTable()
+    const [overrides] = await pool.query(
+      'SELECT member_id, reason_code, custom_deadline_days FROM attendance_reminder_overrides'
+    )
+    for (const row of overrides) {
+      if (!overrideMap.has(row.member_id)) overrideMap.set(row.member_id, {})
+      overrideMap.get(row.member_id)[row.reason_code] = Number(row.custom_deadline_days)
+    }
+  } catch (e) {
+    console.error('[reminders] load attendance overrides', e.message)
+    overrideMap = new Map()
+  }
+
+  return { members, leaveMap, ignoreSet, overrideMap }
+}
+
+function buildAttendanceList(ctx, { showAll = false, memberId = null } = {}) {
+  const { members, leaveMap, ignoreSet, overrideMap } = ctx
+  const list = []
+  for (const m of members) {
+    if (memberId != null && m.id !== memberId) continue
+    const item = computeAttendanceForMember(
+      m,
+      leaveMap.get(m.id) || [],
+      {
+        ignored: ignoreSet.has(m.id),
+        inRetention: !!m.in_retention,
+        showAll: showAll || memberId != null,
+        overrides: overrideMap.get(m.id) || {},
+      }
+    )
+    if (item) list.push(item)
+  }
+  list.sort((a, b) => a.remaining_days - b.remaining_days)
+  return list
+}
+
+// 考勤催促名单
+router.get('/attendance', async (req, res) => {
+  try {
+    const showAll = req.query.showAll === '1' || req.query.showAll === 'true'
+    const ctx = await loadAttendanceContext()
+    const data = buildAttendanceList(ctx, { showAll })
+    res.json({
+      success: true,
+      data,
+      meta: { showAll, warnDays: ATTENDANCE_WARN_DAYS, total: data.length },
+    })
+  } catch (error) {
+    console.error('获取考勤催促失败:', error)
+    res.status(500).json({ success: false, message: '获取考勤催促失败' })
+  }
+})
+
+// 学员端：自己的考勤倒计时
+router.get('/attendance/me/:memberId', async (req, res) => {
+  try {
+    const memberId = parseInt(req.params.memberId, 10)
+    if (!memberId) {
+      return res.status(400).json({ success: false, message: '无效的成员ID' })
+    }
+    const ctx = await loadAttendanceContext()
+    const data = buildAttendanceList(ctx, { showAll: true, memberId })
+    res.json({ success: true, data: data[0] || null })
+  } catch (error) {
+    console.error('获取学员考勤催促失败:', error)
+    res.status(500).json({ success: false, message: '获取考勤催促失败' })
+  }
+})
+
+// 学员端：是否出现在管理端「训练催促」名单（按倒计时预警规则，含自定义延期）
+router.get('/training/me/:memberId', async (req, res) => {
+  try {
+    const memberId = parseInt(req.params.memberId, 10)
+    if (!memberId) {
+      return res.status(400).json({ success: false, message: '无效的成员ID' })
+    }
+    const cfg = await loadReminderConfig()
+    // 学员始终按倒计时预警判断，避免踢人周期非提醒日看不到自己已被催促
+    const rows = await queryTrainingReminders(cfg.defaultTimeoutDays, TRAINING_WARN_DAYS)
+    const item = rows.find(r => Number(r.member_id) === memberId || Number(r.id) === memberId) || null
+    res.json({
+      success: true,
+      data: item,
+      meta: {
+        timeoutDays: cfg.defaultTimeoutDays,
+        warnDays: TRAINING_WARN_DAYS,
+      },
+    })
+  } catch (error) {
+    console.error('获取学员训练催促失败:', error)
+    res.status(500).json({ success: false, message: '获取训练催促失败' })
+  }
+})
+
+// 忽略某人的考勤倒计时
+router.post('/attendance/ignore/:memberId', async (req, res) => {
+  try {
+    const memberId = parseInt(req.params.memberId, 10)
+    const ignoredBy = req.body?.ignored_by || null
+    await pool.query(
+      `INSERT INTO attendance_reminder_ignores (member_id, ignored_by)
+       VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE ignored_by = VALUES(ignored_by), ignored_at = CURRENT_TIMESTAMP`,
+      [memberId, ignoredBy]
+    )
+    res.json({ success: true, message: '已忽略该成员的考勤倒计时' })
+  } catch (error) {
+    console.error('忽略考勤催促失败:', error)
+    res.status(500).json({ success: false, message: '忽略失败' })
+  }
+})
+
+// 取消忽略
+router.delete('/attendance/ignore/:memberId', async (req, res) => {
+  try {
+    const memberId = parseInt(req.params.memberId, 10)
+    await pool.query('DELETE FROM attendance_reminder_ignores WHERE member_id = ?', [memberId])
+    res.json({ success: true, message: '已恢复该成员的考勤倒计时' })
+  } catch (error) {
+    console.error('取消忽略考勤催促失败:', error)
+    res.status(500).json({ success: false, message: '取消忽略失败' })
+  }
+})
+
+/**
+ * 批量设置考勤「希望还剩几天」
+ * body: { member_ids: number[], remaining_days: number | null }
+ */
+router.put('/attendance/batch/timeout', async (req, res) => {
+  try {
+    await ensureAttendanceOverrideTable()
+    const memberIds = Array.isArray(req.body?.member_ids)
+      ? req.body.member_ids.map((id) => Number(id)).filter((id) => id > 0)
+      : []
+    if (!memberIds.length) {
+      return res.status(400).json({ success: false, message: '请选择成员' })
+    }
+
+    const remainingRaw = req.body?.remaining_days
+    const clear = remainingRaw === null || remainingRaw === '' || typeof remainingRaw === 'undefined'
+    const remainingDays = clear ? null : Math.max(0, parseInt(remainingRaw, 10) || 0)
+
+    if (clear) {
+      await pool.query(
+        `DELETE FROM attendance_reminder_overrides WHERE member_id IN (${memberIds.map(() => '?').join(',')})`,
+        memberIds
+      )
+      return res.json({ success: true, message: `已为 ${memberIds.length} 人恢复默认考勤期限` })
+    }
+
+    const ctx = await loadAttendanceContext()
+    let updated = 0
+    for (const mid of memberIds) {
+      const member = ctx.members.find((m) => m.id === mid)
+      if (!member) continue
+      const item = computeAttendanceForMember(member, ctx.leaveMap.get(mid) || [], {
+        ignored: false,
+        inRetention: !!member.in_retention,
+        showAll: true,
+        overrides: {},
+      })
+      if (!item) continue
+      const customDeadline = Math.max(1, item.elapsed_days + remainingDays)
+      await pool.query(
+        `INSERT INTO attendance_reminder_overrides (member_id, reason_code, custom_deadline_days)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE custom_deadline_days = VALUES(custom_deadline_days)`,
+        [mid, item.reason_code, customDeadline]
+      )
+      updated++
+    }
+
+    res.json({
+      success: true,
+      message: `已为 ${updated} 人设置还剩 ${remainingDays} 天`,
+      data: { updated },
+    })
+  } catch (error) {
+    console.error('批量设置考勤还剩天数失败:', error)
+    res.status(500).json({ success: false, message: '批量设置失败' })
+  }
+})
+
+/** 单个成员设置考勤还剩天数 body: { remaining_days: number | null, reason_code?: string } */
+router.put('/attendance/:memberId/timeout', async (req, res) => {
+  try {
+    await ensureAttendanceOverrideTable()
+    const memberId = parseInt(req.params.memberId, 10)
+    if (!memberId) {
+      return res.status(400).json({ success: false, message: '无效成员' })
+    }
+
+    const remainingRaw = req.body?.remaining_days
+    const clear = remainingRaw === null || remainingRaw === '' || typeof remainingRaw === 'undefined'
+
+    if (clear) {
+      await pool.query('DELETE FROM attendance_reminder_overrides WHERE member_id = ?', [memberId])
+      return res.json({ success: true, message: '已恢复默认考勤期限' })
+    }
+
+    const remainingDays = Math.max(0, parseInt(remainingRaw, 10) || 0)
+    const ctx = await loadAttendanceContext()
+    const member = ctx.members.find((m) => m.id === memberId)
+    if (!member) {
+      return res.status(404).json({ success: false, message: '成员不存在' })
+    }
+    const item = computeAttendanceForMember(member, ctx.leaveMap.get(memberId) || [], {
+      ignored: false,
+      inRetention: !!member.in_retention,
+      showAll: true,
+      overrides: {},
+    })
+    if (!item) {
+      return res.status(400).json({ success: false, message: '该成员当前无考勤计时' })
+    }
+    const reasonCode = String(req.body?.reason_code || item.reason_code)
+    const clock = item.reasons.find((r) => r.reason_code === reasonCode) || item
+    const customDeadline = Math.max(1, Number(clock.elapsed_days) + remainingDays)
+    await pool.query(
+      `INSERT INTO attendance_reminder_overrides (member_id, reason_code, custom_deadline_days)
+       VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE custom_deadline_days = VALUES(custom_deadline_days)`,
+      [memberId, reasonCode, customDeadline]
+    )
+    res.json({
+      success: true,
+      message: `已设置还剩 ${remainingDays} 天`,
+      data: { custom_deadline_days: customDeadline, reason_code: reasonCode },
+    })
+  } catch (error) {
+    console.error('设置考勤还剩天数失败:', error)
+    res.status(500).json({ success: false, message: '设置失败' })
+  }
+})
+
+// 获取催促名单（实时从成员表计算）
+// ?mode=remaining|kick_cycle 可覆盖系统默认显示模式
 router.get('/', async (req, res) => {
   try {
-    const [settingRows] = await pool.query(
-      'SELECT setting_value FROM system_settings WHERE setting_key = ?',
-      ['reminder_timeout_days']
-    )
-    const defaultTimeoutDays = settingRows.length > 0
-      ? parseInt(settingRows[0].setting_value)
-      : 7
+    const cfg = await loadReminderConfig()
+    const mode = req.query.mode === 'kick_cycle' || req.query.mode === 'remaining'
+      ? req.query.mode
+      : cfg.displayMode
 
-    const stagePlaceholders = TRAINING_STAGES.map(() => '?').join(', ')
+    let rows = []
+    let warnDays = TRAINING_WARN_DAYS
+    let kickMeta = null
 
-    const [rows] = await pool.query(`
-      SELECT * FROM (
-        SELECT
-          m.id AS id,
-          m.id AS member_id,
-          m.nickname AS member_name,
-          m.qq,
-          m.stage_role,
-          m.last_training_date,
-          CASE
-            WHEN m.last_training_date IS NOT NULL THEN DATEDIFF(CURDATE(), m.last_training_date)
-            ELSE DATEDIFF(CURDATE(), m.join_date)
-          END AS days_without_training,
-          rl.custom_timeout_days,
-          ${BUFFER_REMAINING_DAYS_SQL} AS days_until_timeout,
-          1 AS is_leave_buffer,
-          ${BUFFER_REMAINING_DAYS_SQL} AS buffer_remaining_days
-        FROM members m
-        INNER JOIN leave_records lr ON lr.id = (
-          SELECT id FROM leave_records
-          WHERE member_id = m.id
-            AND status = '已结束'
-            AND buffer_start_date IS NOT NULL
-            AND DATEDIFF(CURDATE(), buffer_start_date) < 7
-          ORDER BY buffer_start_date DESC
-          LIMIT 1
-        )
-        LEFT JOIN reminder_list rl ON m.id = rl.member_id
-        LEFT JOIN retention_records ret ON m.id = ret.member_id
-        WHERE m.status NOT IN ('已退队', '请假中', '其他')
-          AND m.stage_role IN (${stagePlaceholders})
-          AND ret.id IS NULL
-          AND ${TRAINING_INACTIVITY_THRESHOLD_PER_MEMBER}
+    if (mode === 'kick_cycle') {
+      kickMeta = cfg.kickInfo
+      if (cfg.kickInfo.inWindow) {
+        // 只显示「在本轮踢人日或之前就会超期」的人 = 还剩天数 ≤ 距踢人日天数
+        warnDays = cfg.kickInfo.daysUntilKick
+        rows = await queryTrainingReminders(cfg.defaultTimeoutDays, warnDays)
+      }
+      // 非提醒窗口：名单为空（例如周二～周四）
+    } else {
+      warnDays = TRAINING_WARN_DAYS
+      rows = await queryTrainingReminders(cfg.defaultTimeoutDays, warnDays)
+    }
 
-        UNION ALL
-
-        SELECT
-          m.id AS id,
-          m.id AS member_id,
-          m.nickname AS member_name,
-          m.qq,
-          m.stage_role,
-          m.last_training_date,
-          CASE
-            WHEN m.last_training_date IS NOT NULL THEN DATEDIFF(CURDATE(), m.last_training_date)
-            ELSE DATEDIFF(CURDATE(), m.join_date)
-          END AS days_without_training,
-          rl.custom_timeout_days,
-          ${DAYS_UNTIL_TIMEOUT_SQL} AS days_until_timeout,
-          0 AS is_leave_buffer,
-          NULL AS buffer_remaining_days
-        FROM members m
-        LEFT JOIN reminder_list rl ON m.id = rl.member_id
-        LEFT JOIN retention_records ret ON m.id = ret.member_id
-        WHERE m.status NOT IN ('已退队', '请假中', '其他')
-          AND m.stage_role IN (${stagePlaceholders})
-          AND ${TRAINING_INACTIVITY_THRESHOLD_PER_MEMBER}
-          AND ret.id IS NULL
-          AND NOT EXISTS (${LEAVE_BUFFER_EXISTS})
-      ) combined
-      ORDER BY is_leave_buffer DESC, days_without_training DESC
-    `, [
-      ...TRAINING_STAGES,
-      defaultTimeoutDays,
-      defaultTimeoutDays,
-      defaultTimeoutDays,
-      ...TRAINING_STAGES,
-      defaultTimeoutDays,
-      defaultTimeoutDays,
-    ])
-
-    res.json({ success: true, data: rows })
+    res.json({
+      success: true,
+      data: rows,
+      meta: {
+        mode,
+        timeoutDays: cfg.defaultTimeoutDays,
+        warnDays,
+        today: cfg.todayIso,
+        kick: kickMeta,
+      },
+    })
   } catch (error) {
     console.error('获取催促名单失败:', error)
     res.status(500).json({ success: false, message: '获取催促名单失败' })
@@ -129,8 +361,8 @@ router.post('/auto-update', async (req, res) => {
       WHERE m.status NOT IN ('已退队', '请假中', '其他')
         AND m.stage_role IN (?, ?, ?, ?, ?, ?)
         AND (
-          (m.last_training_date IS NOT NULL AND DATEDIFF(CURDATE(), m.last_training_date) >= GREATEST(? - 7, 0))
-          OR (m.last_training_date IS NULL AND m.join_date IS NOT NULL AND DATEDIFF(CURDATE(), m.join_date) >= GREATEST(? - 7, 0))
+          (m.last_training_date IS NOT NULL AND DATEDIFF(CURDATE(), m.last_training_date) >= GREATEST(? - 3, 0))
+          OR (m.last_training_date IS NULL AND m.join_date IS NOT NULL AND DATEDIFF(CURDATE(), m.join_date) >= GREATEST(? - 3, 0))
         )
         AND r.id IS NULL
     `, [...trainingStages, timeoutDays, timeoutDays])

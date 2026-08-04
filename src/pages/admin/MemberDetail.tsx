@@ -1,11 +1,19 @@
 import { useState, useEffect } from 'react'
-import { X, Calendar, AlertCircle, UserMinus, LogOut, Save, Key, Loader2 } from 'lucide-react'
+import { X, Calendar, AlertCircle, UserMinus, Save, Key, Loader2, Pencil } from 'lucide-react'
 import { memberAPI, blackPointAPI, leaveAPI, quitAPI, retentionAPI } from '../../utils/api'
 import { formatDate, formatDateTime, toInputDate, formatDateForDB, getTodayDateString } from '../../utils/dateFormat'
 import { getRoleColor } from '../../utils/roleColors'
 import { toast } from '../../utils/toast'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import DateInput from '../../components/DateInput'
+import StyledSelect from '../../components/StyledSelect'
+
+const MEMBER_STAGE_ROLES = [
+  '未新训', '新训初期', '新训一期', '新训二期', '新训三期', '新训准考',
+  '紫夜', '紫夜尖兵', '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师',
+]
+
+const MEMBER_EDIT_STATUSES = ['正常', '其他']
 
 interface MemberDetailProps {
   memberId: number
@@ -73,6 +81,7 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
         ...memberRes.data,
         join_date: toInputDate(memberRes.data.join_date),
         last_training_date: toInputDate(memberRes.data.last_training_date),
+        phase3_reached_at: toInputDate(memberRes.data.phase3_reached_at),
       })
       setRemarks(memberRes.data.remarks || '')
 
@@ -109,6 +118,7 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
         stage_role: editedMember.stage_role,
         status: editedMember.status,
         last_training_date: formatDateForDB(editedMember.last_training_date),
+        phase3_reached_at: formatDateForDB(editedMember.phase3_reached_at),
         remarks: remarks || null
       })
       toast.success('保存成功')
@@ -279,9 +289,14 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
 
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-        <div className="bg-gray-800 rounded-xl p-8">
-          <div className="text-white">加载中...</div>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+        <div className="relative z-10 glass-modal-frame w-full max-w-sm">
+          <div className="glass-modal-tilt">
+            <div className="student-glass-panel student-glass-panel--static student-glass-modal p-8">
+              <div className="text-white">加载中...</div>
+            </div>
+          </div>
         </div>
       </div>
     )
@@ -290,21 +305,61 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
   if (!member) return null
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-900 rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-gray-700 modal-scrollbar">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+      <div className="relative z-10 glass-modal-frame w-full max-w-4xl">
+        <div className="glass-modal-tilt">
+        <div className="student-glass-panel student-glass-panel--static student-glass-modal w-full max-h-[90vh] flex flex-col">
         {/* 头部 */}
-        <div className="sticky top-0 bg-gray-900 border-b border-gray-700 px-6 py-4 flex justify-between items-center">
-          <h2 className="text-xl font-bold text-white">成员详细信息</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors"
-          >
-            <X size={24} />
-          </button>
+        <div className="shrink-0 border-b border-white/10 px-6 py-4 flex justify-between items-center bg-white/[0.04]">
+          <h2 className="text-xl font-bold text-white min-w-0 truncate pr-3">成员详细信息</h2>
+          <div className="flex items-center gap-2 shrink-0">
+            {!isEditing ? (
+              <button
+                onClick={() => setIsEditing(true)}
+                className="student-glass-chip inline-flex items-center gap-1.5 shrink-0 whitespace-nowrap px-3 py-1.5 text-sm text-blue-200 hover:text-white"
+              >
+                <Pencil size={14} className="shrink-0" />
+                <span>编辑</span>
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={() => {
+                    setIsEditing(false)
+                    setEditedMember({
+                      ...member,
+                      join_date: toInputDate(member.join_date),
+                      last_training_date: toInputDate(member.last_training_date),
+                      phase3_reached_at: toInputDate(member.phase3_reached_at),
+                    })
+                    setRemarks(member.remarks || '')
+                  }}
+                  className="student-glass-chip inline-flex items-center shrink-0 whitespace-nowrap px-3 py-1.5 text-sm text-gray-300 hover:text-white"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="student-glass-chip inline-flex items-center gap-1.5 shrink-0 whitespace-nowrap px-3 py-1.5 text-sm text-purple-200 hover:text-white border-purple-400/35 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {saving ? <Loader2 size={14} className="animate-spin shrink-0" /> : <Save size={14} className="shrink-0" />}
+                  <span>{saving ? '保存中...' : '保存'}</span>
+                </button>
+              </>
+            )}
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-white transition-colors p-1 shrink-0"
+            >
+              <X size={22} />
+            </button>
+          </div>
         </div>
 
         {/* 内容 */}
-        <div className="p-6 space-y-6">
+        <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6 sidebar-scrollbar">
           {/* 基本信息 */}
           <section>
             <h3 className="text-lg font-semibold text-white mb-4 border-b border-gray-700 pb-2">基本信息</h3>
@@ -316,7 +371,7 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
                     type="text"
                     value={editedMember.nickname || ''}
                     onChange={(e) => setEditedMember({...editedMember, nickname: e.target.value})}
-                    className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
+                    className="student-glass-field text-sm py-1.5"
                   />
                 ) : (
                   <span className="text-white">{member.nickname}</span>
@@ -329,7 +384,7 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
                     type="text"
                     value={editedMember.qq || ''}
                     onChange={(e) => setEditedMember({...editedMember, qq: e.target.value})}
-                    className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
+                    className="student-glass-field text-sm py-1.5"
                   />
                 ) : (
                   <span className="text-white">{member.qq}</span>
@@ -342,7 +397,7 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
                     type="text"
                     value={editedMember.game_id || ''}
                     onChange={(e) => setEditedMember({...editedMember, game_id: e.target.value})}
-                    className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
+                    className="student-glass-field text-sm py-1.5"
                   />
                 ) : (
                   <span className="text-white">{member.game_id || '-'}</span>
@@ -351,29 +406,15 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
               <div>
                 <label className="text-gray-400 text-sm block mb-1">阶段&角色：</label>
                 {isEditing ? (
-                  <select
+                  <StyledSelect
+                    size="sm"
+                    searchable
+                    options={MEMBER_STAGE_ROLES}
                     value={editedMember.stage_role || ''}
-                    onChange={(e) => setEditedMember({...editedMember, stage_role: e.target.value})}
-                    className="w-full bg-gray-700 border border-gray-600 rounded pl-2 pr-8 py-1 text-white text-sm"
-                  >
-                    <option value="未新训">未新训</option>
-                    <option value="新训初期">新训初期</option>
-                    <option value="新训一期">新训一期</option>
-                    <option value="新训二期">新训二期</option>
-                    <option value="新训三期">新训三期</option>
-                    <option value="新训准考">新训准考</option>
-                    <option value="紫夜">紫夜</option>
-                    <option value="紫夜尖兵">紫夜尖兵</option>
-                    <option value="会长">会长</option>
-                    <option value="执行官">执行官</option>
-                    <option value="人事">人事</option>
-                    <option value="总教">总教</option>
-                    <option value="尖兵教官">尖兵教官</option>
-                    <option value="教官">教官</option>
-                    <option value="工程师">工程师</option>
-                  </select>
+                    onChange={(value) => setEditedMember({...editedMember, stage_role: value})}
+                  />
                 ) : (
-                  <span className={`px-2 py-1 rounded text-xs ${getRoleColor(member.stage_role)}`}>
+                  <span className={`student-glass-badge ${getRoleColor(member.stage_role)}`}>
                     {member.stage_role}
                   </span>
                 )}
@@ -381,11 +422,10 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
               <div>
                 <label className="text-gray-400 text-sm block mb-1">加入时间：</label>
                 {isEditing ? (
-                  <input
-                    type="date"
+                  <DateInput
+                    size="sm"
                     value={toInputDate(editedMember.join_date)}
-                    onChange={(e) => setEditedMember({...editedMember, join_date: e.target.value})}
-                    className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
+                    onChange={(value) => setEditedMember({...editedMember, join_date: value})}
                   />
                 ) : (
                   <span className="text-white">{formatDate(member.join_date)}</span>
@@ -394,27 +434,63 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
               <div>
                 <label className="text-gray-400 text-sm block mb-1">最后新训日期：</label>
                 {isEditing ? (
-                  <input
-                    type="date"
+                  <DateInput
+                    size="sm"
                     value={toInputDate(editedMember.last_training_date)}
-                    onChange={(e) => setEditedMember({...editedMember, last_training_date: e.target.value})}
-                    className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
+                    onChange={(value) => setEditedMember({...editedMember, last_training_date: value})}
                   />
                 ) : (
                   <span className="text-white">{formatDate(member.last_training_date)}</span>
                 )}
               </div>
               <div>
+                <label className="text-gray-400 text-sm block mb-1">首次达三期日期：</label>
+                {isEditing ? (
+                  <div>
+                    <DateInput
+                      size="sm"
+                      value={toInputDate(editedMember.phase3_reached_at)}
+                      onChange={(value) => setEditedMember({...editedMember, phase3_reached_at: value})}
+                    />
+                    <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
+                      考勤「达三期后转正」从此日起算；清空则回退用加入日。下调阶段不会自动清除。
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setEditedMember({
+                        ...editedMember,
+                        phase3_reached_at: getTodayDateString(),
+                      })}
+                      className="mt-1.5 text-xs text-purple-300 hover:text-purple-200"
+                    >
+                      设为今天
+                    </button>
+                    {editedMember.phase3_reached_at && (
+                      <button
+                        type="button"
+                        onClick={() => setEditedMember({
+                          ...editedMember,
+                          phase3_reached_at: '',
+                        })}
+                        className="mt-1.5 ml-3 text-xs text-gray-400 hover:text-gray-200"
+                      >
+                        清空
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <span className="text-white">{formatDate(member.phase3_reached_at)}</span>
+                )}
+              </div>
+              <div>
                 <label className="text-gray-400 text-sm block mb-1">状态：</label>
                 {isEditing ? (
-                  <select
-                    value={editedMember.status || ''}
-                    onChange={(e) => setEditedMember({...editedMember, status: e.target.value})}
-                    className="w-full bg-gray-700 border border-gray-600 rounded pl-2 pr-8 py-1 text-white text-sm"
-                  >
-                    <option value="正常">正常</option>
-                    <option value="其他">其他</option>
-                  </select>
+                  <StyledSelect
+                    size="sm"
+                    options={MEMBER_EDIT_STATUSES}
+                    value={editedMember.status || '正常'}
+                    onChange={(value) => setEditedMember({...editedMember, status: value})}
+                  />
                 ) : (
                   <span className={`px-2 py-1 rounded text-xs ${
                     member.status === '正常' ? 'bg-green-600/20 text-green-300' :
@@ -463,7 +539,7 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
               onFocus={() => setIsEditing(true)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white h-24"
+              className="student-glass-field h-24"
               placeholder="可在此添加备注信息..."
             />
           </section>
@@ -474,7 +550,7 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
             {blackPoints.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-gray-800/50">
+                  <thead className="bg-white/5">
                     <tr>
                       <th className="px-4 py-2 text-left text-sm font-semibold text-gray-300">时间</th>
                       <th className="px-4 py-2 text-left text-sm font-semibold text-gray-300">原因</th>
@@ -509,7 +585,7 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
             {leaveRecords.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-gray-800/50">
+                  <thead className="bg-white/5">
                     <tr>
                       <th className="px-4 py-2 text-left text-sm font-semibold text-gray-300">开始日期</th>
                       <th className="px-4 py-2 text-left text-sm font-semibold text-gray-300">结束日期</th>
@@ -549,35 +625,35 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               <button
                 onClick={handleSetTodayTraining}
-                className="flex items-center justify-center space-x-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg transition-colors"
+                className="flex items-center justify-center space-x-2 px-4 py-2 student-glass-chip transition-colors"
               >
                 <Calendar size={16} className="text-blue-400" />
                 <span className="text-gray-300 text-sm">设为今日新训</span>
               </button>
               <button
                 onClick={handleAddBlackPoint}
-                className="flex items-center justify-center space-x-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg transition-colors"
+                className="flex items-center justify-center space-x-2 px-4 py-2 student-glass-chip transition-colors"
               >
                 <AlertCircle size={16} className="text-red-400" />
                 <span className="text-gray-300 text-sm">添加黑点</span>
               </button>
               <button
                 onClick={handleAddLeave}
-                className="flex items-center justify-center space-x-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg transition-colors"
+                className="flex items-center justify-center space-x-2 px-4 py-2 student-glass-chip transition-colors"
               >
                 <Calendar size={16} className="text-yellow-400" />
                 <span className="text-gray-300 text-sm">登记请假</span>
               </button>
               <button
                 onClick={handleQuit}
-                className="flex items-center justify-center space-x-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg transition-colors"
+                className="flex items-center justify-center space-x-2 px-4 py-2 student-glass-chip transition-colors"
               >
                 <UserMinus size={16} className="text-orange-400" />
                 <span className="text-gray-300 text-sm">退队处理</span>
               </button>
               <button
                 onClick={() => setShowResetPasswordConfirm(true)}
-                className="flex items-center justify-center space-x-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg transition-colors"
+                className="flex items-center justify-center space-x-2 px-4 py-2 student-glass-chip transition-colors"
               >
                 <Key size={16} className="text-purple-400" />
                 <span className="text-gray-300 text-sm">重置密码</span>
@@ -585,49 +661,7 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
             </div>
           </section>
         </div>
-
-        {/* 底部操作按钮 */}
-        <div className="sticky bottom-0 bg-gray-900 border-t border-gray-700 px-6 py-4 flex justify-end space-x-3">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors flex items-center space-x-2"
-          >
-            <LogOut size={16} />
-            <span>关闭</span>
-          </button>
-          {!isEditing ? (
-            <button
-              onClick={() => setIsEditing(true)}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center space-x-2"
-            >
-              <Save size={16} />
-              <span>编辑信息</span>
-            </button>
-          ) : (
-            <>
-              <button
-                onClick={() => {
-                  setIsEditing(false)
-                  setEditedMember({
-                    ...member,
-                    join_date: toInputDate(member.join_date),
-                    last_training_date: toInputDate(member.last_training_date),
-                  })
-                }}
-                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
-              >
-                {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                <span>{saving ? '保存中...' : '保存'}</span>
-              </button>
-            </>
-          )}
+        </div>
         </div>
       </div>
 
@@ -646,8 +680,11 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
 
       {/* 添加黑点模态框 */}
       {showBlackPointModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60]">
-          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-md">
+            <div className="glass-modal-tilt">
+            <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
             <h2 className="text-xl font-bold text-white mb-4">添加黑点</h2>
             
             <form onSubmit={submitBlackPoint} className="space-y-4">
@@ -656,7 +693,7 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
                 <textarea
                   value={blackPointForm.reason}
                   onChange={(e) => setBlackPointForm({...blackPointForm, reason: e.target.value})}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white h-24"
+                  className="student-glass-field h-24"
                   placeholder="请填写黑点原因"
                   required
                 />
@@ -687,14 +724,19 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
                 </button>
               </div>
             </form>
+            </div>
+            </div>
           </div>
         </div>
       )}
 
       {/* 登记请假模态框 */}
       {showLeaveModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60]">
-          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-md">
+            <div className="glass-modal-tilt">
+            <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
             <h2 className="text-xl font-bold text-white mb-4">登记请假</h2>
             
             <form onSubmit={submitLeave} className="space-y-4">
@@ -703,7 +745,7 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
                 <textarea
                   value={leaveForm.reason}
                   onChange={(e) => setLeaveForm({...leaveForm, reason: e.target.value})}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white h-24"
+                  className="student-glass-field h-24"
                   placeholder="可选填写"
                 />
               </div>
@@ -742,6 +784,8 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
                 </button>
               </div>
             </form>
+            </div>
+            </div>
           </div>
         </div>
       )}

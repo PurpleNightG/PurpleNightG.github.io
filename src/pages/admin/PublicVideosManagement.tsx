@@ -3,6 +3,7 @@ import { publicVideoAPI } from '../../utils/api'
 import { toast } from 'react-hot-toast'
 import { Plus, Trash2, Edit, Search, X, CheckSquare, Square, ChevronUp, ChevronDown, FileText, Eye, Loader2 } from 'lucide-react'
 import ConfirmDialog from '../../components/ConfirmDialog'
+import DateInput from '../../components/DateInput'
 import { formatDate, toInputDate } from '../../utils/dateFormat'
 import PublicAssessmentReportDetail, { normalizePublicAssessment, PublicAssessment } from '../../components/PublicAssessmentReportDetail'
 import FullscreenReportModal from '../../components/FullscreenReportModal'
@@ -288,7 +289,7 @@ export default function PublicVideosManagement() {
         </div>
       )}
 
-      <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 overflow-hidden">
+      <div className="student-glass-panel student-glass-panel--static overflow-hidden">
         {filteredVideos.length === 0 ? (
           <div className="p-12 text-center text-gray-400">
             <p>暂无公开内容</p>
@@ -409,9 +410,12 @@ export default function PublicVideosManagement() {
 
       {/* 添加/编辑模态框 */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-gray-800 px-6 py-4 border-b border-gray-700 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-2xl">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white/5 px-6 py-4 border-b border-white/10 flex items-center justify-between">
               <h2 className="text-xl font-bold text-white">
                 {editingVideo ? '编辑视频' : '添加公开视频'}
               </h2>
@@ -433,7 +437,7 @@ export default function PublicVideosManagement() {
                   value={formData.title}
                   onChange={(e) => setFormData({...formData, title: e.target.value})}
                   placeholder="输入视频标题"
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-purple-500"
+                  className="student-glass-field"
                 />
               </div>
 
@@ -447,7 +451,7 @@ export default function PublicVideosManagement() {
                     value={formData.participant_a}
                     onChange={(e) => setFormData({...formData, participant_a: e.target.value})}
                     placeholder="参与者A姓名"
-                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-purple-500"
+                    className="student-glass-field"
                   />
                 </div>
 
@@ -460,20 +464,16 @@ export default function PublicVideosManagement() {
                     value={formData.participant_b}
                     onChange={(e) => setFormData({...formData, participant_b: e.target.value})}
                     placeholder="参与者B姓名"
-                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-purple-500"
+                    className="student-glass-field"
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">考核日期</label>
-                <input
-                  type="date"
-                  value={formData.assessment_date}
-                  onChange={(e) => setFormData({...formData, assessment_date: e.target.value})}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-purple-500"
-                />
-              </div>
+              <DateInput
+                label="考核日期"
+                value={formData.assessment_date}
+                onChange={(value) => setFormData({...formData, assessment_date: value})}
+              />
 
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -484,7 +484,7 @@ export default function PublicVideosManagement() {
                   value={formData.video_url}
                   onChange={(e) => setFormData({...formData, video_url: e.target.value})}
                   placeholder="https://..."
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-purple-500"
+                  className="student-glass-field"
                 />
               </div>
 
@@ -495,12 +495,12 @@ export default function PublicVideosManagement() {
                   onChange={(e) => setFormData({...formData, description: e.target.value})}
                   placeholder="输入视频描述（可选）"
                   rows={4}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-purple-500 resize-none"
+                  className="student-glass-field resize-none"
                 />
               </div>
             </div>
 
-            <div className="px-6 py-4 border-t border-gray-700 flex justify-end gap-3">
+            <div className="px-6 py-4 border-t border-white/10 flex justify-end gap-3">
               <button
                 onClick={() => {
                   setShowModal(false)
@@ -521,6 +521,8 @@ export default function PublicVideosManagement() {
                   : (submitting ? '添加中...' : '添加视频')
                 }
               </button>
+            </div>
+          </div>
             </div>
           </div>
         </div>

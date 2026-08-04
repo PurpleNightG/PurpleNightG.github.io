@@ -739,15 +739,40 @@ router.get('/dll-whitelist', async (req, res) => {
   try {
     await ensureDllWhitelistTable()
     const memberId = Number(req.query.member_id)
-    if (!memberId) {
-      return res.status(400).json({ success: false, message: '请指定 member_id' })
+    const q = String(req.query.q || '').trim()
+
+    if (memberId) {
+      const [rows] = await pool.query(`
+        SELECT id, member_id, dll_name, dll_path, note, created_by, created_at
+        FROM dll_whitelist
+        WHERE member_id = ?
+        ORDER BY created_at DESC
+      `, [memberId])
+      return res.json({ success: true, data: rows })
+    }
+
+    // 全局列表：不依赖会话，删除会话后仍可查看/管理
+    const params = []
+    let where = ''
+    if (q) {
+      where = `
+        WHERE w.dll_name LIKE ? OR w.dll_path LIKE ? OR w.note LIKE ?
+          OR m.nickname LIKE ? OR CAST(w.member_id AS CHAR) = ?
+      `
+      const like = `%${q}%`
+      params.push(like, like, like, like, q)
     }
     const [rows] = await pool.query(`
-      SELECT id, member_id, dll_name, dll_path, note, created_by, created_at
-      FROM dll_whitelist
-      WHERE member_id = ?
-      ORDER BY created_at DESC
-    `, [memberId])
+      SELECT
+        w.id, w.member_id, w.dll_name, w.dll_path, w.note, w.created_by, w.created_at,
+        m.nickname AS member_name,
+        m.qq AS member_qq
+      FROM dll_whitelist w
+      LEFT JOIN members m ON m.id = w.member_id
+      ${where}
+      ORDER BY w.created_at DESC
+      LIMIT 500
+    `, params)
     res.json({ success: true, data: rows })
   } catch (error) {
     dbError(res, error, '获取DLL白名单失败')

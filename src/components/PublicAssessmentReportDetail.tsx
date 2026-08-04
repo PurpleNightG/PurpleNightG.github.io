@@ -53,6 +53,22 @@ interface DeductionRecord {
   score: number
 }
 
+function groupDeductionsByTime(records: DeductionRecord[]) {
+  const groups: { time: string; items: DeductionRecord[] }[] = []
+  const indexByTime = new Map<string, number>()
+  for (const record of records) {
+    const time = record.time || '—'
+    const existing = indexByTime.get(time)
+    if (existing === undefined) {
+      indexByTime.set(time, groups.length)
+      groups.push({ time, items: [record] })
+    } else {
+      groups[existing].items.push(record)
+    }
+  }
+  return groups
+}
+
 function getStatusIcon(status: PublicAssessment['status']) {
   switch (status) {
     case '已通过':
@@ -209,31 +225,43 @@ export default function PublicAssessmentReportDetail({ assessment, description }
           )}
 
           {deductionRecords.length > 0 && (
-            <div className={`bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 flex flex-col h-full min-h-0 ${
-              !(!!assessment.has_video && !!assessment.video_url) ? 'lg:col-span-3 max-h-[70vh]' : 'lg:col-span-1'
+            <div className={`bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 flex flex-col overflow-hidden ${
+              !(!!assessment.has_video && !!assessment.video_url)
+                ? 'lg:col-span-3 max-h-[70vh]'
+                : 'lg:col-span-1 lg:h-0 lg:min-h-full'
             }`}>
               <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2 flex-shrink-0">
                 <Target size={20} className="text-red-400" />
                 扣分明细
+                <span className="text-sm font-normal text-gray-500">（{deductionRecords.length}）</span>
               </h3>
-              <div className="flex flex-col flex-1 min-h-0">
+              <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
                 <div className="space-y-3 flex-1 overflow-y-auto pr-2 custom-scrollbar min-h-0">
-                  {deductionRecords.map((record, index) => (
-                    <div key={index} className="bg-gray-900/50 rounded-lg p-3 border border-gray-700">
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex flex-col gap-2">
-                          <span className="text-xs font-mono bg-gray-800 px-2 py-1 rounded text-gray-400 inline-block w-fit">
-                            {record.time}
+                  {groupDeductionsByTime(deductionRecords).map((group) => (
+                    <div key={group.time} className="bg-gray-900/50 rounded-lg border border-gray-700 overflow-hidden">
+                      <div className="px-3 py-2 bg-gray-800/80 border-b border-gray-700/80 flex items-center justify-between gap-2">
+                        <span className="text-xs font-mono text-gray-300 tabular-nums">{group.time}</span>
+                        {group.items.length > 1 && (
+                          <span className="text-[11px] text-amber-300/90 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                            同时 {group.items.length} 项
                           </span>
-                          <span className="text-sm font-mono bg-red-900/30 text-red-400 px-2 py-1 rounded inline-block">
-                            {record.code} - {getDeductionName(record.code)}
-                          </span>
-                        </div>
-                        <span className="text-red-400 font-bold whitespace-nowrap">-{record.score} 分</span>
+                        )}
                       </div>
-                      {record.description && (
-                        <p className="text-gray-300 text-sm">{record.description}</p>
-                      )}
+                      <div className="divide-y divide-gray-700/60">
+                        {group.items.map((record, index) => (
+                          <div key={`${group.time}-${record.code}-${index}`} className="p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <span className="text-sm font-mono bg-red-900/30 text-red-400 px-2 py-1 rounded inline-block">
+                                {record.code} - {getDeductionName(record.code)}
+                              </span>
+                              <span className="text-red-400 font-bold whitespace-nowrap">-{record.score} 分</span>
+                            </div>
+                            {record.description && (
+                              <p className="text-gray-300 text-sm mt-2 leading-relaxed">{record.description}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   ))}
                 </div>

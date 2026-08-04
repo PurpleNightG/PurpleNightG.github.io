@@ -493,12 +493,38 @@ export default function AntiCheatSessionDetail() {
     return <div className="p-6 text-gray-400">会话不存在</div>
   }
 
-  const InfoItem = ({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) => (
-    <div className="bg-gray-900/50 rounded-lg p-3 border border-gray-700/40">
+  const InfoItem = ({
+    label,
+    value,
+    mono,
+    accent,
+  }: {
+    label: string
+    value: React.ReactNode
+    mono?: boolean
+    accent?: string
+  }) => (
+    <div className={`student-glass-chip p-3 ${accent || ''}`}>
       <div className="text-xs text-gray-500 mb-1">{label}</div>
       <div className={`text-sm text-gray-100 break-all ${mono ? 'font-mono' : ''}`}>{value}</div>
     </div>
   )
+
+  const statusTone = (() => {
+    const s = String(session.exam_status || '')
+    if (session.end_time) return { text: 'text-gray-300', label: s || '已结束' }
+    if (/通过|完成|正常/.test(s)) return { text: 'text-emerald-300', label: s }
+    if (/终止|失败|违规|作弊/.test(s)) return { text: 'text-red-300', label: s }
+    return { text: 'text-amber-200', label: s || '进行中' }
+  })()
+
+  const alive = !session.end_time && !!session.is_alive
+  const metricCards = [
+    { label: '监控日志', value: session.log_count ?? 0, tab: 'logs' as Tab, color: 'text-sky-300' },
+    { label: '告警日志', value: session.alert_log_count ?? 0, tab: 'logs' as Tab, color: 'text-amber-300' },
+    { label: '截图', value: session.screenshot_count ?? 0, tab: 'screenshots' as Tab, color: 'text-violet-300' },
+    { label: '快照', value: session.snapshot_count ?? 0, tab: 'snapshots' as Tab, color: 'text-fuchsia-300' },
+  ]
 
   return (
     <div className="p-6 space-y-4">
@@ -548,45 +574,94 @@ export default function AntiCheatSessionDetail() {
       </div>
 
       {tab === 'info' && (
-        <div className="space-y-4">
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            <InfoItem label="准考证号" value={session.admission_ticket} mono />
-            <InfoItem label="学员" value={`${session.member_name}（ID ${session.member_id}）`} />
-            <InfoItem label="Steam 用户名" value={session.steam_username || '-'} />
-            <InfoItem label="考核状态" value={session.exam_status} />
-            <InfoItem
-              label="连接状态"
-              value={
-                session.end_time ? (
-                  <span className="text-gray-400">已结束</span>
-                ) : session.is_alive ? (
-                  <span className="text-emerald-400">心跳在线</span>
-                ) : (
-                  <span className="text-red-400">心跳断连</span>
-                )
-              }
-            />
-            <InfoItem label="考核时长" value={durationText(session.start_time, session.end_time)} />
-            <InfoItem label="开始时间" value={formatDateTime(session.start_time)} />
-            <InfoItem label="结束时间" value={formatDateTime(session.end_time)} />
-            <InfoItem label="最后心跳" value={formatDateTime(session.last_heartbeat)} />
-            <InfoItem label="准考证有效期起" value={formatDateTime(session.valid_from)} />
-            <InfoItem label="准考证有效期止" value={formatDateTime(session.valid_until)} />
-            <InfoItem label="截图请求中" value={yn(session.screenshot_requested)} />
+        <div className="space-y-5">
+          {/* 状态总览：一眼看重点 */}
+          <div className="student-glass-panel student-glass-panel--static p-5">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="min-w-0 space-y-2">
+                <div className="text-xs uppercase tracking-wider text-gray-500">考核状态</div>
+                <div className={`text-3xl font-bold ${statusTone.text}`}>{statusTone.label}</div>
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium ${
+                      session.end_time
+                        ? 'border-gray-600 text-gray-400 bg-gray-800/60'
+                        : alive
+                          ? 'border-emerald-500/40 text-emerald-300 bg-emerald-500/10'
+                          : 'border-red-500/40 text-red-300 bg-red-500/10'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        session.end_time ? 'bg-gray-500' : alive ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'
+                      }`}
+                    />
+                    {session.end_time ? '会话已结束' : alive ? '心跳在线' : '心跳断连'}
+                  </span>
+                  <span className="text-gray-500">·</span>
+                  <span className="text-gray-300">
+                    时长 <span className="font-mono text-white">{durationText(session.start_time, session.end_time)}</span>
+                  </span>
+                </div>
+              </div>
+              <div className="text-right space-y-1 min-w-[12rem]">
+                <div className="text-xs text-gray-500">学员</div>
+                <div className="text-lg font-semibold text-white">{session.member_name}</div>
+                <div className="text-xs text-gray-500 font-mono">ID {session.member_id}</div>
+                <div className="text-xs text-purple-300/90 font-mono break-all">{session.admission_ticket}</div>
+              </div>
+            </div>
+            {session.end_reason && (
+              <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-3.5 py-3">
+                <div className="text-xs text-red-300/80 mb-1">结束原因</div>
+                <div className="text-sm text-red-100 break-all">{session.end_reason}</div>
+              </div>
+            )}
           </div>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <InfoItem label="监控日志" value={session.log_count ?? 0} />
-            <InfoItem label="告警日志" value={session.alert_log_count ?? 0} />
-            <InfoItem label="截图数量" value={session.screenshot_count ?? 0} />
-            <InfoItem label="文件快照" value={session.snapshot_count ?? 0} />
+
+          {/* 数量指标：可跳转到对应 Tab */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {metricCards.map((m) => (
+              <button
+                key={m.label}
+                type="button"
+                onClick={() => setTab(m.tab)}
+                className="student-glass-chip p-4 text-left hover:border-purple-400/40 transition-colors"
+              >
+                <div className="text-xs text-gray-500 mb-1">{m.label}</div>
+                <div className={`text-2xl font-bold tabular-nums ${m.color}`}>{m.value}</div>
+                <div className="text-[11px] text-gray-500 mt-1">点击查看 →</div>
+              </button>
+            ))}
           </div>
-          <div className="grid sm:grid-cols-3 gap-3">
-            <InfoItem label="需解压考核地图" value={yn(session.map_pack_required)} />
-            <InfoItem label="需关闭杀毒软件" value={yn(session.require_antivirus_check)} />
-            <InfoItem label="焦点变化截图" value={yn(session.focus_screenshot_enabled)} />
+
+          <div>
+            <h3 className="text-sm font-semibold text-white mb-2">身份与时间</h3>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <InfoItem label="准考证号" value={session.admission_ticket} mono />
+              <InfoItem label="Steam 用户名" value={session.steam_username || '-'} />
+              <InfoItem label="开始时间" value={formatDateTime(session.start_time)} />
+              <InfoItem label="结束时间" value={formatDateTime(session.end_time)} />
+              <InfoItem label="最后心跳" value={formatDateTime(session.last_heartbeat)} />
+              <InfoItem label="截图请求中" value={yn(session.screenshot_requested)} />
+              <InfoItem label="准考证有效期起" value={formatDateTime(session.valid_from)} />
+              <InfoItem label="准考证有效期止" value={formatDateTime(session.valid_until)} />
+            </div>
           </div>
-          <InfoItem label="结束原因" value={session.end_reason || '-'} />
-          <InfoItem label="游戏路径" value={session.game_path || '-'} mono />
+
+          <div>
+            <h3 className="text-sm font-semibold text-white mb-2">考核开关</h3>
+            <div className="grid sm:grid-cols-3 gap-3">
+              <InfoItem label="需解压考核地图" value={yn(session.map_pack_required)} />
+              <InfoItem label="需关闭杀毒软件" value={yn(session.require_antivirus_check)} />
+              <InfoItem label="焦点变化截图" value={yn(session.focus_screenshot_enabled)} />
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold text-white mb-2">环境</h3>
+            <InfoItem label="游戏路径" value={session.game_path || '-'} mono />
+          </div>
         </div>
       )}
 
@@ -596,7 +671,7 @@ export default function AntiCheatSessionDetail() {
             <button
               type="button"
               onClick={() => setLogTypeOpen((o) => !o)}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-800 border border-gray-600 text-sm text-gray-200 hover:border-purple-500/60 hover:bg-gray-700/80 min-w-[160px] justify-between"
+              className="flex items-center gap-2 px-3 py-2 rounded-lg student-glass-chip text-sm text-gray-200 hover:border-purple-500/60 min-w-[160px] justify-between"
             >
               <span>{logType || '全部类型'}</span>
               <ChevronDown size={14} className={`text-gray-400 transition-transform ${logTypeOpen ? 'rotate-180' : ''}`} />
@@ -604,7 +679,7 @@ export default function AntiCheatSessionDetail() {
             {logTypeOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setLogTypeOpen(false)} />
-                <div className="absolute left-0 top-full mt-1 z-50 min-w-[180px] rounded-lg border border-gray-600 bg-gray-800 shadow-xl py-1 max-h-64 overflow-y-auto">
+                <div className="absolute left-0 top-full mt-1 z-50 min-w-[180px] rounded-lg student-glass-panel student-glass-panel--static shadow-xl py-1 max-h-64 overflow-y-auto">
                   {LOG_TYPES.map((t) => {
                     const label = t || '全部类型'
                     const active = logType === t
@@ -631,9 +706,9 @@ export default function AntiCheatSessionDetail() {
               </>
             )}
           </div>
-          <div className="overflow-x-auto rounded-xl border border-gray-700/50 max-h-[60vh]">
+          <div className="student-glass-panel student-glass-panel--static overflow-x-auto max-h-[60vh]">
             <table className="w-full text-xs">
-              <thead className="bg-gray-800 sticky top-0 text-gray-300">
+              <thead className="bg-white/5 sticky top-0 text-gray-300">
                 <tr>
                   <th className="px-2 py-2 text-left">时间</th>
                   <th className="px-2 py-2 text-left">类型</th>
@@ -663,7 +738,7 @@ export default function AntiCheatSessionDetail() {
 
       {tab === 'screenshots' && (
         <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2 bg-gray-800/40 border border-gray-700/50 rounded-xl px-3 py-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 student-glass-chip px-3 py-2.5">
             <div className="flex flex-wrap items-center gap-2">
               <p className="text-sm text-gray-400">
                 共 {shots.length} 张
@@ -722,7 +797,7 @@ export default function AntiCheatSessionDetail() {
               return (
                 <div
                   key={s.id}
-                  className={`rounded-xl border overflow-hidden bg-gray-800/40 group ${
+                  className={`rounded-xl border overflow-hidden bg-gray-900/80 group ${
                     checked ? 'border-purple-500' : 'border-gray-700 hover:border-purple-500/60'
                   }`}
                 >
@@ -861,8 +936,8 @@ export default function AntiCheatSessionDetail() {
           {(['mod', 'binary'] as const).map((typeKey) => {
             const list = snapshots.filter((s) => s.file_type === typeKey)
             return (
-              <div key={typeKey} className="overflow-x-auto rounded-xl border border-gray-700/50 max-h-[40vh]">
-                <div className="sticky top-0 z-10 px-3 py-2 bg-gray-800 border-b border-gray-700/50 flex items-center justify-between">
+              <div key={typeKey} className="student-glass-panel student-glass-panel--static overflow-x-auto max-h-[40vh]">
+                <div className="sticky top-0 z-10 px-3 py-2 bg-white/5 border-b border-white/10 flex items-center justify-between">
                   <h3 className="text-sm font-medium text-white">
                     {typeKey === 'mod' ? '模组文件' : '二进制文件'}
                     <span className="ml-2 text-xs text-gray-400 font-normal">({list.length})</span>
@@ -906,8 +981,8 @@ export default function AntiCheatSessionDetail() {
             const others = snapshots.filter((s) => s.file_type !== 'mod' && s.file_type !== 'binary')
             if (!others.length) return null
             return (
-              <div className="overflow-x-auto rounded-xl border border-gray-700/50 max-h-[30vh]">
-                <div className="sticky top-0 z-10 px-3 py-2 bg-gray-800 border-b border-gray-700/50">
+              <div className="student-glass-panel student-glass-panel--static overflow-x-auto max-h-[30vh]">
+                <div className="sticky top-0 z-10 px-3 py-2 bg-white/5 border-b border-white/10">
                   <h3 className="text-sm font-medium text-white">
                     其他文件
                     <span className="ml-2 text-xs text-gray-400 font-normal">({others.length})</span>
@@ -950,9 +1025,9 @@ export default function AntiCheatSessionDetail() {
 
       {tab === 'processes' && (
         <div className="space-y-3">
-          <div className="overflow-x-auto rounded-xl border border-gray-700/50 max-h-[60vh]">
+          <div className="student-glass-panel student-glass-panel--static overflow-x-auto max-h-[60vh]">
             <table className="w-full text-xs">
-              <thead className="bg-gray-800 sticky top-0 text-gray-300">
+              <thead className="bg-white/5 sticky top-0 text-gray-300">
                 <tr>
                   <th className="px-2 py-2 text-left">时间</th>
                   <th className="px-2 py-2 text-left">内容</th>
@@ -999,12 +1074,12 @@ export default function AntiCheatSessionDetail() {
             </button>
           </div>
           <div
-            className={`overflow-x-auto rounded-xl border border-gray-700/50 ${
+            className={`student-glass-panel student-glass-panel--static overflow-x-auto ${
               clientShowAll ? 'max-h-[75vh]' : 'max-h-[60vh]'
             }`}
           >
             <table className="w-full text-xs">
-              <thead className="bg-gray-800 sticky top-0 text-gray-300">
+              <thead className="bg-white/5 sticky top-0 text-gray-300">
                 <tr>
                   <th className="px-2 py-2 text-left">时间</th>
                   <th className="px-2 py-2 text-left">级别</th>
@@ -1049,13 +1124,22 @@ export default function AntiCheatSessionDetail() {
 
       {tab === 'dll' && (
         <div className="space-y-5">
-          <div className="bg-gray-800/40 border border-gray-700/50 rounded-xl p-4 space-y-2">
-            <div className="flex items-center gap-2 text-white text-sm font-medium">
-              <Shield size={16} className="text-purple-400" />
-              学员误报白名单 · {session.member_name}（ID {session.member_id}）
+          <div className="student-glass-panel student-glass-panel--static p-4 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-white text-sm font-medium">
+                <Shield size={16} className="text-purple-400" />
+                学员误报白名单 · {session.member_name}（ID {session.member_id}）
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate('/admin/anticheat/dll-whitelist')}
+                className="text-xs text-purple-300 hover:text-purple-200 underline-offset-2 hover:underline"
+              >
+                打开全局白名单管理 →
+              </button>
             </div>
             <p className="text-xs text-gray-500">
-              仅对该学员生效。从本会话「DLL注入」日志中选择误报 DLL 加入后，该学员重新开考时将不再因此 DLL 被终止。
+              仅对该学员生效；数据保存在全局白名单中，删除本会话后仍可在「DLL白名单」页面查看。
             </p>
           </div>
 
@@ -1105,9 +1189,9 @@ export default function AntiCheatSessionDetail() {
             <h3 className="text-sm text-white font-medium">
               当前白名单（{memberDllWhitelist.length}）
             </h3>
-            <div className="overflow-x-auto rounded-xl border border-gray-700/50">
+            <div className="student-glass-panel student-glass-panel--static overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-gray-800 text-gray-300">
+                <thead className="bg-white/5 text-gray-300">
                   <tr>
                     <th className="px-3 py-2 text-left">DLL</th>
                     <th className="px-3 py-2 text-left">路径</th>

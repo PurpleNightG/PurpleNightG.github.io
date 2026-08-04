@@ -316,7 +316,7 @@ export default function RetentionManagement() {
       )}
 
       {showFilters && (
-        <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 mb-4">
+        <div className="student-glass-chip p-4 mb-4">
           <div className="flex justify-between items-center mb-3">
             <div className="flex items-center gap-3">
               <h3 className="text-white font-semibold">筛选条件</h3>
@@ -365,7 +365,7 @@ export default function RetentionManagement() {
         </div>
       )}
 
-      <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 overflow-hidden">
+      <div className="student-glass-panel student-glass-panel--static overflow-hidden">
         {loading ? (
           <div className="p-12 text-center text-gray-400">加载中...</div>
         ) : (
@@ -444,8 +444,11 @@ export default function RetentionManagement() {
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-md">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
             <h2 className="text-xl font-bold text-white mb-4">添加留队记录</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
@@ -467,7 +470,7 @@ export default function RetentionManagement() {
                 <textarea
                   value={formData.retention_reason}
                   onChange={(e) => setFormData({...formData, retention_reason: e.target.value})}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white h-24"
+                  className="student-glass-field h-24"
                   placeholder="请详细说明留队原因"
                   required
                 />
@@ -477,7 +480,7 @@ export default function RetentionManagement() {
                 <textarea
                   value={formData.approver_remarks}
                   onChange={(e) => setFormData({...formData, approver_remarks: e.target.value})}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white h-24"
+                  className="student-glass-field h-24"
                   placeholder="可填写批准意见或要求"
                 />
               </div>
@@ -495,6 +498,8 @@ export default function RetentionManagement() {
                 </button>
               </div>
             </form>
+          </div>
+            </div>
           </div>
         </div>
       )}

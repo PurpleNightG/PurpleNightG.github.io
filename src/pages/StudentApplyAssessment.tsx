@@ -4,6 +4,8 @@ import { toast } from '../utils/toast'
 import { FileCheck, Clock, CheckCircle, XCircle, Calendar, Users, Send, AlertCircle, Lock } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { useNavigate } from 'react-router-dom'
+import DateInput from '../components/DateInput'
+import TimeInput from '../components/TimeInput'
 
 interface Application {
   id: number
@@ -147,7 +149,7 @@ export default function StudentApplyAssessment() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="p-6">
       {/* 页面标题 */}
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-white mb-2 flex items-center gap-3">
@@ -159,9 +161,9 @@ export default function StudentApplyAssessment() {
 
       {/* 阶段限制提示 */}
       {!canApply && (
-        <div className="bg-gray-900/50 border border-gray-700 rounded-xl p-6 mb-6">
+        <div className="student-glass-panel p-6 mb-6">
           <div className="flex items-start gap-4">
-            <div className="bg-gray-700 rounded-full p-3">
+            <div className="rounded-full p-3 bg-white/5 border border-white/10">
               <Lock className="text-gray-400" size={32} />
             </div>
             <div className="flex-1">
@@ -182,7 +184,7 @@ export default function StudentApplyAssessment() {
 
       {/* 准考证号显示 */}
       {approvedApplication && approvedApplication.admission_ticket && (
-        <div className="bg-gradient-to-r from-purple-900/40 to-blue-900/40 rounded-xl p-6 mb-6 border-2 border-purple-500/50">
+        <div className="student-glass-panel p-6 mb-6">
           <div className="flex items-center gap-4">
             <div className="bg-purple-600 rounded-full p-3">
               <FileCheck className="text-white" size={32} />
@@ -202,7 +204,7 @@ export default function StudentApplyAssessment() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* 左侧：申请表单 */}
-        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 p-6">
+        <div className="student-glass-panel p-6">
           <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
             <Send size={20} className="text-purple-400" />
             提交申请
@@ -227,7 +229,7 @@ export default function StudentApplyAssessment() {
                 type="text"
                 value={formData.companion}
                 onChange={(e) => setFormData({ ...formData, companion: e.target.value })}
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-purple-500 transition-colors"
+                className="w-full bg-black/25 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-purple-400/50 transition-colors"
                 placeholder="请输入陪考人员姓名"
                 disabled={!canApply || hasPendingApplication}
                 required
@@ -239,14 +241,11 @@ export default function StudentApplyAssessment() {
                 <Calendar size={16} className="inline mr-1" />
                 期望考核日期 *
               </label>
-              <input
-                type="date"
+              <DateInput
                 value={formData.preferred_date}
-                onChange={(e) => setFormData({ ...formData, preferred_date: e.target.value })}
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-purple-500 transition-colors cursor-pointer"
-                style={{ colorScheme: 'dark' }}
-                disabled={!canApply || hasPendingApplication}
+                onChange={(value) => setFormData({ ...formData, preferred_date: value })}
                 required
+                disabled={!canApply || hasPendingApplication}
               />
             </div>
 
@@ -255,14 +254,11 @@ export default function StudentApplyAssessment() {
                 <Clock size={16} className="inline mr-1" />
                 期望考核时间 *
               </label>
-              <input
-                type="time"
+              <TimeInput
                 value={formData.preferred_time}
-                onChange={(e) => setFormData({ ...formData, preferred_time: e.target.value })}
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-purple-500 transition-colors cursor-pointer"
-                style={{ colorScheme: 'dark' }}
-                disabled={!canApply || hasPendingApplication}
+                onChange={(value) => setFormData({ ...formData, preferred_time: value })}
                 required
+                disabled={!canApply || hasPendingApplication}
               />
             </div>
 
@@ -297,7 +293,7 @@ export default function StudentApplyAssessment() {
                 {applications.map((app) => (
                   <div
                     key={app.id}
-                    className="bg-gray-900/50 rounded-lg p-4 border border-gray-700"
+                    className="student-glass-chip p-4"
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
@@ -332,7 +328,7 @@ export default function StudentApplyAssessment() {
         </div>
 
         {/* 右侧：考核须知 */}
-        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 p-6">
+        <div className="student-glass-panel p-6">
           <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
             <FileCheck size={20} className="text-purple-400" />
             考核须知

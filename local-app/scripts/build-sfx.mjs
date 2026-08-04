@@ -13,6 +13,7 @@ import {
   run,
 } from './build-utils.mjs'
 import { ROOT_DIR } from './paths.mjs'
+import { writeLatestManifest } from './write-latest-manifest.mjs'
 
 const MARKER = Buffer.from('ZIYEZIP!', 'ascii')
 const SFX_SOURCE = path.join(ROOT_DIR, 'local-app', 'portable', 'sfx-bootstrap.cs')
@@ -101,7 +102,10 @@ export async function buildSingleFileExe() {
 
   const zipPath = createPortableZip()
   const stagingExe = path.join(os.tmpdir(), `ziye-bootstrap-${Date.now()}.exe`)
-  const bundleVersion = new Date().toISOString()
+  const versionFile = path.join(PORTABLE_DIR, '.bundle-version')
+  const bundleVersion = fs.existsSync(versionFile)
+    ? fs.readFileSync(versionFile, 'utf8').trim()
+    : new Date().toISOString()
 
   try {
     compileBootstrap(stagingExe, iconPath)
@@ -114,14 +118,21 @@ export async function buildSingleFileExe() {
     }
   }
 
+  const releaseZip = path.join(RELEASE_DIR, '紫夜官网-本地版-便携包.zip')
+  if (fs.existsSync(releaseZip)) {
+    writeLatestManifest(bundleVersion, releaseZip)
+  }
+
   log('\n========================================')
   log('  单文件直运行 EXE 构建完成')
   log('========================================')
   log(`  文件: ${OUTPUT_EXE}`)
+  log(`  版本: ${bundleVersion}`)
   log(`  大小: ${fileSizeMb(OUTPUT_EXE)} MB`)
   log('\n成员双击即可运行：')
   log('  - 首次：自动释放到 %LOCALAPPDATA%\\ZiyeGuildLocal')
   log('  - 之后：直接启动，无需安装向导')
+  log('  - 自动更新：按 release/Gitee发布说明.txt 上传清单与 ZIP')
   log('========================================\n')
 }
 

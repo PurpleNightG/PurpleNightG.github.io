@@ -236,12 +236,93 @@ export const blackPointAPI = {
 
 // 催促名单 API
 export const reminderAPI = {
-  getAll: () => request('/reminders'),
+  getAll: (mode?: 'remaining' | 'kick_cycle') =>
+    request(`/reminders${mode ? `?mode=${mode}` : ''}`),
+  getAttendance: (showAll = false) =>
+    request(`/reminders/attendance?showAll=${showAll ? '1' : '0'}`),
+  getAttendanceMe: (memberId: number) =>
+    request(`/reminders/attendance/me/${memberId}`),
+  getTrainingMe: (memberId: number) =>
+    request(`/reminders/training/me/${memberId}`),
+  ignoreAttendance: async (memberId: number, ignored_by?: string) => {
+    const result = await request(`/reminders/attendance/ignore/${memberId}`, {
+      method: 'POST',
+      body: JSON.stringify({ ignored_by }),
+    })
+    clearCache('/reminders')
+    return result
+  },
+  unignoreAttendance: async (memberId: number) => {
+    const result = await request(`/reminders/attendance/ignore/${memberId}`, {
+      method: 'DELETE',
+    })
+    clearCache('/reminders')
+    return result
+  },
+  updateAttendanceTimeout: async (
+    memberId: number,
+    remaining_days: number | null,
+    reason_code?: string
+  ) => {
+    const result = await request(`/reminders/attendance/${memberId}/timeout`, {
+      method: 'PUT',
+      body: JSON.stringify({ remaining_days, reason_code }),
+    })
+    clearCache('/reminders')
+    return result
+  },
+  batchUpdateAttendanceTimeout: async (member_ids: number[], remaining_days: number | null) => {
+    const result = await request('/reminders/attendance/batch/timeout', {
+      method: 'PUT',
+      body: JSON.stringify({ member_ids, remaining_days }),
+    })
+    clearCache('/reminders')
+    return result
+  },
   getTimeoutDays: () => request('/settings/reminder_timeout_days'),
   updateTimeoutDays: (days: number) => request('/settings/reminder_timeout_days', {
     method: 'PUT',
     body: JSON.stringify({ value: days }),
   }),
+  getKickSettings: async () => {
+    const [weekday, lead, mode] = await Promise.all([
+      request('/settings/reminder_kick_weekday'),
+      request('/settings/reminder_kick_lead_days'),
+      request('/settings/reminder_display_mode'),
+    ])
+    return {
+      kickWeekday: parseInt(weekday.data?.setting_value, 10) || 1,
+      leadDays: parseInt(lead.data?.setting_value, 10) || 3,
+      displayMode: (mode.data?.setting_value === 'kick_cycle' ? 'kick_cycle' : 'remaining') as 'remaining' | 'kick_cycle',
+    }
+  },
+  updateKickSettings: async (opts: {
+    kickWeekday?: number
+    leadDays?: number
+    displayMode?: 'remaining' | 'kick_cycle'
+  }) => {
+    const tasks: Promise<unknown>[] = []
+    if (opts.kickWeekday != null) {
+      tasks.push(request('/settings/reminder_kick_weekday', {
+        method: 'PUT',
+        body: JSON.stringify({ value: opts.kickWeekday }),
+      }))
+    }
+    if (opts.leadDays != null) {
+      tasks.push(request('/settings/reminder_kick_lead_days', {
+        method: 'PUT',
+        body: JSON.stringify({ value: opts.leadDays }),
+      }))
+    }
+    if (opts.displayMode != null) {
+      tasks.push(request('/settings/reminder_display_mode', {
+        method: 'PUT',
+        body: JSON.stringify({ value: opts.displayMode }),
+      }))
+    }
+    await Promise.all(tasks)
+    clearCache('/reminders')
+  },
   autoUpdate: async (timeoutDays: number = 7) => {
     const result = await request('/reminders/auto-update', {
       method: 'POST',
@@ -845,8 +926,13 @@ export const anticheatAPI = {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
-  getDllWhitelist: (memberId: number) =>
-    request(`/anticheat/dll-whitelist?member_id=${memberId}`),
+  getDllWhitelist: (memberId?: number, q?: string) => {
+    const params = new URLSearchParams()
+    if (memberId) params.set('member_id', String(memberId))
+    if (q) params.set('q', q)
+    const qs = params.toString()
+    return request(`/anticheat/dll-whitelist${qs ? `?${qs}` : ''}`)
+  },
   addDllWhitelist: async (data: {
     member_id: number
     dll_name: string
@@ -935,4 +1021,36 @@ export const surveyAPI = {
       headers: { Authorization: `Bearer ${getStudentAuthToken()}` },
       body: JSON.stringify({ answers }),
     }),
+}
+
+/** 意见箱 */
+export const opinionBoxAPI = {
+  submit: async (data: { content: string; is_anonymous?: boolean; category?: string }) => {
+    const result = await request('/opinion-box', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${getStudentAuthToken()}` },
+      body: JSON.stringify(data),
+    })
+    clearCache('/opinion-box')
+    return result
+  },
+  my: () =>
+    request('/opinion-box/my', {
+      headers: { Authorization: `Bearer ${getStudentAuthToken()}` },
+    }),
+  list: (status?: string) =>
+    request(`/opinion-box${status ? `?status=${encodeURIComponent(status)}` : ''}`),
+  update: async (id: number, data: { status?: string; admin_note?: string | null }) => {
+    const result = await request(`/opinion-box/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
+    clearCache('/opinion-box')
+    return result
+  },
+  delete: async (id: number) => {
+    const result = await request(`/opinion-box/${id}`, { method: 'DELETE' })
+    clearCache('/opinion-box')
+    return result
+  },
 }

@@ -344,9 +344,9 @@ export default function AntiCheatConfigs() {
           <Loader2 className="animate-spin" />
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-700/50">
+        <div className="student-glass-panel student-glass-panel--static overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-gray-800/80 text-gray-300">
+            <thead className="bg-white/5 text-gray-300">
               <tr>
                 <th className="px-3 py-3 w-10" />
                 <th className="px-3 py-3 text-left">准考证</th>
@@ -459,9 +459,12 @@ export default function AntiCheatConfigs() {
       )}
 
       {editId && editConfig && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 m-0">
-          <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto shadow-2xl">
-            <div className="flex items-center justify-between p-4 border-b border-gray-700 sticky top-0 bg-gray-900 z-10">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-5xl">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-4 border-b border-white/10 sticky top-0 z-10 bg-[rgba(12,10,20,0.85)] backdrop-blur-md">
               <div>
                 <h2 className="text-lg font-bold text-white">
                   配置 · {editConfig.admission_ticket} · {editConfig.member_name}
@@ -474,7 +477,7 @@ export default function AntiCheatConfigs() {
             </div>
 
             <div className="p-4 space-y-4">
-              <div className="space-y-3 bg-gray-800/40 rounded-xl p-4">
+              <div className="space-y-3 student-glass-panel student-glass-panel--static p-4">
                 <StyledCheck
                   checked={!!editConfig.map_pack_required}
                   onChange={() => patchSwitch('map_pack_required', !editConfig.map_pack_required)}
@@ -524,7 +527,7 @@ export default function AntiCheatConfigs() {
                     {mods.map((m) => (
                       <div
                         key={m.id}
-                        className="flex items-start gap-2 text-xs text-gray-300 p-1.5 rounded hover:bg-gray-800/50"
+                        className="flex items-start gap-2 text-xs text-gray-300 p-1.5 rounded hover:bg-white/5"
                       >
                         <StyledCheck
                           checked={modSelected.includes(m.id)}
@@ -622,7 +625,7 @@ export default function AntiCheatConfigs() {
                     {scanned.map((m, i) => (
                       <div
                         key={`${m.hash}-${i}`}
-                        className="flex items-start gap-2 text-xs text-gray-300 p-1.5 rounded hover:bg-gray-800/50"
+                        className="flex items-start gap-2 text-xs text-gray-300 p-1.5 rounded hover:bg-white/5"
                       >
                         <StyledCheck
                           checked={scanSelected.includes(i)}
@@ -650,13 +653,18 @@ export default function AntiCheatConfigs() {
               </div>
             </div>
           </div>
+            </div>
+          </div>
         </div>,
         document.body
       )}
 
       {reactivateId != null && createPortal(
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4 m-0">
-          <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-sm p-5 space-y-4 shadow-2xl">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-sm">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal w-full p-5 space-y-4">
             <h3 className="text-lg font-bold text-white">重新激活准考证</h3>
             <p className="text-sm text-gray-400">将状态改为「待开始」，并延长有效期。</p>
             <label className="block space-y-1.5">
@@ -667,7 +675,7 @@ export default function AntiCheatConfigs() {
                 max={365}
                 value={extendDays}
                 onChange={(e) => setExtendDays(Number(e.target.value) || 7)}
-                className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                className="student-glass-field"
               />
             </label>
             <div className="flex justify-end gap-2">
@@ -683,6 +691,8 @@ export default function AntiCheatConfigs() {
               >
                 确认激活
               </button>
+            </div>
+          </div>
             </div>
           </div>
         </div>,

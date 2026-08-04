@@ -1,7 +1,19 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import Peer, { MediaConnection } from 'peerjs'
-import { Monitor, Users, Copy, Check, StopCircle, Play, Link2, X, Maximize2, Minimize2, Wifi, Zap, Globe, Lock, Clock, CheckCircle, XCircle, ChevronDown, Search, Trash2, GraduationCap } from 'lucide-react'
+import { Monitor, Users, Copy, Check, StopCircle, Play, Link2, X, Maximize2, Minimize2, Wifi, Zap, Globe, Lock, Clock, CheckCircle, XCircle, ChevronDown, Search, Trash2, GraduationCap, Mic, MicOff, Volume2 } from 'lucide-react'
 import ScreenShareAssistantPanel, { type AssistantRow, type AssistantCandidate } from '../components/ScreenShareAssistantPanel'
+import {
+  parseVolcVoiceMessage,
+  setVolcLocalMicVolume,
+  setVolcMicAutoGain,
+  setVolcRemoteMicVolume,
+  startVolcMic,
+  startVolcScreenCapture,
+  stopVolcMic,
+  subscribeVolcMic,
+  VOLC_MIC_VOLUME_DEFAULT,
+  VOLC_MIC_VOLUME_MAX,
+} from '../utils/volcScreenShare'
 
 type Mode = 'select' | 'host' | 'viewer'
 type Status = 'idle' | 'connecting' | 'streaming' | 'watching' | 'error'
@@ -159,6 +171,26 @@ export default function ScreenShare() {
   const [screenHostFps, setScreenHostFps] = useState<ScreenFps>(60)
   const [screenFps, setScreenFps] = useState<number | null>(null)
   const [mediaToast, setMediaToast] = useState<{ text: string; kind: 'loading' | 'success' } | null>(null)
+  /** 火山房间语音：本地是否开麦（默认开） */
+  const [micOn, setMicOn] = useState(true)
+  /** 被共享者强制禁言后不可自行开麦 */
+  const [micForcedOff, setMicForcedOff] = useState(false)
+  /** uid -> 显示名 / 开麦状态（主机用于禁言） */
+  const [volcPeers, setVolcPeers] = useState<{ userId: string; name: string; micOn: boolean }[]>([])
+  /** 本端听到的各远端麦音量（%），仅影响本地播放 */
+  const [peerVolumes, setPeerVolumes] = useState<Record<string, number>>({})
+  /** 自己麦克风发送音量（%） */
+  const [localMicVolume, setLocalMicVolume] = useState(VOLC_MIC_VOLUME_DEFAULT)
+  /** 麦克风自动增益 AGC */
+  const [micGainOn, setMicGainOn] = useState(true)
+  /** 观众端主播 uid（用于调听感音量） */
+  const [volcHostUserId, setVolcHostUserId] = useState('')
+  /** 主机已强制禁言的 uid（与当前是否开麦解耦，方便再次解禁） */
+  const [forcedMutedIds, setForcedMutedIds] = useState<Set<string>>(() => new Set())
+  const [peersMenuOpen, setPeersMenuOpen] = useState(false)
+  const [micMenuOpen, setMicMenuOpen] = useState(false)
+  const peersMenuRef = useRef<HTMLDivElement>(null)
+  const micMenuRef = useRef<HTMLDivElement>(null)
   const [userType] = useState<'admin' | 'student' | null>(getUserType)
   const [rtcPerm, setRtcPerm] = useState<{
     agora: boolean
@@ -199,6 +231,14 @@ export default function ScreenShare() {
   const volcEngineRef = useRef<any>(null)
   const volcContainerRef = useRef<HTMLDivElement>(null)
   const volcHostUserIdRef = useRef<string>('')
+  const volcScreenStreamRef = useRef<MediaStream | null>(null)
+  const volcMicOnRef = useRef(true)
+  const volcMicForcedOffRef = useRef(false)
+  const volcMediaTypeRef = useRef<any>(null)
+  const volcStreamIndexRef = useRef<any>(null)
+  const peerVolumesRef = useRef<Record<string, number>>({})
+  const localMicVolumeRef = useRef(VOLC_MIC_VOLUME_DEFAULT)
+  const micGainOnRef = useRef(true)
   const screenQualityRef = useRef<ScreenQuality>(1080)
   const screenFpsChoiceRef = useRef<ScreenFps>(60)
   const screenEncodeModeRef = useRef<ScreenEncodeMode>('motion')
@@ -225,6 +265,22 @@ export default function ScreenShare() {
   useEffect(() => {
     connectStepRef.current = connectStep
   }, [connectStep])
+
+  // 成员列表 / 麦设置：点击外部关闭
+  useEffect(() => {
+    if (!peersMenuOpen && !micMenuOpen) return
+    const onPointerDown = (e: PointerEvent) => {
+      const t = e.target as Node
+      if (peersMenuOpen && peersMenuRef.current && !peersMenuRef.current.contains(t)) {
+        setPeersMenuOpen(false)
+      }
+      if (micMenuOpen && micMenuRef.current && !micMenuRef.current.contains(t)) {
+        setMicMenuOpen(false)
+      }
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [peersMenuOpen, micMenuOpen])
 
   // Bind stream to video element after React renders the <video>
   useEffect(() => {
@@ -368,6 +424,29 @@ export default function ScreenShare() {
     setViewerNames([])
     setLatency(null)
     setScreenFps(null)
+    setMicOn(true)
+    setMicForcedOff(false)
+    setPeersMenuOpen(false)
+    setMicMenuOpen(false)
+    volcMicOnRef.current = true
+    volcMicForcedOffRef.current = false
+    setVolcPeers([])
+    setForcedMutedIds(new Set())
+    setPeerVolumes({})
+    peerVolumesRef.current = {}
+    setLocalMicVolume(VOLC_MIC_VOLUME_DEFAULT)
+    localMicVolumeRef.current = VOLC_MIC_VOLUME_DEFAULT
+    setMicGainOn(true)
+    micGainOnRef.current = true
+    setVolcHostUserId('')
+    volcHostUserIdRef.current = ''
+    volcStreamIndexRef.current = null
+    if (volcScreenStreamRef.current) {
+      volcScreenStreamRef.current.getTracks().forEach((t) => {
+        try { t.stop() } catch {}
+      })
+      volcScreenStreamRef.current = null
+    }
     if (latencyIntervalRef.current) {
       clearInterval(latencyIntervalRef.current)
       latencyIntervalRef.current = null
@@ -393,6 +472,7 @@ export default function ScreenShare() {
     if (volcEngineRef.current) {
       const _engine = volcEngineRef.current
       volcEngineRef.current = null
+      try { _engine.stopAudioCapture() } catch {}
       try { _engine.stopScreenCapture() } catch {}
       // leaveRoom is async; destroy() after a short delay so the leave signal
       // is actually transmitted before the WebSocket is torn down, ensuring
@@ -401,6 +481,7 @@ export default function ScreenShare() {
         try { _engine.destroy() } catch {}
       })
     }
+    volcMediaTypeRef.current = null
     if (rtcRoomRef.current) {
       const rid = rtcRoomRef.current
       const endpoint = rtcRoleRef.current === 'host' ? 'close' : 'leave'
@@ -453,9 +534,11 @@ export default function ScreenShare() {
       try { volcModule = await import('@volcengine/rtc') } catch {
         window.location.reload(); return
       }
-      const { default: VERTC, MediaType } = volcModule
+      const { default: VERTC, MediaType, StreamIndex } = volcModule
       const engine = VERTC.createEngine(VOLC_APP_ID)
       volcEngineRef.current = engine
+      volcStreamIndexRef.current = StreamIndex
+      volcMediaTypeRef.current = MediaType
 
       const q = screenQualityRef.current
       const f = screenFpsChoiceRef.current
@@ -473,10 +556,21 @@ export default function ScreenShare() {
       setConnectStep(`获取屏幕共享权限（${enc.height}p${enc.frameRate}fps · ${modeLabel}）...`)
       const rawName = myName.current || 'host'
       const hostUid = rawName.replace(/[^a-zA-Z0-9@\-_.]/g, '_').slice(0, 128) || 'host'
-      // 须在 startScreenCapture 前设置编码参数
-      await engine.setScreenEncoderConfig(enc)
-      // enableAudio:true → 浏览器弹窗始终出现「同时分享系统音频」开关，由用户自行勾选
-      await engine.startScreenCapture({ enableAudio: true })
+
+      // 自定义 getDisplayMedia + restrictOwnAudio，避免本标签页语音进系统声回环
+      const capture = await startVolcScreenCapture(engine, volcModule, enc)
+      volcScreenStreamRef.current = capture.stream
+      if (capture.stream) {
+        const vTrack = capture.stream.getVideoTracks()[0]
+        if (vTrack) {
+          vTrack.addEventListener('ended', () => {
+            cleanup()
+            setErrorMsg('屏幕共享已停止')
+            setStatus('error')
+            setMode('select')
+          })
+        }
+      }
 
       setConnectStep('连接火山引擎服务器...')
       const hostRes = await fetch(`${API_URL}/room/${code}/host`, {
@@ -496,13 +590,35 @@ export default function ScreenShare() {
       rtcRoomRef.current = code
       rtcRoleRef.current = 'host'
       rtcUidRef.current = hostUid
+      volcMediaTypeRef.current = MediaType
       const volcToken = await fetchVolcToken(code, hostUid)
-      await engine.joinRoom(volcToken, code, { userId: hostUid }, {
+      await engine.joinRoom(volcToken, code, { userId: hostUid, extraInfo: rawName }, {
         isAutoPublish: false, isAutoSubscribeAudio: false, isAutoSubscribeVideo: false,
       })
 
       setConnectStep('发布屏幕流...')
-      await engine.publishScreen(MediaType.AUDIO_AND_VIDEO)
+      await engine.publishScreen(
+        capture.hasSystemAudio ? MediaType.AUDIO_AND_VIDEO : MediaType.VIDEO
+      )
+
+      // 默认自由麦
+      setConnectStep('开启麦克风...')
+      try {
+        await startVolcMic(engine, MediaType, {
+          autoGain: micGainOnRef.current,
+          captureVolume: localMicVolumeRef.current,
+          StreamIndex,
+        })
+        setMicOn(true)
+        volcMicOnRef.current = true
+        setMicForcedOff(false)
+        volcMicForcedOffRef.current = false
+      } catch (micErr: any) {
+        console.warn('[Volc] 主机开麦失败', micErr)
+        setMicOn(false)
+        volcMicOnRef.current = false
+        setMediaToast({ text: '麦克风未开启（可稍后点击麦图标重试）', kind: 'success' })
+      }
 
       engine.on(VERTC.events.onLocalStreamStats, (stats: any) => {
         const rtt = stats?.videoStats?.rtt ?? stats?.audioStats?.rtt
@@ -515,20 +631,59 @@ export default function ScreenShare() {
 
       // Track viewers via SDK events (uid -> displayName map)
       const volcViewerMap = new Map<string, string>()
+      const peerMicMap = new Map<string, boolean>()
+      const syncPeers = () => {
+        const list = Array.from(volcViewerMap.entries()).map(([userId, name]) => ({
+          userId,
+          name,
+          micOn: peerMicMap.get(userId) ?? false,
+        }))
+        setVolcPeers(list)
+        setViewerNames(list.map(p => p.name))
+        setViewerCount(list.length)
+      }
+
       engine.on(VERTC.events.onUserJoined, ({ userInfo }: { userInfo: { userId: string; extraInfo?: string } }) => {
         const name = userInfo.extraInfo || userInfo.userId
-        // Remove stale entry with same display name (quick re-join: new uid arrives before old uid's leave event)
         for (const [oldUid, oldName] of Array.from(volcViewerMap.entries())) {
-          if (oldName === name && oldUid !== userInfo.userId) { volcViewerMap.delete(oldUid); break }
+          if (oldName === name && oldUid !== userInfo.userId) {
+            volcViewerMap.delete(oldUid)
+            peerMicMap.delete(oldUid)
+            break
+          }
         }
         volcViewerMap.set(userInfo.userId, name)
-        setViewerNames(Array.from(volcViewerMap.values()))
-        setViewerCount(volcViewerMap.size)
+        if (!peerMicMap.has(userInfo.userId)) peerMicMap.set(userInfo.userId, false)
+        syncPeers()
       })
       engine.on(VERTC.events.onUserLeave, ({ userInfo }: { userInfo: { userId: string } }) => {
         volcViewerMap.delete(userInfo.userId)
-        setViewerNames(Array.from(volcViewerMap.values()))
-        setViewerCount(volcViewerMap.size)
+        peerMicMap.delete(userInfo.userId)
+        setForcedMutedIds(prev => {
+          if (!prev.has(userInfo.userId)) return prev
+          const next = new Set(prev)
+          next.delete(userInfo.userId)
+          return next
+        })
+        syncPeers()
+      })
+
+      engine.on(VERTC.events.onUserPublishStream, async ({ userId, mediaType }: { userId: string; mediaType: number }) => {
+        if (userId === hostUid) return
+        if (mediaType === MediaType.AUDIO || mediaType === MediaType.AUDIO_AND_VIDEO) {
+          await subscribeVolcMic(engine, userId, MediaType, {
+            StreamIndex: volcStreamIndexRef.current || StreamIndex,
+            playbackVolume: peerVolumesRef.current[userId] ?? VOLC_MIC_VOLUME_DEFAULT,
+          })
+          peerMicMap.set(userId, true)
+          syncPeers()
+        }
+      })
+      engine.on(VERTC.events.onUserUnpublishStream, ({ userId, mediaType }: { userId: string; mediaType: number }) => {
+        if (mediaType === MediaType.AUDIO || mediaType === MediaType.AUDIO_AND_VIDEO) {
+          peerMicMap.set(userId, false)
+          syncPeers()
+        }
       })
 
       // Poll only for admin force-close detection (no longer syncs viewer list)
@@ -546,7 +701,7 @@ export default function ScreenShare() {
       setStatus('streaming')
     } catch (err: any) {
       cleanup()
-      if (err.name === 'NotAllowedError') {
+      if (err.name === 'NotAllowedError' || err.name === 'AbortError') {
         setErrorMsg('您取消了屏幕共享')
       } else {
         setErrorMsg(`火山引擎连接失败: ${err.message}`)
@@ -569,9 +724,11 @@ export default function ScreenShare() {
       try { volcModule = await import('@volcengine/rtc') } catch {
         window.location.reload(); return
       }
-      const { default: VERTC, MediaType } = volcModule
+      const { default: VERTC, MediaType, StreamIndex } = volcModule
       const engine = VERTC.createEngine(VOLC_APP_ID)
       volcEngineRef.current = engine
+      volcStreamIndexRef.current = StreamIndex
+      volcMediaTypeRef.current = MediaType
 
       setConnectStep('连接火山引擎服务器...')
       const viewerDisplayName = myName.current || viewerUid
@@ -586,6 +743,7 @@ export default function ScreenShare() {
       rtcRoomRef.current = code
       rtcRoleRef.current = 'viewer'
       rtcUidRef.current = viewerUid
+      volcMediaTypeRef.current = MediaType
       const roomRes = await viewerRes.json()
       if (roomRes.hostName) setHostName(roomRes.hostName)
       const volcToken = await fetchVolcToken(code, viewerUid)
@@ -595,29 +753,55 @@ export default function ScreenShare() {
 
       setConnectStep('等待主播视频流...')
 
-      // Track co-viewers via SDK events (uid -> displayName, excluding the host)
       const coViewerMap = new Map<string, string>()
+      const peerMicMap = new Map<string, boolean>()
       let knownHostId = ''
 
-      // Helper: refresh viewer display (excludes self, same logic as host side)
       const refreshCoViewers = () => {
-        setViewerNames(Array.from(coViewerMap.values()))
-        setViewerCount(coViewerMap.size)
+        const list = Array.from(coViewerMap.entries()).map(([userId, name]) => ({
+          userId,
+          name,
+          micOn: peerMicMap.get(userId) ?? false,
+        }))
+        setVolcPeers(list)
+        setViewerNames(list.map(p => p.name))
+        setViewerCount(list.length)
+      }
+
+      const enableViewerMic = async () => {
+        try {
+          await startVolcMic(engine, MediaType, {
+          autoGain: micGainOnRef.current,
+          captureVolume: localMicVolumeRef.current,
+          StreamIndex,
+        })
+          setMicOn(true)
+          volcMicOnRef.current = true
+        } catch (e) {
+          console.warn('[Volc] 观众开麦失败', e)
+          setMicOn(false)
+          volcMicOnRef.current = false
+        }
       }
 
       engine.on(VERTC.events.onUserJoined, ({ userInfo }: { userInfo: { userId: string; extraInfo?: string } }) => {
-        if (userInfo.userId === knownHostId) return // skip host
+        if (userInfo.userId === knownHostId) return
         const name = userInfo.extraInfo || userInfo.userId
-        if (name === viewerDisplayName) return // skip own stale session (re-join: old uid still alive ~15s)
-        // Remove stale entry with same display name (quick re-join: new uid arrives before old uid's leave event)
+        if (name === viewerDisplayName) return
         for (const [oldUid, oldName] of Array.from(coViewerMap.entries())) {
-          if (oldName === name && oldUid !== userInfo.userId) { coViewerMap.delete(oldUid); break }
+          if (oldName === name && oldUid !== userInfo.userId) {
+            coViewerMap.delete(oldUid)
+            peerMicMap.delete(oldUid)
+            break
+          }
         }
         coViewerMap.set(userInfo.userId, name)
+        if (!peerMicMap.has(userInfo.userId)) peerMicMap.set(userInfo.userId, false)
         refreshCoViewers()
       })
       engine.on(VERTC.events.onUserLeave, ({ userInfo }: { userInfo: { userId: string } }) => {
         coViewerMap.delete(userInfo.userId)
+        peerMicMap.delete(userInfo.userId)
         refreshCoViewers()
         if (userInfo.userId === knownHostId) {
           setErrorMsg('主播已停止共享')
@@ -628,17 +812,65 @@ export default function ScreenShare() {
 
       engine.on(VERTC.events.onUserPublishScreen, async ({ userId }: { userId: string }) => {
         knownHostId = userId
-        // Remove host from co-viewer map if they were added before identity was known
         if (coViewerMap.has(userId)) {
           coViewerMap.delete(userId)
+          peerMicMap.delete(userId)
           refreshCoViewers()
         }
         await engine.subscribeScreen(userId, MediaType.AUDIO_AND_VIDEO)
+        await subscribeVolcMic(engine, userId, MediaType, {
+          StreamIndex: volcStreamIndexRef.current || StreamIndex,
+          playbackVolume: peerVolumesRef.current[userId] ?? VOLC_MIC_VOLUME_DEFAULT,
+        })
         volcHostUserIdRef.current = userId
+        setVolcHostUserId(userId)
         setConnectionInfo('火山引擎 RTC')
         setActiveStreamMode('volc')
         setStatus('watching')
+        if (!volcMicForcedOffRef.current) {
+          await enableViewerMic()
+        }
       })
+
+      engine.on(VERTC.events.onUserPublishStream, async ({ userId, mediaType }: { userId: string; mediaType: number }) => {
+        if (userId === viewerUid) return
+        if (mediaType === MediaType.AUDIO || mediaType === MediaType.AUDIO_AND_VIDEO) {
+          await subscribeVolcMic(engine, userId, MediaType, {
+            StreamIndex: volcStreamIndexRef.current || StreamIndex,
+            playbackVolume: peerVolumesRef.current[userId] ?? VOLC_MIC_VOLUME_DEFAULT,
+          })
+          if (userId !== knownHostId) {
+            peerMicMap.set(userId, true)
+            refreshCoViewers()
+          }
+        }
+      })
+      engine.on(VERTC.events.onUserUnpublishStream, ({ userId, mediaType }: { userId: string; mediaType: number }) => {
+        if (mediaType === MediaType.AUDIO || mediaType === MediaType.AUDIO_AND_VIDEO) {
+          if (userId !== knownHostId) {
+            peerMicMap.set(userId, false)
+            refreshCoViewers()
+          }
+        }
+      })
+
+      engine.on(VERTC.events.onUserMessageReceived, async ({ message }: { userId: string; message: string }) => {
+        const msg = parseVolcVoiceMessage(message)
+        if (!msg) return
+        if (msg.action === 'force-mute') {
+          volcMicForcedOffRef.current = true
+          setMicForcedOff(true)
+          await stopVolcMic(engine, MediaType)
+          setMicOn(false)
+          volcMicOnRef.current = false
+          setMediaToast({ text: msg.by ? `${msg.by} 已禁言你` : '你已被禁言', kind: 'success' })
+        } else if (msg.action === 'force-unmute') {
+          volcMicForcedOffRef.current = false
+          setMicForcedOff(false)
+          setMediaToast({ text: '主播已解除禁言，可自行开麦', kind: 'success' })
+        }
+      })
+
       engine.on(VERTC.events.onRemoteStreamStats, (stats: any) => {
         const rtt = stats?.videoStats?.rtt ?? stats?.audioStats?.rtt
         if (rtt !== undefined) setLatency(Math.round(Number(rtt)))
@@ -650,7 +882,6 @@ export default function ScreenShare() {
         setTimeout(cleanup, 0)
       })
 
-      // Heartbeat only - keeps activeUsers alive on backend; viewer list now driven by SDK events
       if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current)
       heartbeatIntervalRef.current = setInterval(async () => {
         fetch(`${API_URL}/room/${code}/heartbeat`, {
@@ -1353,6 +1584,89 @@ export default function ScreenShare() {
         setMediaToast(null)
         mediaToastTimerRef.current = null
       }, 2200)
+    }
+  }
+
+  const toggleVolcMic = async () => {
+    const engine = volcEngineRef.current
+    const MediaType = volcMediaTypeRef.current
+    if (!engine || !MediaType || activeStreamMode !== 'volc') return
+    if (volcMicOnRef.current) {
+      await stopVolcMic(engine, MediaType)
+      setMicOn(false)
+      volcMicOnRef.current = false
+      showMediaToast('已关麦', 'success')
+      return
+    }
+    if (volcMicForcedOffRef.current) {
+      showMediaToast('你已被主播禁言，无法开麦', 'success')
+      return
+    }
+    try {
+      await startVolcMic(engine, MediaType, {
+        autoGain: micGainOnRef.current,
+        captureVolume: localMicVolumeRef.current,
+        StreamIndex: volcStreamIndexRef.current,
+      })
+      setMicOn(true)
+      volcMicOnRef.current = true
+      showMediaToast('已开麦', 'success')
+    } catch (e: any) {
+      showMediaToast(`开麦失败：${e?.message || '请检查麦克风权限'}`, 'success')
+    }
+  }
+
+  const handlePeerVolumeChange = (userId: string, percent: number) => {
+    const v = Math.max(0, Math.min(VOLC_MIC_VOLUME_MAX, Math.round(percent)))
+    peerVolumesRef.current = { ...peerVolumesRef.current, [userId]: v }
+    setPeerVolumes(peerVolumesRef.current)
+    const engine = volcEngineRef.current
+    const StreamIndex = volcStreamIndexRef.current
+    if (engine && StreamIndex) setVolcRemoteMicVolume(engine, StreamIndex, userId, v)
+  }
+
+  const handleLocalMicVolumeChange = (percent: number) => {
+    const v = Math.max(0, Math.min(VOLC_MIC_VOLUME_MAX, Math.round(percent)))
+    localMicVolumeRef.current = v
+    setLocalMicVolume(v)
+    const engine = volcEngineRef.current
+    const StreamIndex = volcStreamIndexRef.current
+    if (engine && StreamIndex && volcMicOnRef.current) {
+      setVolcLocalMicVolume(engine, StreamIndex, v)
+    }
+  }
+
+  const setMicGainEnabled = async (enabled: boolean) => {
+    if (micGainOnRef.current === enabled) return
+    micGainOnRef.current = enabled
+    setMicGainOn(enabled)
+    const engine = volcEngineRef.current
+    if (engine && volcMicOnRef.current) {
+      await setVolcMicAutoGain(engine, enabled)
+    }
+    showMediaToast(enabled ? '已开启麦克风增益' : '已关闭麦克风增益', 'success')
+  }
+
+  const hostForceMutePeer = async (userId: string, mute: boolean) => {
+    const engine = volcEngineRef.current
+    if (!engine || rtcRoleRef.current !== 'host' || activeStreamMode !== 'volc') return
+    const payload = JSON.stringify({
+      t: 'ziye-voice',
+      action: mute ? 'force-mute' : 'force-unmute',
+      by: myName.current || '主播',
+    })
+    try {
+      await engine.sendUserMessage(userId, payload)
+      setForcedMutedIds(prev => {
+        const next = new Set(prev)
+        if (mute) next.add(userId)
+        else next.delete(userId)
+        return next
+      })
+      setVolcPeers(prev => prev.map(p => p.userId === userId ? { ...p, micOn: mute ? false : p.micOn } : p))
+      showMediaToast(mute ? '已禁言该成员' : '已解除禁言', 'success')
+    } catch (e: any) {
+      showMediaToast(`操作失败：${e?.message || '请重试'}`, 'success')
     }
   }
 
@@ -2333,6 +2647,128 @@ export default function ScreenShare() {
     </div>
   ) : null
 
+  const volumeSliderClass =
+    'flex-1 h-1.5 appearance-none bg-gray-700/80 rounded-full outline-none cursor-pointer ' +
+    '[&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 ' +
+    '[&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-purple-400 [&::-webkit-slider-thumb]:border-0 ' +
+    '[&::-webkit-slider-thumb]:shadow-[0_0_0_2px_rgba(147,51,234,0.25)] ' +
+    '[&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:h-3 [&::-moz-range-thumb]:rounded-full ' +
+    '[&::-moz-range-thumb]:bg-purple-400 [&::-moz-range-thumb]:border-0'
+
+  const peerListenVolume = (userId: string) => (
+    <div className="flex items-center gap-1.5 w-full mt-1.5" title="听感音量：只改你这边听到的大小">
+      <Volume2 size={11} className="text-gray-600 shrink-0" />
+      <input
+        type="range"
+        min={0}
+        max={VOLC_MIC_VOLUME_MAX}
+        step={5}
+        value={peerVolumes[userId] ?? VOLC_MIC_VOLUME_DEFAULT}
+        onChange={(e) => handlePeerVolumeChange(userId, Number(e.target.value))}
+        className={volumeSliderClass}
+        onClick={(e) => e.stopPropagation()}
+      />
+      <span className="text-gray-500 text-[10px] tabular-nums w-9 text-right">
+        {peerVolumes[userId] ?? VOLC_MIC_VOLUME_DEFAULT}%
+      </span>
+    </div>
+  )
+
+  const volcMicControl = activeStreamMode === 'volc' ? (
+    <div className="relative flex items-stretch" ref={micMenuRef}>
+      <button
+        type="button"
+        onClick={toggleVolcMic}
+        title={micForcedOff ? '已被禁言' : micOn ? '关麦' : '开麦'}
+        className={`flex items-center gap-1 rounded-l-lg px-2.5 py-1.5 border border-r-0 text-sm transition-colors ${
+          micOn
+            ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-300'
+            : 'bg-gray-800/60 border-gray-700/50 text-gray-400 hover:text-white'
+        }`}
+      >
+        {micOn ? <Mic size={14} /> : <MicOff size={14} />}
+        <span className="hidden sm:inline">{micOn ? '开麦' : micForcedOff ? '禁言中' : '关麦'}</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => { setPeersMenuOpen(false); setMicMenuOpen(v => !v) }}
+        title="麦克风设置"
+        className={`flex items-center px-1.5 rounded-r-lg border text-sm transition-colors ${
+          micOn
+            ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-300/80 hover:text-emerald-200'
+            : 'bg-gray-800/60 border-gray-700/50 text-gray-500 hover:text-white'
+        } ${micMenuOpen ? 'ring-1 ring-purple-500/40' : ''}`}
+      >
+        <ChevronDown size={14} className={`transition-transform ${micMenuOpen ? 'rotate-180' : ''}`} />
+      </button>
+      {micMenuOpen && (
+        <div className="absolute top-full left-0 mt-1 z-30 pt-1">
+          <div className="bg-gray-800/95 backdrop-blur-sm border border-gray-700/80 rounded-xl shadow-xl py-3 px-3 w-[240px]">
+            <div className="flex items-center justify-between mb-2.5">
+              <p className="text-gray-400 text-xs font-medium">麦克风设置</p>
+              <button type="button" onClick={() => setMicMenuOpen(false)} className="text-gray-600 hover:text-gray-300 p-0.5">
+                <X size={12} />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-gray-500 text-xs">发送音量</span>
+                  <span className="text-purple-300/90 text-[11px] tabular-nums font-mono">{localMicVolume}%</span>
+                </div>
+                <div className="flex items-center gap-2" title="只影响对方听到你的大小">
+                  <Volume2 size={12} className="text-gray-500 shrink-0" />
+                  <input
+                    type="range"
+                    min={0}
+                    max={VOLC_MIC_VOLUME_MAX}
+                    step={5}
+                    value={localMicVolume}
+                    onChange={(e) => handleLocalMicVolumeChange(Number(e.target.value))}
+                    className={volumeSliderClass}
+                  />
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-gray-500 text-xs">麦克风增益</span>
+                  <span className="text-gray-600 text-[10px]">AGC</span>
+                </div>
+                <div
+                  className="flex items-center bg-gray-900/50 border border-gray-700/45 rounded-lg p-0.5"
+                  title="自动增益：小声抬高、大声压低。AI 降噪开启时可能由引擎强制开启"
+                >
+                  <button
+                    type="button"
+                    onClick={() => { void setMicGainEnabled(true) }}
+                    className={`flex-1 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+                      micGainOn
+                        ? 'bg-purple-600/40 text-purple-200'
+                        : 'text-gray-500 hover:text-gray-300'
+                    }`}
+                  >
+                    开启
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { void setMicGainEnabled(false) }}
+                    className={`flex-1 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+                      !micGainOn
+                        ? 'bg-purple-600/40 text-purple-200'
+                        : 'text-gray-500 hover:text-gray-300'
+                    }`}
+                  >
+                    关闭
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  ) : null
+
   return (
     <div className={`flex flex-col ${isFullscreen ? 'h-screen bg-black' : 'min-h-[calc(100vh-8rem)] px-6 py-4 max-w-[1600px] mx-auto w-full'}`} ref={containerRef}>
       {/* Top bar */}
@@ -2353,23 +2789,66 @@ export default function ScreenShare() {
                   {copied ? <Check size={15} className="text-green-400" /> : <Copy size={15} />}
                 </button>
               </div>
-              <div className="relative group flex items-center gap-1 text-gray-400 text-sm cursor-default">
-                <Users size={15} />
-                <span>{viewerCount}</span>
-                {viewerNames.length > 0 && (
-                  <div className="absolute top-full left-0 mt-2 hidden group-hover:block z-20">
-                    <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-xl py-2 px-1 min-w-[140px]">
-                      <p className="text-gray-500 text-xs px-3 pb-1.5 border-b border-gray-700 mb-1">观看成员</p>
-                      {viewerNames.map((name, i) => (
-                        <div key={i} className="flex items-center gap-2 px-3 py-1.5">
-                          <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                          <span className="text-gray-300 text-sm whitespace-nowrap">{name}</span>
-                        </div>
-                      ))}
+              <div className="relative flex items-center gap-1 text-gray-400 text-sm" ref={peersMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => { setMicMenuOpen(false); setPeersMenuOpen(v => !v) }}
+                  className="flex items-center gap-1 hover:text-white transition-colors"
+                  title="观看成员（点击展开，可禁言 / 调听感音量）"
+                >
+                  <Users size={15} />
+                  <span>{viewerCount}</span>
+                </button>
+                {peersMenuOpen && (
+                  <div className="absolute top-full left-0 mt-1 z-30 pt-1">
+                    <div className="bg-gray-800/95 backdrop-blur-sm border border-gray-700/80 rounded-xl shadow-xl py-2 px-1 min-w-[240px] max-h-[70vh] overflow-y-auto">
+                      <div className="flex items-center justify-between px-3 pb-1.5 border-b border-gray-700/80 mb-1">
+                        <p className="text-gray-400 text-xs font-medium">观看成员</p>
+                        <button type="button" onClick={() => setPeersMenuOpen(false)} className="text-gray-600 hover:text-gray-300 p-0.5">
+                          <X size={12} />
+                        </button>
+                      </div>
+                      {activeStreamMode === 'volc' && volcPeers.length > 0
+                        ? volcPeers.map((p) => {
+                          const forced = forcedMutedIds.has(p.userId)
+                          return (
+                          <div key={p.userId} className="px-3 py-1.5">
+                            <div className="flex items-center gap-2">
+                              <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${p.micOn && !forced ? 'bg-green-500' : 'bg-gray-500'}`} />
+                              <span className="text-gray-300 text-sm whitespace-nowrap flex-1 truncate" title={p.name}>{p.name}</span>
+                              <button
+                                type="button"
+                                title={forced ? '解除禁言' : '禁言'}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  hostForceMutePeer(p.userId, !forced)
+                                }}
+                                className={`p-0.5 shrink-0 transition-colors ${
+                                  forced ? 'text-orange-400 hover:text-orange-300' : 'text-gray-500 hover:text-orange-300'
+                                }`}
+                              >
+                                {forced ? <Mic size={13} /> : <MicOff size={13} />}
+                              </button>
+                            </div>
+                            {peerListenVolume(p.userId)}
+                          </div>
+                          )
+                        })
+                        : viewerNames.length > 0
+                          ? viewerNames.map((name, i) => (
+                          <div key={i} className="flex items-center gap-2 px-3 py-1.5">
+                            <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                            <span className="text-gray-300 text-sm whitespace-nowrap">{name}</span>
+                          </div>
+                        ))
+                          : (
+                          <p className="text-gray-600 text-xs px-3 py-2">暂无观看成员</p>
+                          )}
                     </div>
                   </div>
                 )}
               </div>
+              {volcMicControl}
               {volcStatsChip}
               {volcMediaControls}
             </>
@@ -2388,6 +2867,7 @@ export default function ScreenShare() {
                   {hostName}
                 </span>
               )}
+              {volcMicControl}
               {activeStreamMode !== 'volc' && connectionInfo && (
                 <div className="flex items-center gap-2 bg-gray-800/60 border border-gray-700/50 rounded-lg px-3 py-1.5">
                   <span className="text-gray-500 text-xs">连接:</span>
@@ -2403,20 +2883,57 @@ export default function ScreenShare() {
                 </div>
               )}
               {volcStatsChip}
-              {volcMediaControls}
-              <div className="relative group flex items-center gap-1 text-gray-400 text-sm cursor-default select-none">
-                <Users size={15} />
-                <span>{viewerCount}</span>
-                {viewerNames.length > 0 && (
-                  <div className="absolute top-full left-0 mt-2 hidden group-hover:block z-20">
-                    <div className="bg-gray-800 border border-gray-700 rounded-lg shadow-xl py-2 px-1 min-w-[140px]">
-                      <p className="text-gray-500 text-xs px-3 pb-1.5 border-b border-gray-700 mb-1">观看成员</p>
-                      {viewerNames.map((name, i) => (
-                        <div key={i} className="flex items-center gap-2 px-3 py-1.5">
-                          <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                          <span className="text-gray-300 text-sm whitespace-nowrap">{name}</span>
+              <div className="relative flex items-center gap-1 text-gray-400 text-sm" ref={peersMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => { setMicMenuOpen(false); setPeersMenuOpen(v => !v) }}
+                  className="flex items-center gap-1 hover:text-white transition-colors"
+                  title="观看成员（可调听感音量）"
+                >
+                  <Users size={15} />
+                  <span>{viewerCount}</span>
+                </button>
+                {peersMenuOpen && (
+                  <div className="absolute top-full left-0 mt-1 z-30 pt-1">
+                    <div className="bg-gray-800/95 backdrop-blur-sm border border-gray-700/80 rounded-xl shadow-xl py-2 px-1 min-w-[240px] max-h-[70vh] overflow-y-auto">
+                      <div className="flex items-center justify-between px-3 pb-1.5 border-b border-gray-700/80 mb-1">
+                        <p className="text-gray-400 text-xs font-medium">观看成员</p>
+                        <button type="button" onClick={() => setPeersMenuOpen(false)} className="text-gray-600 hover:text-gray-300 p-0.5">
+                          <X size={12} />
+                        </button>
+                      </div>
+                      {activeStreamMode === 'volc' && volcHostUserId && (
+                        <div className="px-3 py-1.5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-1.5 h-1.5 rounded-full bg-orange-400 shrink-0" />
+                            <span className="text-gray-300 text-sm whitespace-nowrap flex-1 truncate" title={hostName || '主播'}>
+                              {hostName || '主播'}
+                              <span className="text-gray-600 text-[10px] ml-1">主播</span>
+                            </span>
+                          </div>
+                          {peerListenVolume(volcHostUserId)}
                         </div>
-                      ))}
+                      )}
+                      {volcPeers.length > 0
+                        ? volcPeers.map((p) => (
+                          <div key={p.userId} className="px-3 py-1.5">
+                            <div className="flex items-center gap-2">
+                              <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${p.micOn ? 'bg-green-500' : 'bg-gray-500'}`} />
+                              <span className="text-gray-300 text-sm whitespace-nowrap flex-1 truncate" title={p.name}>{p.name}</span>
+                            </div>
+                            {peerListenVolume(p.userId)}
+                          </div>
+                        ))
+                        : !volcHostUserId && viewerNames.length > 0
+                          ? viewerNames.map((name, i) => (
+                            <div key={i} className="flex items-center gap-2 px-3 py-1.5">
+                              <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                              <span className="text-gray-300 text-sm whitespace-nowrap">{name}</span>
+                            </div>
+                          ))
+                          : !volcHostUserId && (
+                            <p className="text-gray-600 text-xs px-3 py-2">暂无其他观看成员</p>
+                          )}
                     </div>
                   </div>
                 )}

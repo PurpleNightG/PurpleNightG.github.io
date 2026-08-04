@@ -1,10 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { assessmentAPI, memberAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
-import { Plus, Trash2, Edit, CheckCircle, XCircle, ChevronDown, ChevronUp, X, Search, Filter, CheckSquare, Square, Loader2, Eye, FileText } from 'lucide-react'
+import { Plus, Trash2, Edit, CheckCircle, XCircle, ChevronDown, ChevronUp, X, Search, Filter, CheckSquare, Square, Loader2, Eye, FileText, GripVertical, BookOpen } from 'lucide-react'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import SearchableSelect from '../../components/SearchableSelect'
 import DateInput from '../../components/DateInput'
+import StyledSelect from '../../components/StyledSelect'
+import TimeInput from '../../components/TimeInput'
+import NumberInput from '../../components/NumberInput'
 import { formatDate, formatDateTime, toInputDate } from '../../utils/dateFormat'
 import PublicAssessmentReportDetail, { normalizePublicAssessment } from '../../components/PublicAssessmentReportDetail'
 import FullscreenReportModal from '../../components/FullscreenReportModal'
@@ -99,6 +103,9 @@ export default function AssessmentRecords() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [showModal, setShowModal] = useState(false)
+  const [showDeductionGuide, setShowDeductionGuide] = useState(true)
+  const [guidePos, setGuidePos] = useState({ x: 24, y: 96 })
+  const guideDragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null)
   const [editingAssessment, setEditingAssessment] = useState<Assessment | null>(null)
   const [viewingAssessment, setViewingAssessment] = useState<Assessment | null>(null)
   const [previewingReport, setPreviewingReport] = useState<Assessment | null>(null)
@@ -288,6 +295,38 @@ export default function AssessmentRecords() {
     })
   }
 
+  const onGuideDragStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    guideDragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: guidePos.x,
+      originY: guidePos.y,
+    }
+
+    const onMove = (ev: MouseEvent) => {
+      const drag = guideDragRef.current
+      if (!drag) return
+      const nextX = drag.originX + (ev.clientX - drag.startX)
+      const nextY = drag.originY + (ev.clientY - drag.startY)
+      const maxX = Math.max(0, window.innerWidth - 360)
+      const maxY = Math.max(0, window.innerHeight - 120)
+      setGuidePos({
+        x: Math.min(Math.max(8, nextX), maxX),
+        y: Math.min(Math.max(8, nextY), maxY),
+      })
+    }
+
+    const onUp = () => {
+      guideDragRef.current = null
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [guidePos.x, guidePos.y])
+
   const toggleSelection = (id: number) => {
     setSelectedIds(prev => {
       const newSet = new Set(prev)
@@ -320,10 +359,36 @@ export default function AssessmentRecords() {
   }
 
   const addDeductionRecord = () => {
-    setFormData(prev => ({
-      ...prev,
-      deduction_records: [...prev.deduction_records, { time: '00:00:00', code: '', description: '', score: 0 }]
-    }))
+    setFormData(prev => {
+      const last = prev.deduction_records[prev.deduction_records.length - 1]
+      return {
+        ...prev,
+        deduction_records: [
+          ...prev.deduction_records,
+          {
+            time: last?.time || '00:00:00',
+            code: '',
+            description: '',
+            score: 0,
+          },
+        ],
+      }
+    })
+  }
+
+  const addDeductionAtSameTime = (index: number) => {
+    setFormData(prev => {
+      const source = prev.deduction_records[index]
+      if (!source) return prev
+      const next = [...prev.deduction_records]
+      next.splice(index + 1, 0, {
+        time: source.time || '00:00:00',
+        code: '',
+        description: '',
+        score: 0,
+      })
+      return { ...prev, deduction_records: next }
+    })
   }
 
   const updateDeductionRecord = (index: number, field: keyof DeductionRecord, value: any) => {
@@ -490,7 +555,7 @@ export default function AssessmentRecords() {
       )}
 
       {showFilters && (
-        <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 mb-4">
+        <div className="student-glass-chip p-4 mb-4">
           <div className="flex justify-between items-center mb-3">
             <h3 className="text-white font-semibold">筛选条件</h3>
             <button onClick={clearFilters} className="text-sm text-gray-400 hover:text-white transition-colors">
@@ -524,7 +589,7 @@ export default function AssessmentRecords() {
       )}
 
       {/* 表格 */}
-      <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 overflow-hidden">
+      <div className="student-glass-panel student-glass-panel--static overflow-hidden">
         {filteredAssessments.length === 0 ? (
           <div className="p-12 text-center text-gray-400">
             <p>暂无考核记录</p>
@@ -678,238 +743,243 @@ export default function AssessmentRecords() {
         )}
       </div>
 
-      {/* 添加/编辑模态框 */}
+      {/* 添加/编辑全屏 */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-gray-700 modal-scrollbar">
-            <div className="sticky top-0 bg-gray-800 border-b border-gray-700 px-6 py-4 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 bg-gray-900 flex flex-col">
+          <div className="shrink-0 border-b border-white/10 bg-white/5 px-6 py-4 flex items-center justify-between">
+            <div>
               <h2 className="text-xl font-bold text-white">
                 {editingAssessment ? '编辑考核记录' : '添加考核记录'}
               </h2>
-              <button
-                onClick={() => {
-                  setShowModal(false)
-                  resetForm()
-                }}
-                className="text-gray-400 hover:text-white transition-colors"
-              >
-                ✕
-              </button>
+              <p className="text-xs text-gray-500 mt-0.5">填写基本信息与扣分项后保存</p>
             </div>
+            <button
+              onClick={() => {
+                setShowModal(false)
+                resetForm()
+              }}
+              className="text-gray-400 hover:text-white transition-colors w-9 h-9 rounded-lg hover:bg-gray-800 flex items-center justify-center"
+              aria-label="关闭"
+            >
+              ✕
+            </button>
+          </div>
 
-            <div className="p-6 space-y-6">
-              {/* 基本信息 */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">
-                    学员 *
-                  </label>
-                  <SearchableSelect
-                    options={members.map(member => ({
-                      id: member.id,
-                      label: member.nickname,
-                      subLabel: ''
-                    }))}
-                    value={formData.member_id}
-                    onChange={(value) => {
-                      const memberId = typeof value === 'string' ? parseInt(value) : value
-                      const member = members.find(m => m.id === memberId)
-                      setFormData({
-                        ...formData,
-                        member_id: memberId,
-                        member_name: member?.nickname || ''
-                      })
-                    }}
-                    placeholder="请选择或搜索学员"
-                    required
-                  />
-                </div>
-
-                <DateInput
-                  label="考核日期"
-                  value={formData.assessment_date}
-                  onChange={(value) => setFormData({ ...formData, assessment_date: value })}
-                  required
-                />
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">
-                    考核结果 *
-                  </label>
-                  <select
-                    value={formData.status}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value as Assessment['status'] })}
-                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
-                    required
-                  >
-                    <option value="待处理">待处理</option>
-                    <option value="已通过">已通过</option>
-                    <option value="未通过">未通过</option>
-                    <option value="未完成">未完成</option>
-                    <option value="模拟考">模拟考</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1">
-                    地图 *
-                  </label>
-                  <select
-                    value={formData.map}
-                    onChange={(e) => setFormData({ ...formData, map: e.target.value })}
-                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
-                    required
-                  >
-                    <option value="">选择地图</option>
-                    {MAP_OPTIONS.map(map => (
-                      <option key={map} value={map}>{map}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {formData.map === '自定义' && (
-                  <div className="col-span-2">
-                    <label className="block text-sm font-medium text-gray-300 mb-1">
-                      自定义地图名称
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.custom_map}
-                      onChange={(e) => setFormData({ ...formData, custom_map: e.target.value })}
-                      className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
-                      placeholder="请输入地图名称"
-                    />
-                  </div>
-                )}
-              </div>
-
-              {/* 评价 */}
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">
-                  评价
-                </label>
-                <textarea
-                  value={formData.evaluation}
-                  onChange={(e) => setFormData({ ...formData, evaluation: e.target.value })}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white min-h-[100px]"
-                  placeholder="输入对学员的评价..."
-                />
-              </div>
-
-              {/* 考核视频 */}
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">
-                  考核视频 (Abyss外链)
-                </label>
-                <input
-                  type="url"
-                  value={formData.video_url}
-                  onChange={(e) => setFormData({ ...formData, video_url: e.target.value })}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
-                  placeholder="https://short.icu/..."
-                />
-                <p className="mt-2 text-xs text-yellow-400 bg-yellow-900/20 border border-yellow-700/30 rounded px-2 py-1.5">
-                  ⚠️ 提示：首次播放Abyss短链视频会<strong>弹出两次</strong>新标签页，请关闭这两个新页面后返回，第三次点击播放即可正常观看。新页面与紫夜无关，提醒学员谨防上当受骗！
-                </p>
-                {formData.video_url.trim() && (
-                  <div className="mt-4">
-                    <div className="text-sm text-gray-400 mb-2">视频预览</div>
-                    <AssessmentVideoPreview url={formData.video_url} />
-                  </div>
-                )}
-              </div>
-
-              {/* 扣分记录 */}
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <label className="block text-sm font-medium text-gray-300">
-                    考核记录（扣分项）
-                  </label>
-                  <button
-                    type="button"
-                    onClick={addDeductionRecord}
-                    className="text-sm bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded transition-colors"
-                  >
-                    + 添加扣分项
-                  </button>
-                </div>
-
-                {/* 扣分项说明 */}
-                <div className="bg-gray-900/50 rounded-lg p-4 mb-4 text-sm">
-                  <div className="text-gray-400 mb-2">扣分项参考：</div>
-                  {Object.entries(DEDUCTION_CATEGORIES).map(([category, items]) => (
-                    <div key={category} className="mb-2">
-                      <div className="text-purple-400 font-medium mb-1">{category}</div>
-                      <div className="grid grid-cols-2 gap-2 text-gray-400">
-                        {items.map(item => (
-                          <div key={item.code}>
-                            <span className="text-white">{item.code}</span> - {item.name} ({item.scoreRange}分)
-                          </div>
-                        ))}
-                      </div>
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <div className="h-full w-full p-4 sm:p-5 grid grid-cols-1 xl:grid-cols-2 gap-4 xl:gap-5 min-h-0">
+              {/* 左侧：基本信息 / 评价 / 视频 */}
+              <div className="min-h-0 overflow-y-auto modal-scrollbar space-y-5 pr-1 xl:pr-2">
+                <section className="bg-gray-800/80 border border-gray-700 rounded-xl p-4 sm:p-5 space-y-4">
+                  <h3 className="text-sm font-semibold text-white">基本信息</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1">
+                        学员 *
+                      </label>
+                      <SearchableSelect
+                        options={members.map(member => ({
+                          id: member.id,
+                          label: member.nickname,
+                          subLabel: ''
+                        }))}
+                        value={formData.member_id}
+                        onChange={(value) => {
+                          const memberId = typeof value === 'string' ? parseInt(value) : value
+                          const member = members.find(m => m.id === memberId)
+                          setFormData({
+                            ...formData,
+                            member_id: memberId,
+                            member_name: member?.nickname || ''
+                          })
+                        }}
+                        placeholder="请选择或搜索学员"
+                        required
+                      />
                     </div>
-                  ))}
+
+                    <DateInput
+                      label="考核日期"
+                      value={formData.assessment_date}
+                      onChange={(value) => setFormData({ ...formData, assessment_date: value })}
+                      required
+                    />
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1">
+                        考核结果 *
+                      </label>
+                      <StyledSelect
+                        required
+                        options={['待处理', '已通过', '未通过', '未完成', '模拟考']}
+                        value={formData.status}
+                        onChange={(value) => setFormData({ ...formData, status: value as Assessment['status'] })}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-1">
+                        地图 *
+                      </label>
+                      <StyledSelect
+                        required
+                        placeholder="选择地图"
+                        options={MAP_OPTIONS}
+                        value={formData.map}
+                        onChange={(value) => setFormData({ ...formData, map: value })}
+                      />
+                    </div>
+
+                    {formData.map === '自定义' && (
+                      <div className="sm:col-span-2">
+                        <label className="block text-sm font-medium text-gray-300 mb-1">
+                          自定义地图名称
+                        </label>
+                        <input
+                          type="text"
+                          value={formData.custom_map}
+                          onChange={(e) => setFormData({ ...formData, custom_map: e.target.value })}
+                          className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                          placeholder="请输入地图名称"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                <section className="bg-gray-800/80 border border-gray-700 rounded-xl p-4 sm:p-5">
+                  <label className="block text-sm font-semibold text-white mb-3">
+                    评价
+                  </label>
+                  <textarea
+                    value={formData.evaluation}
+                    onChange={(e) => setFormData({ ...formData, evaluation: e.target.value })}
+                    rows={8}
+                    placeholder="输入对学员的评价..."
+                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white min-h-[160px] text-sm leading-relaxed resize-y overflow-y-auto modal-scrollbar"
+                  />
+                </section>
+
+                <section className="bg-gray-800/80 border border-gray-700 rounded-xl p-4 sm:p-5">
+                  <label className="block text-sm font-semibold text-white mb-3">
+                    考核视频 (Abyss外链)
+                  </label>
+                  <input
+                    type="url"
+                    value={formData.video_url}
+                    onChange={(e) => setFormData({ ...formData, video_url: e.target.value })}
+                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                    placeholder="https://short.icu/..."
+                  />
+                  <p className="mt-2 text-xs text-yellow-400 bg-yellow-900/20 border border-yellow-700/30 rounded px-2 py-1.5">
+                    ⚠️ 提示：首次播放Abyss短链视频会<strong>弹出两次</strong>新标签页，请关闭这两个新页面后返回，第三次点击播放即可正常观看。新页面与紫夜无关，提醒学员谨防上当受骗！
+                  </p>
+                  {formData.video_url.trim() && (
+                    <div className="mt-4">
+                      <div className="text-sm text-gray-400 mb-2">视频预览</div>
+                      <AssessmentVideoPreview url={formData.video_url} />
+                    </div>
+                  )}
+                </section>
+              </div>
+
+              {/* 右侧：扣分项 */}
+              <div className="min-h-0 flex flex-col overflow-hidden bg-gray-800/80 border border-gray-700 rounded-xl p-4 sm:p-5">
+                <div className="flex items-center justify-between gap-3 mb-3 shrink-0">
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">考核记录（扣分项）</h3>
+                    <p className="text-[11px] text-gray-500 mt-0.5">
+                      已添加 {formData.deduction_records.length} 项
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setShowDeductionGuide(v => !v)}
+                      className={`text-sm px-3 py-1.5 rounded-lg transition-colors inline-flex items-center gap-1.5 ${
+                        showDeductionGuide
+                          ? 'bg-purple-600/30 text-purple-200 border border-purple-500/40'
+                          : 'bg-gray-700 hover:bg-gray-600 text-gray-200 border border-gray-600'
+                      }`}
+                    >
+                      <BookOpen size={14} />
+                      {showDeductionGuide ? '隐藏参考' : '扣分参考'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={addDeductionRecord}
+                      className="text-sm bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg transition-colors"
+                    >
+                      + 添加扣分项
+                    </button>
+                  </div>
                 </div>
 
-                {/* 扣分记录列表 */}
-                <div className="space-y-3">
+                <div className="flex-1 min-h-0 overflow-y-auto modal-scrollbar space-y-3 pr-1">
                   {formData.deduction_records.map((record, index) => (
-                    <div key={index} className="bg-gray-900/50 rounded-lg p-4 relative">
-                      <button
-                        type="button"
-                        onClick={() => removeDeductionRecord(index)}
-                        className="absolute top-2 right-2 text-red-400 hover:text-red-300"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                      
-                      <div className="grid grid-cols-4 gap-3">
+                    <div key={index} className="bg-gray-900/50 rounded-lg p-3.5 relative border border-gray-700">
+                      <div className="absolute top-2 right-2 flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => addDeductionAtSameTime(index)}
+                          className="text-[11px] text-purple-300 hover:text-purple-200 px-1.5 py-0.5 rounded hover:bg-purple-500/10"
+                          title="同一时间再加一项"
+                        >
+                          +同时
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeDeductionRecord(index)}
+                          className="text-red-400 hover:text-red-300 p-0.5"
+                          title="删除"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 pr-16">
                         <div>
                           <label className="block text-xs text-gray-400 mb-1">时间</label>
-                          <input
-                            type="time"
-                            step="1"
+                          <TimeInput
+                            size="sm"
+                            withSeconds
                             value={record.time}
-                            onChange={(e) => updateDeductionRecord(index, 'time', e.target.value)}
-                            className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
+                            onChange={(value) => updateDeductionRecord(index, 'time', value)}
                           />
                         </div>
                         <div>
-                          <label className="block text-xs text-gray-400 mb-1">违规代码</label>
-                          <select
-                            value={record.code}
-                            onChange={(e) => updateDeductionRecord(index, 'code', e.target.value)}
-                            className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
-                          >
-                            <option value="">选择代码</option>
-                            {Object.entries(DEDUCTION_CATEGORIES).map(([category, codes]) => (
-                              <optgroup key={category} label={category}>
-                                {(codes as Array<{code: string, name: string, scoreRange: string}>).map((item: any) => (
-                                  <option key={item.code} value={item.code}>
-                                    {item.code} - {item.name}
-                                  </option>
-                                ))}
-                              </optgroup>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="col-span-1">
                           <label className="block text-xs text-gray-400 mb-1">扣分</label>
-                          <input
-                            type="number"
-                            min="0"
+                          <NumberInput
+                            min={0}
                             value={record.score}
-                            onChange={(e) => updateDeductionRecord(index, 'score', parseFloat(e.target.value) || 0)}
-                            className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
+                            onChange={(value) => updateDeductionRecord(index, 'score', value)}
+                            className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-white text-sm"
                           />
                         </div>
-                        <div className="col-span-4">
+                        <div className="col-span-2">
+                          <label className="block text-xs text-gray-400 mb-1">违规代码</label>
+                          <StyledSelect
+                            size="sm"
+                            searchable
+                            dropdownMinWidth={320}
+                            placeholder="选择代码"
+                            options={Object.entries(DEDUCTION_CATEGORIES).flatMap(([category, codes]) =>
+                              (codes as Array<{code: string, name: string, scoreRange: string}>).map((item) => ({
+                                value: item.code,
+                                label: `${item.code} · ${item.name}`,
+                                description: `${category} · ${item.scoreRange}分`,
+                              }))
+                            )}
+                            value={record.code}
+                            onChange={(value) => updateDeductionRecord(index, 'code', value)}
+                          />
+                        </div>
+                        <div className="col-span-2">
                           <label className="block text-xs text-gray-400 mb-1">描述</label>
                           <input
                             type="text"
                             value={record.description}
                             onChange={(e) => updateDeductionRecord(index, 'description', e.target.value)}
-                            className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white text-sm"
+                            className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-white text-sm"
                             placeholder="扣分原因描述..."
                           />
                         </div>
@@ -918,31 +988,30 @@ export default function AssessmentRecords() {
                   ))}
 
                   {formData.deduction_records.length === 0 && (
-                    <div className="text-center text-gray-500 py-4">
-                      暂无扣分记录
+                    <div className="text-center text-gray-500 py-10 border border-dashed border-gray-700 rounded-lg">
+                      暂无扣分记录，点击右上角添加
                     </div>
                   )}
                 </div>
 
-                {/* 总分显示 */}
                 {formData.deduction_records.length > 0 && (
-                  <div className="mt-4 bg-purple-900/20 rounded-lg p-4 border border-purple-700/50">
-                    <div className="flex items-center justify-between">
+                  <div className="mt-3 shrink-0 bg-purple-900/20 rounded-lg p-3 border border-purple-700/50">
+                    <div className="flex items-center justify-between gap-3">
                       <div>
-                        <div className="text-gray-400 text-sm mb-1">总扣分</div>
-                        <div className="text-red-400 text-xl font-bold">
+                        <div className="text-gray-400 text-xs mb-0.5">总扣分</div>
+                        <div className="text-red-400 text-lg font-bold">
                           -{formData.deduction_records.reduce((sum, r) => sum + r.score, 0)} 分
                         </div>
                       </div>
                       <div>
-                        <div className="text-gray-400 text-sm mb-1">最终得分</div>
-                        <div className="text-white text-2xl font-bold">
+                        <div className="text-gray-400 text-xs mb-0.5">最终得分</div>
+                        <div className="text-white text-xl font-bold">
                           {calculateTotalScore()} 分
                         </div>
                       </div>
                       <div>
-                        <div className="text-gray-400 text-sm mb-1">评级</div>
-                        <div className={`text-xl font-bold ${getRating(calculateTotalScore()).color}`}>
+                        <div className="text-gray-400 text-xs mb-0.5">评级</div>
+                        <div className={`text-lg font-bold ${getRating(calculateTotalScore()).color}`}>
                           {getRating(calculateTotalScore()).text}
                         </div>
                       </div>
@@ -951,28 +1020,78 @@ export default function AssessmentRecords() {
                 )}
               </div>
             </div>
-
-            {/* 底部按钮 */}
-            <div className="sticky bottom-0 bg-gray-800 border-t border-gray-700 px-6 py-4 flex gap-3 justify-end">
-              <button
-                onClick={() => {
-                  setShowModal(false)
-                  resetForm()
-                }}
-                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
-              >
-                取消
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={submitting}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                {submitting && <Loader2 size={16} className="animate-spin" />}
-                {editingAssessment ? (submitting ? '保存中...' : '保存') : (submitting ? '创建中...' : '创建')}
-              </button>
-            </div>
           </div>
+
+          {/* 底部按钮 */}
+          <div className="shrink-0 border-t border-white/10 bg-white/5 px-6 py-4 flex gap-3 justify-end">
+            <button
+              onClick={() => {
+                setShowModal(false)
+                resetForm()
+              }}
+              className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={submitting}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {submitting && <Loader2 size={16} className="animate-spin" />}
+              {editingAssessment ? (submitting ? '保存中...' : '保存') : (submitting ? '创建中...' : '创建')}
+            </button>
+          </div>
+
+          {showDeductionGuide && createPortal(
+            <div
+              className="fixed z-[80] w-[min(380px,calc(100vw-16px))] max-h-[min(70vh,520px)] flex flex-col rounded-xl border border-purple-500/40 bg-gray-900/95 backdrop-blur-md shadow-2xl shadow-black/50 ring-1 ring-white/10"
+              style={{ left: guidePos.x, top: guidePos.y }}
+            >
+              <div
+                onMouseDown={onGuideDragStart}
+                className="shrink-0 cursor-grab active:cursor-grabbing select-none px-3 py-2.5 border-b border-gray-700/80 flex items-center justify-between gap-2 rounded-t-xl bg-white/5"
+              >
+                <div className="flex items-center gap-2 text-sm text-white font-medium min-w-0">
+                  <GripVertical size={16} className="text-purple-300 shrink-0" />
+                  <BookOpen size={15} className="text-purple-300 shrink-0" />
+                  <span className="truncate">扣分项参考</span>
+                  <span className="text-[11px] text-gray-500 font-normal hidden sm:inline">拖动标题栏移动</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowDeductionGuide(false)}
+                  className="text-gray-400 hover:text-white p-1 rounded-md hover:bg-gray-700"
+                  aria-label="关闭参考"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto picker-scrollbar p-3 space-y-3">
+                {Object.entries(DEDUCTION_CATEGORIES).map(([category, items]) => (
+                  <div key={category}>
+                    <div className="text-purple-300 font-medium text-xs mb-1.5">{category}</div>
+                    <div className="space-y-1">
+                      {items.map(item => (
+                        <div
+                          key={item.code}
+                          className="flex items-baseline justify-between gap-2 text-xs bg-gray-800/80 border border-gray-700 rounded-lg px-2.5 py-1.5"
+                        >
+                          <div className="text-gray-300 min-w-0">
+                            <span className="text-white font-mono font-medium">{item.code}</span>
+                            <span className="text-gray-500"> · </span>
+                            {item.name}
+                          </div>
+                          <span className="text-amber-300/90 tabular-nums shrink-0">{item.scoreRange}分</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>,
+            document.body
+          )}
         </div>
       )}
 

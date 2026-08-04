@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { toast } from '../../utils/toast'
 import RichEditor from '../../components/RichEditor'
+import StyledSelect from '../../components/StyledSelect'
 
 interface TreeItem {
   name: string
@@ -732,7 +733,7 @@ function applyIndexOrder(listItems: TreeItem[], indexItems: any[]): TreeItem[] {
 
         {/* 待提交队列面板 */}
         {pendingRenames.size > 0 && (
-          <div className="border-t border-gray-700 bg-gray-900/60 flex-shrink-0">
+          <div className="border-t border-gray-700 bg-gray-900/40 flex-shrink-0">
             <div className="px-3 py-2 flex items-center justify-between">
               <span className="text-yellow-400 text-xs font-semibold">待提交 ({pendingRenames.size})</span>
               <button onClick={() => setPendingRenames(new Map())} className="text-gray-500 hover:text-red-400 text-xs transition-colors">清空</button>
@@ -878,8 +879,11 @@ function applyIndexOrder(listItems: TreeItem[], indexItems: any[]): TreeItem[] {
 
       {/* 重命名/移动 modal */}
       {showRename && selectedFile && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-sm border border-gray-700 shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-sm">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
             <h3 className="text-white font-bold text-lg mb-1">重命名 / 移动</h3>
             <p className="text-gray-500 text-xs mb-4">当前：{selectedFile.path}</p>
             <div className="space-y-3 mb-4">
@@ -888,19 +892,18 @@ function applyIndexOrder(listItems: TreeItem[], indexItems: any[]): TreeItem[] {
                 <input
                   type="text" value={renameNewName} onChange={e => setRenameNewName(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && doRename()} autoFocus
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                  className="student-glass-field"
                 />
               </div>
               <div>
                 <label className="text-gray-400 text-xs mb-1 block">所在文件夹</label>
-                <select
+                <StyledSelect
+                  size="sm"
+                  searchable
+                  options={[{ value: '', label: '根目录' }, ...allFolders.map((f) => ({ value: f, label: f }))]}
                   value={renameNewFolder}
-                  onChange={e => setRenameNewFolder(e.target.value)}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-purple-500"
-                >
-                  <option value="">根目录</option>
-                  {allFolders.map(f => <option key={f} value={f}>{f}</option>)}
-                </select>
+                  onChange={setRenameNewFolder}
+                />
               </div>
             </div>
             <div className="flex justify-end gap-2">
@@ -911,13 +914,18 @@ function applyIndexOrder(listItems: TreeItem[], indexItems: any[]): TreeItem[] {
               </button>
             </div>
           </div>
+            </div>
+          </div>
         </div>
       )}
 
       {/* 新建文件 modal */}
       {showNewFile && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-sm border border-gray-700 shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-sm">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
             <h3 className="text-white font-bold text-lg mb-4">新建文档</h3>
             <div className="space-y-3 mb-4">
               <div>
@@ -926,20 +934,19 @@ function applyIndexOrder(listItems: TreeItem[], indexItems: any[]): TreeItem[] {
                   type="text" value={newFileName} onChange={e => setNewFileName(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && createFile()} autoFocus
                   placeholder="如：基础战术"
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                  className="student-glass-field"
                 />
               </div>
               {allFolders.length > 0 && (
                 <div>
                   <label className="text-gray-400 text-xs mb-1 block">所在文件夹</label>
-                  <select
+                  <StyledSelect
+                    size="sm"
+                    searchable
+                    options={[{ value: '', label: '根目录' }, ...allFolders.map((f) => ({ value: f, label: f }))]}
                     value={newFileFolder}
-                    onChange={e => setNewFileFolder(e.target.value)}
-                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-purple-500"
-                  >
-                    <option value="">根目录</option>
-                    {allFolders.map(f => <option key={f} value={f}>{f}</option>)}
-                  </select>
+                    onChange={setNewFileFolder}
+                  />
                 </div>
               )}
             </div>
@@ -950,13 +957,18 @@ function applyIndexOrder(listItems: TreeItem[], indexItems: any[]): TreeItem[] {
               </button>
             </div>
           </div>
+            </div>
+          </div>
         </div>
       )}
 
       {/* 新建文件夹 modal */}
       {showNewFolder && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-sm border border-gray-700 shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-sm">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
             <h3 className="text-white font-bold text-lg mb-4">新建文件夹</h3>
             <div className="space-y-3 mb-4">
               <div>
@@ -965,20 +977,19 @@ function applyIndexOrder(listItems: TreeItem[], indexItems: any[]): TreeItem[] {
                   type="text" value={newFolderName} onChange={e => setNewFolderName(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && createFolder()} autoFocus
                   placeholder="如：战术教程"
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+                  className="student-glass-field"
                 />
               </div>
               {allFolders.length > 0 && (
                 <div>
                   <label className="text-gray-400 text-xs mb-1 block">父文件夹</label>
-                  <select
+                  <StyledSelect
+                    size="sm"
+                    searchable
+                    options={[{ value: '', label: '根目录' }, ...allFolders.map((f) => ({ value: f, label: f }))]}
                     value={newFolderParent}
-                    onChange={e => setNewFolderParent(e.target.value)}
-                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-purple-500"
-                  >
-                    <option value="">根目录</option>
-                    {allFolders.map(f => <option key={f} value={f}>{f}</option>)}
-                  </select>
+                    onChange={setNewFolderParent}
+                  />
                 </div>
               )}
             </div>
@@ -989,13 +1000,18 @@ function applyIndexOrder(listItems: TreeItem[], indexItems: any[]): TreeItem[] {
               </button>
             </div>
           </div>
+            </div>
+          </div>
         </div>
       )}
 
       {/* 删除确认 */}
       {deleteTarget && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-sm border border-gray-700 shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-sm">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
             <div className="flex items-center gap-3 mb-3">
               <AlertCircle className="text-red-400" size={22} />
               <h3 className="text-white font-bold text-lg">确认删除</h3>
@@ -1011,6 +1027,8 @@ function applyIndexOrder(listItems: TreeItem[], indexItems: any[]): TreeItem[] {
                 {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
                 {deleting ? '删除中...' : '确认删除'}
               </button>
+            </div>
+          </div>
             </div>
           </div>
         </div>

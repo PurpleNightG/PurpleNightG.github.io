@@ -6,6 +6,7 @@ import { toast } from '../../utils/toast'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import SearchableSelect from '../../components/SearchableSelect'
 import DateInput from '../../components/DateInput'
+import { useBadges } from '../../contexts/BadgeContext'
 
 interface LeaveRecord {
   id: number
@@ -61,6 +62,7 @@ const defaultForm = (): LeaveForm => ({
 })
 
 export default function LeaveRecords() {
+  const { refreshBadges } = useBadges()
   const [records, setRecords] = useState<LeaveRecord[]>([])
   const [members, setMembers] = useState<MemberOption[]>([])
   const [loading, setLoading] = useState(true)
@@ -146,6 +148,7 @@ export default function LeaveRecords() {
       toast.success(status === '已批准' ? '已批准请假申请' : '已拒绝请假申请')
       setReviewModal({show: false, app: null, remark: ''})
       await Promise.all([loadApplications(), loadRecords()])
+      void refreshBadges()
     } catch (error: any) {
       toast.error(error.message || '审批失败')
     } finally {
@@ -162,6 +165,7 @@ export default function LeaveRecords() {
       await leaveAPI.approveEndApproval(record.id, { reviewer_name: reviewerName })
       toast.success(`已确认 ${record.member_name} 请假结束，缓冲期 7 天已开始`)
       await loadRecords()
+      void refreshBadges()
     } catch (error: any) {
       toast.error(error.message || '审批失败')
     } finally {
@@ -469,7 +473,7 @@ export default function LeaveRecords() {
       </div>
 
       {/* Tab 切换 */}
-      <div className="flex gap-1 mb-4 bg-gray-800/50 rounded-lg p-1 w-fit">
+      <div className="flex gap-1 mb-4 student-glass-chip p-1 w-fit">
         <button
           onClick={() => setActiveTab('records')}
           className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
@@ -523,7 +527,7 @@ export default function LeaveRecords() {
       )}
 
       {activeTab === 'records' && showFilters && (
-        <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 mb-4">
+        <div className="student-glass-chip p-4 mb-4">
           <div className="flex justify-between items-center mb-3">
             <div className="flex items-center gap-3">
               <h3 className="text-white font-semibold">筛选条件</h3>
@@ -557,7 +561,7 @@ export default function LeaveRecords() {
 
       {/* 结束审批面板 */}
       {activeTab === 'endApproval' && (
-        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 overflow-hidden">
+        <div className="student-glass-panel student-glass-panel--static overflow-hidden">
           {loading ? (
             <div className="p-12 text-center text-gray-400">加载中...</div>
           ) : endApprovalRecords.length === 0 ? (
@@ -612,7 +616,7 @@ export default function LeaveRecords() {
 
       {/* 请假申请面板 */}
       {activeTab === 'applications' && (
-        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 overflow-hidden">
+        <div className="student-glass-panel student-glass-panel--static overflow-hidden">
           {loadingApps ? (
             <div className="p-12 text-center text-gray-400">加载中...</div>
           ) : applications.length === 0 ? (
@@ -683,7 +687,7 @@ export default function LeaveRecords() {
 
       {/* 请假记录面板 */}
       {activeTab === 'records' && (
-      <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 overflow-hidden">
+      <div className="student-glass-panel student-glass-panel--static overflow-hidden">
         {loading ? (
           <div className="p-12 text-center text-gray-400">加载中...</div>
         ) : (
@@ -805,8 +809,11 @@ export default function LeaveRecords() {
 
       {/* 审批模态框 */}
       {reviewModal.show && reviewModal.app && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-md">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
             <h2 className="text-xl font-bold text-white mb-1">审批请假申请</h2>
             <p className="text-gray-400 text-sm mb-4">{reviewModal.app.member_name} 申请 {reviewModal.app.total_days} 天请假</p>
             <div className="bg-gray-700/50 rounded-lg p-3 mb-4 space-y-1 text-sm">
@@ -820,7 +827,7 @@ export default function LeaveRecords() {
                 onChange={e => setReviewModal(m => ({...m, remark: e.target.value}))}
                 rows={2}
                 placeholder="可填写审批意见..."
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 resize-none focus:outline-none focus:border-purple-500"
+                className="student-glass-field"
               />
             </div>
             <div className="flex gap-3">
@@ -849,12 +856,17 @@ export default function LeaveRecords() {
               </button>
             </div>
           </div>
+            </div>
+          </div>
         </div>
       )}
 
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-md">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
             <h2 className="text-xl font-bold text-white mb-4">
               {editingRecord ? '编辑请假记录' : '添加请假记录'}
             </h2>
@@ -886,7 +898,7 @@ export default function LeaveRecords() {
                 <textarea
                   value={formData.reason}
                   onChange={(event) => setFormData({ ...formData, reason: event.target.value })}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white h-24"
+                  className="student-glass-field h-24"
                   placeholder="可选填写"
                 />
               </div>
@@ -923,7 +935,7 @@ export default function LeaveRecords() {
               )}
 
               {editingRecord && editingRecord.status === '已结束' && (
-                <div className="bg-gray-900/50 border border-gray-700 rounded-lg p-3">
+                <div className="student-glass-chip p-3">
                   <p className="text-gray-400 text-sm text-center">
                     该请假已结束
                   </p>
@@ -947,6 +959,8 @@ export default function LeaveRecords() {
                 </button>
               </div>
             </form>
+          </div>
+            </div>
           </div>
         </div>
       )}

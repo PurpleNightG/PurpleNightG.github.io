@@ -379,6 +379,26 @@ async function main() {
   log('\n服务已就绪')
   log('ZIYE_READY')
 
+  // 文档同步放到启动完成后后台进行，避免 GitHub 超时拖住启动画面
+  try {
+    const { syncDocs } = require('./docs-sync.cjs')
+    const runDocsSync = (label) => {
+      syncDocs(ROOT, (message) => appendLog(`[docs-sync] ${message}`))
+        .then((result) => {
+          if (result.updated) {
+            appendLog(`[docs-sync] ${label}完成，已更新到 ${result.version}`)
+          }
+        })
+        .catch((error) => {
+          appendLog(`[docs-sync] ${label}失败: ${error.message}`)
+        })
+    }
+    runDocsSync('启动后同步')
+    setInterval(() => runDocsSync('定时同步'), 60 * 1000)
+  } catch (error) {
+    appendLog(`文档同步模块异常，跳过: ${error.message}`)
+  }
+
   if (TRAY_MODE) {
     log('已在后台运行，可通过系统托盘图标管理。')
     // 保持进程运行，由托盘程序负责打开浏览器和退出

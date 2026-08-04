@@ -31,7 +31,8 @@ namespace ZiyeGuildSfx
                 var bundleVersion = ReadBundleVersion(selfPath);
                 var installedVersion = ReadInstalledVersion(installDir);
 
-                if (!File.Exists(appExe) || installedVersion != bundleVersion)
+                // 仅在未安装，或本 EXE 内嵌版本更新时释放；避免旧安装包覆盖已自动更新的新版
+                if (!File.Exists(appExe) || IsBundleNewer(bundleVersion, installedVersion))
                 {
                     if (!ExtractBundle(selfPath, installDir, bundleVersion))
                     {
@@ -228,6 +229,35 @@ namespace ZiyeGuildSfx
             }
 
             return File.ReadAllText(versionFile, Encoding.UTF8).Trim();
+        }
+
+        static bool IsBundleNewer(string bundleVersion, string installedVersion)
+        {
+            if (string.IsNullOrWhiteSpace(bundleVersion) || bundleVersion == "unknown")
+            {
+                return string.IsNullOrWhiteSpace(installedVersion);
+            }
+
+            if (string.IsNullOrWhiteSpace(installedVersion))
+            {
+                return true;
+            }
+
+            var bundle = bundleVersion.Trim();
+            var installed = installedVersion.Trim();
+            if (string.Equals(bundle, installed, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            DateTime bundleTime;
+            DateTime installedTime;
+            if (DateTime.TryParse(bundle, out bundleTime) && DateTime.TryParse(installed, out installedTime))
+            {
+                return bundleTime > installedTime;
+            }
+
+            return string.CompareOrdinal(bundle, installed) > 0;
         }
     }
 }

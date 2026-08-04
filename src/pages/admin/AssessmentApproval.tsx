@@ -3,6 +3,7 @@ import { assessmentApplicationAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
 import { CheckCircle, XCircle, Clock, Search, Filter, X, Calendar, Users, Trash2, CheckSquare, Square, Loader2, ChevronUp, ChevronDown } from 'lucide-react'
 import { formatDate, formatDateTime } from '../../utils/dateFormat'
+import { useBadges } from '../../contexts/BadgeContext'
 
 interface Application {
   id: number
@@ -20,6 +21,7 @@ interface Application {
 }
 
 export default function AssessmentApproval() {
+  const { refreshBadges } = useBadges()
   const [applications, setApplications] = useState<Application[]>([])
   const [loading, setLoading] = useState(true)
   
@@ -105,6 +107,7 @@ export default function AssessmentApproval() {
       toast.success(`审批通过！准考证号：${response.data.admission_ticket}`)
       setSelectedApplication(null)
       loadApplications()
+      void refreshBadges()
     } catch (error: any) {
       toast.error('审批失败: ' + error.message)
     } finally {
@@ -139,6 +142,7 @@ export default function AssessmentApproval() {
       setSelectedApplication(null)
       setRejectReason('')
       loadApplications()
+      void refreshBadges()
     } catch (error: any) {
       toast.error('驳回失败: ' + error.message)
     } finally {
@@ -364,7 +368,7 @@ export default function AssessmentApproval() {
         </div>
 
         {showFilters && (
-          <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+          <div className="student-glass-chip p-4">
             <div className="flex justify-between items-center mb-3">
               <h3 className="text-white font-semibold">筛选条件</h3>
               <button onClick={clearFilters} className="text-sm text-gray-400 hover:text-white transition-colors">
@@ -390,7 +394,7 @@ export default function AssessmentApproval() {
       </div>
 
       {/* 申请列表 */}
-      <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 overflow-hidden">
+      <div className="student-glass-panel student-glass-panel--static overflow-hidden">
         {filteredApplications.length === 0 ? (
           <div className="p-12 text-center text-gray-400">
             <p>暂无申请记录</p>
@@ -548,14 +552,17 @@ export default function AssessmentApproval() {
 
       {/* 驳回理由模态框 */}
       {showRejectModal && selectedApplication && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-xl w-full max-w-md border border-gray-700">
-            <div className="border-b border-gray-700 px-6 py-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-md">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal w-full">
+            <div className="border-b border-white/10 px-6 py-4">
               <h2 className="text-xl font-bold text-white">驳回申请</h2>
             </div>
 
             <div className="p-6">
-              <div className="bg-gray-900/50 rounded-lg p-4 mb-4 text-sm">
+              <div className="student-glass-chip p-4 mb-4 text-sm">
                 <div className="text-gray-400 mb-2">申请信息</div>
                 <div className="text-white">
                   <div className="flex items-center gap-2 mb-1">
@@ -576,14 +583,14 @@ export default function AssessmentApproval() {
                 <textarea
                   value={rejectReason}
                   onChange={(e) => setRejectReason(e.target.value)}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white min-h-[120px] focus:outline-none focus:border-purple-500 transition-colors"
+                  className="student-glass-field"
                   placeholder="请详细说明驳回原因..."
                   autoFocus
                 />
               </div>
             </div>
 
-            <div className="border-t border-gray-700 px-6 py-4 flex gap-3 justify-end">
+            <div className="border-t border-white/10 px-6 py-4 flex gap-3 justify-end">
               <button
                 onClick={() => {
                   setShowRejectModal(false)
@@ -605,19 +612,24 @@ export default function AssessmentApproval() {
               </button>
             </div>
           </div>
+            </div>
+          </div>
         </div>
       )}
 
       {/* 审批确认弹窗 */}
       {showApproveModal && selectedApplication && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-xl w-full max-w-md border border-gray-700">
-            <div className="border-b border-gray-700 px-6 py-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-md">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal w-full">
+            <div className="border-b border-white/10 px-6 py-4">
               <h2 className="text-xl font-bold text-white">确认审批</h2>
             </div>
 
             <div className="p-6">
-              <div className="bg-gray-900/50 rounded-lg p-4 mb-4">
+              <div className="student-glass-chip p-4 mb-4">
                 <div className="text-gray-400 text-sm mb-3">申请信息</div>
                 <div className="text-white space-y-2">
                   <div className="flex items-center gap-2">
@@ -651,7 +663,7 @@ export default function AssessmentApproval() {
               </div>
             </div>
 
-            <div className="border-t border-gray-700 px-6 py-4 flex gap-3 justify-end">
+            <div className="border-t border-white/10 px-6 py-4 flex gap-3 justify-end">
               <button
                 onClick={() => {
                   setShowApproveModal(false)
@@ -671,19 +683,24 @@ export default function AssessmentApproval() {
               </button>
             </div>
           </div>
+            </div>
+          </div>
         </div>
       )}
 
       {/* 查看驳回理由弹窗 */}
       {showRejectReasonModal && selectedApplication && selectedApplication.reject_reason && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-xl w-full max-w-md border border-gray-700">
-            <div className="border-b border-gray-700 px-6 py-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-md">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal w-full">
+            <div className="border-b border-white/10 px-6 py-4">
               <h2 className="text-xl font-bold text-white">驳回理由</h2>
             </div>
 
             <div className="p-6">
-              <div className="bg-gray-900/50 rounded-lg p-4 mb-4 text-sm">
+              <div className="student-glass-chip p-4 mb-4 text-sm">
                 <div className="text-gray-400 mb-2">申请信息</div>
                 <div className="text-white space-y-1">
                   <div className="flex items-center gap-2">
@@ -719,7 +736,7 @@ export default function AssessmentApproval() {
               )}
             </div>
 
-            <div className="border-t border-gray-700 px-6 py-4 flex justify-end">
+            <div className="border-t border-white/10 px-6 py-4 flex justify-end">
               <button
                 onClick={() => {
                   setShowRejectReasonModal(false)
@@ -731,19 +748,24 @@ export default function AssessmentApproval() {
               </button>
             </div>
           </div>
+            </div>
+          </div>
         </div>
       )}
 
       {/* 删除确认弹窗 */}
       {showDeleteModal && selectedApplication && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-xl w-full max-w-md border border-gray-700">
-            <div className="border-b border-gray-700 px-6 py-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-md">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal w-full">
+            <div className="border-b border-white/10 px-6 py-4">
               <h2 className="text-xl font-bold text-white">确认删除</h2>
             </div>
 
             <div className="p-6">
-              <div className="bg-gray-900/50 rounded-lg p-4 mb-4">
+              <div className="student-glass-chip p-4 mb-4">
                 <div className="text-gray-400 text-sm mb-3">申请信息</div>
                 <div className="text-white space-y-2">
                   <div className="flex items-center gap-2">
@@ -779,7 +801,7 @@ export default function AssessmentApproval() {
               </div>
             </div>
 
-            <div className="border-t border-gray-700 px-6 py-4 flex gap-3 justify-end">
+            <div className="border-t border-white/10 px-6 py-4 flex gap-3 justify-end">
               <button
                 onClick={() => {
                   setShowDeleteModal(false)
@@ -798,14 +820,19 @@ export default function AssessmentApproval() {
               </button>
             </div>
           </div>
+            </div>
+          </div>
         </div>
       )}
 
       {/* 批量删除确认弹窗 */}
       {showBatchDeleteModal && selectedIds.length > 0 && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-xl w-full max-w-md border border-gray-700">
-            <div className="border-b border-gray-700 px-6 py-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-md">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal w-full">
+            <div className="border-b border-white/10 px-6 py-4">
               <h2 className="text-xl font-bold text-white">批量删除确认</h2>
             </div>
 
@@ -824,13 +851,13 @@ export default function AssessmentApproval() {
                 </div>
               </div>
 
-              <div className="bg-gray-900/50 rounded-lg p-4">
+              <div className="student-glass-chip p-4">
                 <div className="text-gray-400 text-sm mb-2">将要删除的记录：</div>
                 <div className="max-h-48 overflow-y-auto space-y-2">
                   {applications
                     .filter(app => selectedIds.includes(app.id))
                     .map(app => (
-                      <div key={app.id} className="flex items-center gap-2 text-sm text-white bg-gray-800/50 rounded px-3 py-2">
+                      <div key={app.id} className="flex items-center gap-2 text-sm text-white student-glass-chip px-3 py-2">
                         <Users size={14} className="text-gray-400" />
                         <span>{app.member_name}</span>
                         <span className="text-gray-500">·</span>
@@ -844,7 +871,7 @@ export default function AssessmentApproval() {
               </div>
             </div>
 
-            <div className="border-t border-gray-700 px-6 py-4 flex gap-3 justify-end">
+            <div className="border-t border-white/10 px-6 py-4 flex gap-3 justify-end">
               <button
                 onClick={() => {
                   setShowBatchDeleteModal(false)
@@ -862,6 +889,8 @@ export default function AssessmentApproval() {
                 <Trash2 size={18} />
                 {processing ? '删除中...' : `确认删除 ${selectedIds.length} 条`}
               </button>
+            </div>
+          </div>
             </div>
           </div>
         </div>

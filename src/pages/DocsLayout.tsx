@@ -7,6 +7,27 @@ import { DEFAULT_DOC_SLUG } from '../constants/docs'
 import { docRemarkPlugins, docRehypePlugins } from '../utils/markdown'
 
 const DOCS_API = import.meta.env.VITE_API_URL || ''
+/** 前端等待 API（含 GitHub）的最长时间，超时后改用本地静态文档 */
+const DOCS_FETCH_TIMEOUT_MS = 8000
+
+async function fetchWithTimeout(url: string, ms = DOCS_FETCH_TIMEOUT_MS): Promise<Response> {
+  const ctrl = new AbortController()
+  const timer = window.setTimeout(() => ctrl.abort(), ms)
+  try {
+    return await fetch(url, { cache: 'no-store', signal: ctrl.signal })
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
+async function loadLocalDocText(filename: string): Promise<string> {
+  const response = await fetch(
+    `/docs/${filename.split('/').map(encodeURIComponent).join('/')}?t=${Date.now()}`,
+    { cache: 'no-store' }
+  )
+  if (!response.ok) throw new Error('文档未找到')
+  return response.text()
+}
 
 interface DocItem {
   name: string
@@ -184,17 +205,37 @@ export default function DocsLayout() {
 
   const checkVersion = async () => {
     try {
-      const response = await fetch('/version.json?t=' + Date.now())
-      const data = await response.json()
-      
+      let version = ''
+
+      // API：GitHub 成功会缓存本地；超时则后端回退本地 version
+      if (DOCS_API) {
+        try {
+          const apiRes = await fetchWithTimeout(`${DOCS_API}/docs/version?t=${Date.now()}`)
+          if (apiRes.ok) {
+            const json = await apiRes.json()
+            if (json.success && json.data?.version != null) {
+              version = String(json.data.version)
+            }
+          }
+        } catch {
+          // fall through to static
+        }
+      }
+
+      if (!version) {
+        const response = await fetch('/version.json?t=' + Date.now(), { cache: 'no-store' })
+        const data = await response.json()
+        version = String(data.version || '')
+      }
+
+      if (!version) return
+
       if (isFirstCheck.current) {
-        // 页面刚加载，保存当前版本，不显示提示
-        // 因为刚加载的页面内容已经是最新的
         isFirstCheck.current = false
-        setCurrentVersion(data.version)
-        localStorage.setItem('docVersion', data.version)
-      } else if (data.version !== currentVersion && currentVersion !== '') {
-        setCurrentVersion(data.version)
+        setCurrentVersion(version)
+        localStorage.setItem('docVersion', version)
+      } else if (version !== currentVersion && currentVersion !== '') {
+        setCurrentVersion(version)
         setShowUpdateNotification(true)
         fetchDocs()
       }
@@ -204,11 +245,8 @@ export default function DocsLayout() {
   }
 
   const handleRefresh = () => {
-    // 更新本地版本号
     localStorage.setItem('docVersion', currentVersion)
-    // 关闭提示
     setShowUpdateNotification(false)
-    // 重新拉取文档列表和当前文档（无需刷新页面）
     fetchDocs()
     if (docName) {
       loadDocument(docName)
@@ -222,14 +260,18 @@ export default function DocsLayout() {
   const fetchDocs = async () => {
     try {
       if (DOCS_API) {
-        const apiRes = await fetch(`${DOCS_API}/docs/index?t=${Date.now()}`, { cache: 'no-store' })
-        if (apiRes.ok) {
-          const json = await apiRes.json()
-          if (json.success && Array.isArray(json.data)) {
-            setDocs(json.data)
-            setPublicDocs(filterPublicDocs(json.data))
-            return
+        try {
+          const apiRes = await fetchWithTimeout(`${DOCS_API}/docs/index?t=${Date.now()}`)
+          if (apiRes.ok) {
+            const json = await apiRes.json()
+            if (json.success && Array.isArray(json.data)) {
+              setDocs(json.data)
+              setPublicDocs(filterPublicDocs(json.data))
+              return
+            }
           }
+        } catch {
+          // 超时/网络失败 → 本地 index
         }
       }
 
@@ -249,22 +291,54 @@ export default function DocsLayout() {
   }
 
   const loadDocument = async (name: string) => {
-    // 游客/学员不可看私密文档（含位于私密文件夹下的）；管理员在文档页仍可查看
     if (!isAdmin && docs.length > 0 && isPrivateDoc(docs, name)) {
       setContent('# 权限不足\n\n该文档未公开，仅管理员可查看。')
       setLoading(false)
       return
     }
     setLoading(true)
+    const filename = name.endsWith('.md') ? name : `${name}.md`
+    let shownLocal = false
+
     try {
-      // name 可能是 folder/docname 或 docname（均不含 .md 后缀）
-      const response = await fetch(`/docs/${name}.md?t=${Date.now()}`)
-      if (!response.ok) throw new Error('文档未找到')
-      const text = await response.text()
-      setContent(text)
+      // 1) 先快速展示本地缓存，避免网络差时白屏
+      try {
+        const localText = await loadLocalDocText(filename)
+        setContent(localText)
+        setLoading(false)
+        shownLocal = true
+      } catch {
+        // 本地没有也没关系，继续等 API
+      }
+
+      // 2) 尝试 GitHub（经 API：成功会写入本地；超时则 API 回退本地）
+      if (DOCS_API) {
+        try {
+          const apiRes = await fetchWithTimeout(
+            `${DOCS_API}/docs/file?filename=${encodeURIComponent(filename)}&t=${Date.now()}`
+          )
+          if (apiRes.ok) {
+            const json = await apiRes.json()
+            if (json.success && json.data?.content != null) {
+              setContent(json.data.content)
+              return
+            }
+          }
+        } catch {
+          // 超时：保留已展示的本地内容
+        }
+      }
+
+      // 3) 若前面本地也没读到，再试一次本地
+      if (!shownLocal) {
+        const text = await loadLocalDocText(filename)
+        setContent(text)
+      }
     } catch (err) {
       console.error('加载文档失败:', err)
-      setContent('# 文档未找到\n\n无法加载该文档，请检查文档是否存在。')
+      if (!shownLocal) {
+        setContent('# 文档未找到\n\n无法加载该文档，请检查文档是否存在。')
+      }
     } finally {
       setLoading(false)
     }

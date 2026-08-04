@@ -1,10 +1,14 @@
 import express from 'express'
+import path from 'path'
+import { existsSync } from 'fs'
+import { readFile } from 'fs/promises'
 import {
   resolveLocalDocsRoot,
   listRecursiveLocal,
   readLocalFile,
   readLocalIndex,
   writeLocalIndex,
+  writeLocalFile,
 } from '../utils/docsLocal.js'
 
 const router = express.Router()
@@ -15,6 +19,8 @@ const REPO = process.env.GITHUB_REPO || 'PurpleNightG.github.io'
 const BRANCH = process.env.GITHUB_BRANCH || 'main'
 const DOCS_PATH = 'public/docs'
 const VERSION_PATH = 'public/version.json'
+/** 拉取 GitHub 超时后回退本地缓存（毫秒） */
+const GITHUB_TIMEOUT_MS = Number(process.env.DOCS_GITHUB_TIMEOUT_MS || 6000)
 
 function canUseGithub() {
   return !!process.env.GITHUB_TOKEN
@@ -30,13 +36,72 @@ async function githubFetch(url, options = {}) {
   return res
 }
 
-async function readGithubOrLocal(githubFn, localFn) {
+function withTimeout(promise, ms, label = 'GitHub') {
+  let timer
+  return Promise.race([
+    Promise.resolve(promise).finally(() => {
+      if (timer) clearTimeout(timer)
+    }),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} 超时 (${ms}ms)`)), ms)
+    }),
+  ])
+}
+
+/** 把线上内容落到本地，供离线/超时使用 */
+async function cacheDocToLocal(filename, content) {
+  const root = resolveLocalDocsRoot()
+  if (!root) return
+  await writeLocalFile(root, filename, content)
+
+  // 便携包同时写一份到 dist/docs，供静态服务直接读
+  const distDocs = path.join(path.dirname(root), 'dist', 'docs')
+  const distParent = path.dirname(distDocs)
+  if (existsSync(distParent)) {
+    await writeLocalFile(distDocs, filename, content)
+  }
+}
+
+async function cacheIndexToLocal(indexData) {
+  const root = resolveLocalDocsRoot()
+  if (!root) return
+  await writeLocalIndex(root, indexData)
+  const distDocs = path.join(path.dirname(root), 'dist', 'docs')
+  if (existsSync(path.dirname(distDocs))) {
+    await writeLocalIndex(distDocs, indexData)
+  }
+}
+
+async function cacheVersionToLocal(versionData) {
+  const root = resolveLocalDocsRoot()
+  if (!root) return
+  const payload = `${JSON.stringify(versionData, null, 2)}\n`
+  const distVersion = pathResolveVersionNearDocs(root)
+  if (distVersion) {
+    const { writeFile, mkdir } = await import('fs/promises')
+    await mkdir(path.dirname(distVersion), { recursive: true })
+    await writeFile(distVersion, payload, 'utf-8')
+  }
+}
+
+/**
+ * 策略：能连 GitHub 则拉取并缓存本地；超时/失败用本地。
+ */
+async function readGithubOrLocal(githubFn, localFn, { cacheWriter } = {}) {
   const localRoot = resolveLocalDocsRoot()
   if (canUseGithub()) {
     try {
-      return { source: 'github', data: await githubFn() }
+      const data = await withTimeout(githubFn(), GITHUB_TIMEOUT_MS)
+      if (cacheWriter) {
+        try {
+          await cacheWriter(data)
+        } catch (error) {
+          console.warn('缓存文档到本地失败:', error.message)
+        }
+      }
+      return { source: 'github', data }
     } catch (error) {
-      console.warn('GitHub 文档 API 失败，回退本地副本:', error.message)
+      console.warn('GitHub 文档拉取失败/超时，回退本地副本:', error.message)
       if (localRoot) return { source: 'local-fallback', data: await localFn(localRoot) }
       throw error
     }
@@ -193,6 +258,55 @@ async function updateVersion() {
   }
 }
 
+/** 文档版本号（供本地版 / 前端轮询：GitHub 成功则缓存本地，超时用本地） */
+router.get('/version', async (req, res) => {
+  try {
+    const { source, data } = await readGithubOrLocal(
+      async () => {
+        const response = await githubFetch(
+          `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${VERSION_PATH}?ref=${BRANCH}`,
+          { headers: getHeaders() }
+        )
+        if (!response.ok) throw new Error('version.json 不存在')
+        const fileData = await response.json()
+        const text = Buffer.from(fileData.content.replace(/\n/g, ''), 'base64').toString('utf-8')
+        return JSON.parse(text)
+      },
+      async (root) => {
+        const candidates = [
+          pathResolveVersionNearDocs(root),
+          path.join(root, 'version.json'),
+        ]
+        for (const filePath of candidates) {
+          if (!filePath) continue
+          try {
+            const raw = await readFile(filePath, 'utf-8')
+            return JSON.parse(raw)
+          } catch {
+            // try next
+          }
+        }
+        return { version: '0' }
+      },
+      { cacheWriter: (versionData) => cacheVersionToLocal(versionData) }
+    )
+    res.json({ success: true, data, source })
+  } catch (error) {
+    console.error('获取文档版本失败:', error)
+    res.status(500).json({ success: false, message: error.message })
+  }
+})
+
+function pathResolveVersionNearDocs(docsRoot) {
+  // portable: app/docs → app/dist/version.json；dev: public/docs → public/version.json
+  const parent = path.dirname(docsRoot)
+  const distVersion = path.join(parent, 'dist', 'version.json')
+  const publicVersion = path.join(parent, 'version.json')
+  if (existsSync(distVersion)) return distVersion
+  if (existsSync(publicVersion)) return publicVersion
+  return null
+}
+
 // 递归删除目录下所有文件
 async function deleteDirectoryRecursive(dirPath) {
   const res = await githubFetch(
@@ -229,6 +343,14 @@ router.get('/list', async (req, res) => {
   }
 })
 
+function encodeGithubContentsPath(filePath) {
+  return String(filePath)
+    .split('/')
+    .filter((part, index) => part || index === 0)
+    .map((segment) => encodeURIComponent(segment))
+    .join('/')
+}
+
 // 获取单个文件内容（filename 支持 folder/file.md 格式）
 router.get('/file', async (req, res) => {
   try {
@@ -237,7 +359,7 @@ router.get('/file', async (req, res) => {
     const { source, data } = await readGithubOrLocal(
       async () => {
         const response = await githubFetch(
-          `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DOCS_PATH}/${filename}?ref=${BRANCH}`,
+          `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${encodeGithubContentsPath(`${DOCS_PATH}/${filename}`)}?ref=${BRANCH}`,
           { headers: getHeaders() }
         )
         if (!response.ok) throw new Error('文件不存在')
@@ -245,7 +367,12 @@ router.get('/file', async (req, res) => {
         const content = Buffer.from(fileData.content.replace(/\n/g, ''), 'base64').toString('utf-8')
         return { content, sha: fileData.sha, name: fileData.name }
       },
-      (root) => readLocalFile(root, filename)
+      (root) => readLocalFile(root, filename),
+      {
+        cacheWriter: async (fileData) => {
+          await cacheDocToLocal(filename, fileData.content)
+        },
+      }
     )
     res.json({ success: true, data, source })
   } catch (error) {
@@ -419,7 +546,12 @@ router.get('/index', async (req, res) => {
         const fileData = await response.json()
         return JSON.parse(Buffer.from(fileData.content.replace(/\n/g, ''), 'base64').toString('utf-8'))
       },
-      (root) => readLocalIndex(root)
+      (root) => readLocalIndex(root),
+      {
+        cacheWriter: async (indexData) => {
+          if (Array.isArray(indexData)) await cacheIndexToLocal(indexData)
+        },
+      }
     )
     res.json({ success: true, data, source })
   } catch (error) {

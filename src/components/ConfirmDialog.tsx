@@ -1,4 +1,6 @@
+import { createPortal } from 'react-dom'
 import { AlertTriangle } from 'lucide-react'
+import { useStudentGlassPointer } from '../hooks/useStudentGlassPointer'
 
 interface ConfirmDialogProps {
   title: string
@@ -22,50 +24,61 @@ export default function ConfirmDialog({
   type = 'warning',
   showCancel = true,
 }: ConfirmDialogProps) {
+  const { onGlassPointerMove, resetGlassTilt } = useStudentGlassPointer({ maxTilt: 4 })
   const colors = {
-    danger: 'bg-red-600 hover:bg-red-700',
-    warning: 'bg-yellow-600 hover:bg-yellow-700',
-    info: 'bg-purple-600 hover:bg-purple-700'
+    danger: 'bg-red-600/90 hover:bg-red-600',
+    warning: 'bg-yellow-600/90 hover:bg-yellow-600',
+    info: 'bg-purple-600/90 hover:bg-purple-600'
   }
 
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[10000]">
-      <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700 animate-scale-in">
-        <div className="flex items-start gap-4 mb-4">
-          <div className={`p-2 rounded-lg ${
-            type === 'danger' ? 'bg-red-900/50' :
-            type === 'warning' ? 'bg-yellow-900/50' :
-            'bg-purple-900/50'
-          }`}>
-            <AlertTriangle className={`${
-              type === 'danger' ? 'text-red-400' :
-              type === 'warning' ? 'text-yellow-400' :
-              'text-purple-400'
-            }`} size={24} />
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[10000] flex items-center justify-center"
+      onMouseMove={onGlassPointerMove}
+      onMouseLeave={resetGlassTilt}
+    >
+      <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+      <div className="relative z-10 glass-modal-frame mx-4 w-full max-w-md">
+        <div className="glass-modal-tilt">
+        <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full animate-scale-in">
+          <div className="flex items-start gap-4 mb-4">
+            <div className={`p-2 rounded-lg ${
+              type === 'danger' ? 'bg-red-900/50' :
+              type === 'warning' ? 'bg-yellow-900/50' :
+              'bg-purple-900/50'
+            }`}>
+              <AlertTriangle className={`${
+                type === 'danger' ? 'text-red-400' :
+                type === 'warning' ? 'text-yellow-400' :
+                'text-purple-400'
+              }`} size={24} />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-white mb-2">{title}</h3>
+              <p className="text-gray-300 text-sm whitespace-pre-wrap">{message}</p>
+            </div>
           </div>
-          <div className="flex-1">
-            <h3 className="text-lg font-semibold text-white mb-2">{title}</h3>
-            <p className="text-gray-300 text-sm whitespace-pre-wrap">{message}</p>
+
+          <div className="flex gap-3 justify-end mt-6">
+            {showCancel && (
+              <button
+                onClick={onCancel}
+                className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-lg transition-colors"
+              >
+                {cancelText}
+              </button>
+            )}
+            <button
+              onClick={onConfirm}
+              className={`px-4 py-2 text-white rounded-lg transition-colors ${colors[type]}`}
+            >
+              {confirmText}
+            </button>
           </div>
         </div>
-        
-        <div className="flex gap-3 justify-end mt-6">
-          {showCancel && (
-            <button
-              onClick={onCancel}
-              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
-            >
-              {cancelText}
-            </button>
-          )}
-          <button
-            onClick={onConfirm}
-            className={`px-4 py-2 text-white rounded-lg transition-colors ${colors[type]}`}
-          >
-            {confirmText}
-          </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

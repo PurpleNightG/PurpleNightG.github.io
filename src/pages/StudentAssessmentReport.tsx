@@ -34,6 +34,22 @@ function getDeductionName(code: string): string {
   return code // 如果没找到，返回代码本身
 }
 
+function groupDeductionsByTime(records: DeductionRecord[]) {
+  const groups: { time: string; items: DeductionRecord[] }[] = []
+  const indexByTime = new Map<string, number>()
+  for (const record of records) {
+    const time = record.time || '—'
+    const existing = indexByTime.get(time)
+    if (existing === undefined) {
+      indexByTime.set(time, groups.length)
+      groups.push({ time, items: [record] })
+    } else {
+      groups[existing].items.push(record)
+    }
+  }
+  return groups
+}
+
 interface Assessment {
   id: number
   member_id: number
@@ -199,7 +215,7 @@ export default function StudentAssessmentReport() {
     return (
       <div className="p-8">
         <h1 className="text-3xl font-bold text-white mb-6">新训考核报告</h1>
-        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-12 border border-gray-700 text-center">
+        <div className="student-glass-panel p-12 text-center">
           <FileText className="mx-auto mb-4 text-gray-500" size={64} />
           <p className="text-gray-400 text-lg">暂无考核记录</p>
           <p className="text-gray-500 text-sm mt-2">完成考核后，报告将显示在这里</p>
@@ -224,8 +240,8 @@ export default function StudentAssessmentReport() {
               onClick={() => setSelectedAssessment(assessment)}
               className={`w-full text-left p-3 rounded-lg border transition-all ${
                 selectedAssessment?.id === assessment.id
-                  ? 'bg-purple-900/30 border-purple-700 shadow-lg'
-                  : 'bg-gray-800/50 border-gray-700 hover:bg-gray-800/70'
+                  ? 'student-glass-chip student-glass-chip--pink border-purple-400/40'
+                  : 'student-glass-chip'
               }`}
             >
               <div className="flex items-center justify-between mb-2">
@@ -261,7 +277,7 @@ export default function StudentAssessmentReport() {
         {selectedAssessment && (
           <div className="lg:col-span-3 space-y-6">
             {/* 基本信息卡片 */}
-            <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700">
+            <div className="student-glass-panel p-6">
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-3">
                   {getStatusIcon(selectedAssessment.status)}
@@ -351,7 +367,7 @@ export default function StudentAssessmentReport() {
 
             {/* 评价 */}
             {!!selectedAssessment.has_evaluation && selectedAssessment.evaluation && (
-              <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700">
+              <div className="student-glass-panel p-6">
                 <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
                   <FileText size={20} className="text-purple-400" />
                   教官评价
@@ -368,7 +384,7 @@ export default function StudentAssessmentReport() {
               <div className="grid lg:grid-cols-3 gap-6 items-stretch">
                 {/* 左侧：考核视频 */}
                 {!!selectedAssessment.has_video && !!selectedAssessment.video_url && (
-                  <div className="lg:col-span-2 bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700">
+                  <div className="lg:col-span-2 student-glass-panel p-6">
                     <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                       <FileText size={20} className="text-purple-400" />
                       考核视频
@@ -389,7 +405,7 @@ export default function StudentAssessmentReport() {
                       </div>
                     </div>
                     
-                    <div className="bg-gray-900/50 rounded-lg overflow-hidden border border-gray-700">
+                    <div className="student-glass-chip overflow-hidden">
                       <iframe 
                         src={selectedAssessment.video_url}
                         className="w-full aspect-video"
@@ -414,31 +430,45 @@ export default function StudentAssessmentReport() {
 
                 {/* 右侧：扣分记录 */}
                 {selectedAssessment.deduction_records && selectedAssessment.deduction_records.length > 0 && (
-                  <div className={`bg-gray-800/50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 flex flex-col h-full min-h-0 ${
-                    !(!!selectedAssessment.has_video && !!selectedAssessment.video_url) ? 'lg:col-span-3 max-h-[70vh]' : 'lg:col-span-1'
+                  <div className={`student-glass-panel p-6 flex flex-col overflow-hidden ${
+                    !(!!selectedAssessment.has_video && !!selectedAssessment.video_url)
+                      ? 'lg:col-span-3 max-h-[70vh]'
+                      : 'lg:col-span-1 lg:h-0 lg:min-h-full'
                   }`}>
                     <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2 flex-shrink-0">
                       <Target size={20} className="text-red-400" />
                       扣分明细
+                      <span className="text-sm font-normal text-gray-500">
+                        （{selectedAssessment.deduction_records.length}）
+                      </span>
                     </h3>
-                    <div className="flex flex-col flex-1 min-h-0">
+                    <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
                       <div className="space-y-3 flex-1 overflow-y-auto pr-2 custom-scrollbar min-h-0">
-                        {selectedAssessment.deduction_records.map((record, index) => (
-                          <div key={index} className="bg-gray-900/50 rounded-lg p-3 border border-gray-700">
-                            <div className="flex items-start justify-between mb-2">
-                              <div className="flex flex-col gap-2">
-                                <span className="text-xs font-mono bg-gray-800 px-2 py-1 rounded text-gray-400 inline-block w-fit">
-                                  {record.time}
+                        {groupDeductionsByTime(selectedAssessment.deduction_records).map((group) => (
+                          <div key={group.time} className="student-glass-chip overflow-hidden">
+                            <div className="px-3 py-2 bg-white/[0.04] border-b border-white/10 flex items-center justify-between gap-2">
+                              <span className="text-xs font-mono text-gray-300 tabular-nums">{group.time}</span>
+                              {group.items.length > 1 && (
+                                <span className="text-[11px] text-amber-300/90 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                                  同时 {group.items.length} 项
                                 </span>
-                                <span className="text-sm font-mono bg-red-900/30 text-red-400 px-2 py-1 rounded inline-block">
-                                  {record.code} - {getDeductionName(record.code)}
-                                </span>
-                              </div>
-                              <span className="text-red-400 font-bold whitespace-nowrap">-{record.score} 分</span>
+                              )}
                             </div>
-                            {record.description && (
-                              <p className="text-gray-300 text-sm">{record.description}</p>
-                            )}
+                            <div className="divide-y divide-gray-700/60">
+                              {group.items.map((record, index) => (
+                                <div key={`${group.time}-${record.code}-${index}`} className="p-3">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <span className="text-sm font-mono bg-red-900/30 text-red-400 px-2 py-1 rounded inline-block">
+                                      {record.code} - {getDeductionName(record.code)}
+                                    </span>
+                                    <span className="text-red-400 font-bold whitespace-nowrap">-{record.score} 分</span>
+                                  </div>
+                                  {record.description && (
+                                    <p className="text-gray-300 text-sm mt-2 leading-relaxed">{record.description}</p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -466,8 +496,11 @@ export default function StudentAssessmentReport() {
 
       {/* 公开报告模态框 */}
       {showPublishModal && selectedAssessment && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-xl max-w-xl w-full">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-xl">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal w-full">
             <div className="px-6 py-4 border-b border-gray-700 flex items-center justify-between">
               <h2 className="text-xl font-bold text-white">公开考核报告</h2>
               <button 
@@ -485,7 +518,7 @@ export default function StudentAssessmentReport() {
                 </p>
               </div>
 
-              <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-700 text-sm text-gray-300 space-y-1">
+              <div className="student-glass-chip p-4 text-sm text-gray-300 space-y-1">
                 <p>学员：{selectedAssessment.member_name}</p>
                 <p>地图：{selectedAssessment.custom_map || selectedAssessment.map}</p>
                 <p>总分：{selectedAssessment.total_score.toFixed(2)} · {selectedAssessment.rating}</p>
@@ -498,7 +531,7 @@ export default function StudentAssessmentReport() {
                   onChange={(e) => setPublishForm({ description: e.target.value })}
                   placeholder="可添加公开说明（可选）"
                   rows={3}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-purple-500 resize-none"
+                  className="student-glass-field resize-none"
                 />
               </div>
             </div>
@@ -517,6 +550,8 @@ export default function StudentAssessmentReport() {
               >
                 {publishing ? '公开中...' : '确认公开'}
               </button>
+            </div>
+          </div>
             </div>
           </div>
         </div>

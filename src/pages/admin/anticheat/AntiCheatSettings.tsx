@@ -51,11 +51,11 @@ export default function AntiCheatSettings() {
       <div>
         <h1 className="text-2xl font-bold text-white">反作弊系统设置</h1>
         <p className="text-sm text-gray-400 mt-1">
-          客户端版本与地图密码。DLL 误报白名单请在「考试监控 → 会话详情」中按学员添加。
+          客户端版本与地图密码。DLL 误报白名单请到「反作弊 → DLL白名单」统一管理（与会话无关）。
         </p>
       </div>
 
-      <div className="space-y-4 bg-gray-800/40 border border-gray-700/50 rounded-xl p-5">
+      <div className="student-glass-panel student-glass-panel--static p-5">
         <label className="block space-y-1.5">
           <span className="text-sm text-gray-300">客户端最低版本</span>
           <input

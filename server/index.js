@@ -30,6 +30,7 @@ import docsRoutes from './routes/docs.js'
 import badgesRoutes from './routes/badges.js'
 import anticheatRoutes from './routes/anticheat.js'
 import surveysRoutes from './routes/surveys.js'
+import opinionBoxRoutes from './routes/opinionBox.js'
 
 dotenv.config()
 
@@ -106,6 +107,7 @@ app.use('/api/docs', docsRoutes)
 app.use('/api/badges', badgesRoutes)
 app.use('/api/anticheat', anticheatRoutes)
 app.use('/api/surveys', surveysRoutes)
+app.use('/api/opinion-box', opinionBoxRoutes)
 
 // 健康检查
 app.get('/api/health', (req, res) => {

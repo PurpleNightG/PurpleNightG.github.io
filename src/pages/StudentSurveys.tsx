@@ -624,7 +624,7 @@ export default function StudentSurveys() {
       </div>
 
       {list.some((s) => s.my_status === 'ended') && (
-        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 flex gap-3 text-sm text-amber-100">
+        <div className="student-glass-chip student-glass-chip--yellow px-4 py-3 flex gap-3 text-sm text-amber-100">
           <AlertTriangle className="text-amber-400 shrink-0" size={18} />
           <span>
             以下问卷已过期，无法再填写：
@@ -643,7 +643,7 @@ export default function StudentSurveys() {
             <button
               key={s.id}
               onClick={() => openSurvey(s.id)}
-              className="w-full text-left rounded-xl border border-gray-700/50 bg-gray-800/30 hover:bg-gray-800/50 p-4 transition"
+              className="student-glass-btn !items-start w-full"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -668,7 +668,7 @@ export default function StudentSurveys() {
                     <span className="text-gray-500">{s.field_count} 题</span>
                   </div>
                 </div>
-                <span className="text-xs px-2 py-1 rounded bg-gray-700 text-gray-300 shrink-0">
+                <span className="text-xs px-2 py-1 rounded bg-white/10 text-gray-300 shrink-0">
                   {STATUS_LABEL[s.my_status] || s.my_status}
                 </span>
               </div>

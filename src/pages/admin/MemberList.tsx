@@ -5,6 +5,8 @@ import { formatDate } from '../../utils/dateFormat'
 import { getRoleColor } from '../../utils/roleColors'
 import { toast } from '../../utils/toast'
 import MemberDetail from './MemberDetail'
+import DateInput from '../../components/DateInput'
+import StyledSelect from '../../components/StyledSelect'
 
 interface Member {
   id: number
@@ -692,7 +694,7 @@ export default function MemberList() {
 
       {/* 筛选面板 */}
       {showFilters && (
-        <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 mb-4">
+        <div className="student-glass-chip p-4 mb-4">
           <div className="flex justify-between items-center mb-3">
             <div className="flex items-center gap-3">
               <h3 className="text-white font-semibold">筛选条件</h3>
@@ -719,10 +721,10 @@ export default function MemberList() {
                   <button
                     key={role}
                     onClick={() => toggleFilter('stage_role', role)}
-                    className={`px-3 py-1 rounded text-sm transition-colors ${
+                    className={`student-glass-badge transition-opacity ${getRoleColor(role)} ${
                       filters.stage_role.includes(role)
-                        ? 'bg-purple-600 text-white'
-                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                        ? 'opacity-100 ring-1 ring-white/35'
+                        : 'opacity-25 hover:opacity-55'
                     }`}
                   >
                     {role}
@@ -737,10 +739,10 @@ export default function MemberList() {
                       setFilters((prev: any) => ({ ...prev, stage_role: [...new Set([...prev.stage_role, ...specialRoles])] }))
                     }
                   }}
-                  className={`px-3 py-1 rounded text-sm transition-colors border border-dashed ${
+                  className={`px-3 py-1 rounded text-sm transition-all border border-dashed ${
                     specialRoles.every(r => filters.stage_role.includes(r))
-                      ? 'bg-green-600 text-white border-green-500'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600 border-gray-500'
+                      ? 'bg-green-600 text-white border-green-500 opacity-100'
+                      : 'bg-gray-700/50 text-gray-500 hover:text-gray-300 hover:bg-gray-700 border-gray-600/60 opacity-40 hover:opacity-80'
                   }`}
                 >
                   全部教官
@@ -769,7 +771,7 @@ export default function MemberList() {
         </div>
       )}
 
-      <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 overflow-hidden">
+      <div className="student-glass-panel student-glass-panel--static overflow-hidden">
         {loading ? (
           <div className="p-12 text-center text-gray-400">加载中...</div>
         ) : (
@@ -839,7 +841,7 @@ export default function MemberList() {
                     <td>{member.game_id || '-'}</td>
                     <td>{formatDate(member.join_date)}</td>
                     <td>
-                      <span className={`status-badge ${getRoleColor(member.stage_role)}`}>
+                      <span className={`student-glass-badge ${getRoleColor(member.stage_role)}`}>
                         {member.stage_role}
                       </span>
                     </td>
@@ -874,8 +876,11 @@ export default function MemberList() {
 
       {/* 添加/编辑模态框 */}
       {showModal && !viewingMemberId && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-md">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
             <h2 className="text-xl font-bold text-white mb-4">
               添加成员
             </h2>
@@ -893,7 +898,7 @@ export default function MemberList() {
                   type="text"
                   value={formData.nickname}
                   onChange={(e) => setFormData({...formData, nickname: e.target.value})}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                  className="student-glass-field"
                   required
                   placeholder="成员昵称（将作为登录用户名）"
                 />
@@ -905,7 +910,7 @@ export default function MemberList() {
                   type="text"
                   value={formData.qq}
                   onChange={(e) => setFormData({...formData, qq: e.target.value})}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                  className="student-glass-field"
                   required
                   placeholder="QQ号（将作为默认密码）"
                 />
@@ -917,53 +922,42 @@ export default function MemberList() {
                   type="text"
                   value={formData.game_id}
                   onChange={(e) => setFormData({...formData, game_id: e.target.value})}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                  className="student-glass-field"
                 />
               </div>
               
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-1">加入时间</label>
-                <input
-                  type="date"
+                <DateInput
                   value={formData.join_date}
-                  onChange={(e) => setFormData({...formData, join_date: e.target.value})}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                  onChange={(value) => setFormData({...formData, join_date: value})}
                 />
               </div>
               
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-1">阶段&角色</label>
-                <select
+                <StyledSelect
+                  options={stageRoles}
                   value={formData.stage_role}
-                  onChange={(e) => setFormData({...formData, stage_role: e.target.value})}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg pl-3 pr-10 py-2 text-white"
-                >
-                  {stageRoles.map(role => (
-                    <option key={role} value={role}>{role}</option>
-                  ))}
-                </select>
+                  onChange={(value) => setFormData({...formData, stage_role: value})}
+                  searchable
+                />
               </div>
               
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-1">状态</label>
-                <select
+                <StyledSelect
+                  options={statuses}
                   value={formData.status}
-                  onChange={(e) => setFormData({...formData, status: e.target.value})}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg pl-3 pr-10 py-2 text-white"
-                >
-                  {statuses.map(status => (
-                    <option key={status} value={status}>{status}</option>
-                  ))}
-                </select>
+                  onChange={(value) => setFormData({...formData, status: value})}
+                />
               </div>
               
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-1">最后新训日期</label>
-                <input
-                  type="date"
+                <DateInput
                   value={formData.last_training_date}
-                  onChange={(e) => setFormData({...formData, last_training_date: e.target.value})}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                  onChange={(value) => setFormData({...formData, last_training_date: value})}
                 />
               </div>
               
@@ -986,13 +980,18 @@ export default function MemberList() {
               </div>
             </form>
           </div>
+            </div>
+          </div>
         </div>
       )}
 
       {/* 批量退队确认模态框 */}
       {batchActionModal.show && batchActionModal.type === 'quit' && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-md">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
             <h2 className="text-xl font-bold text-white mb-4">批量退队确认</h2>
             <p className="text-gray-400 text-sm mb-4">
               即将为 <span className="text-red-400 font-bold">{selectedIds.size}</span> 个成员添加退队审批记录，并将状态改为"已退队"
@@ -1018,13 +1017,18 @@ export default function MemberList() {
               </button>
             </div>
           </div>
+            </div>
+          </div>
         </div>
       )}
 
       {/* 批量修改状态模态框 */}
       {batchActionModal.show && batchActionModal.type === 'status' && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-md">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
             <h2 className="text-xl font-bold text-white mb-4">批量修改状态</h2>
             <p className="text-gray-400 text-sm mb-4">将为 {selectedIds.size} 个成员修改状态</p>
             <p className="text-yellow-400 text-xs mb-4">
@@ -1057,13 +1061,18 @@ export default function MemberList() {
               </button>
             </div>
           </div>
+            </div>
+          </div>
         </div>
       )}
 
       {/* 批量修改角色模态框 */}
       {batchActionModal.show && batchActionModal.type === 'role' && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-md">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
             <h2 className="text-xl font-bold text-white mb-4">批量修改阶段&角色</h2>
             <p className="text-gray-400 text-sm mb-4">将为 {selectedIds.size} 个成员修改阶段&角色</p>
             
@@ -1076,7 +1085,7 @@ export default function MemberList() {
                       key={role}
                       onClick={() => batchUpdateRole(role)}
                       disabled={submitting}
-                      className={`px-3 py-2 rounded text-sm transition-colors ${getRoleColor(role)} hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1`}
+                      className={`student-glass-badge w-full py-2 text-sm ${getRoleColor(role)} hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed gap-1`}
                     >
                       {submitting && <Loader2 size={12} className="animate-spin" />}
                       {role}
@@ -1093,24 +1102,27 @@ export default function MemberList() {
               </button>
             </div>
           </div>
+            </div>
+          </div>
         </div>
       )}
 
       {/* 批量设置新训日期模态框 */}
       {batchActionModal.show && batchActionModal.type === 'training' && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-md">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
             <h2 className="text-xl font-bold text-white mb-4">批量设置新训日期</h2>
             <p className="text-gray-400 text-sm mb-4">将为 {selectedIds.size} 个成员设置新训日期</p>
             
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">选择新训日期</label>
-                <input
-                  type="date"
+                <DateInput
                   value={trainingDate}
-                  onChange={(e) => setTrainingDate(e.target.value)}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                  onChange={setTrainingDate}
                 />
                 <p className="text-xs text-gray-400 mt-1">
                   选择的日期将作为这些成员的最后新训日期
@@ -1135,13 +1147,18 @@ export default function MemberList() {
               </div>
             </div>
           </div>
+            </div>
+          </div>
         </div>
       )}
 
       {/* 同步阶段确认对话框 */}
       {batchActionModal.show && batchActionModal.type === 'syncStage' && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-md">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
             <h2 className="text-xl font-bold text-white mb-4">同步阶段</h2>
             <p className="text-gray-400 text-sm mb-4">
               {selectedIds.size > 0 ? (
@@ -1180,13 +1197,18 @@ export default function MemberList() {
               </button>
             </div>
           </div>
+            </div>
+          </div>
         </div>
       )}
 
       {/* 批量重置密码确认对话框 */}
       {batchActionModal.show && batchActionModal.type === 'resetPassword' && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-md">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
             <h2 className="text-xl font-bold text-white mb-4">批量重置密码</h2>
             <p className="text-gray-400 text-sm mb-4">
               即将为 <span className="text-orange-400 font-bold">{selectedIds.size}</span> 个成员重置密码
@@ -1212,13 +1234,18 @@ export default function MemberList() {
               </button>
             </div>
           </div>
+            </div>
+          </div>
         </div>
       )}
 
       {/* 警告成员确认对话框 */}
       {warningModal.show && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-md">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
             <h2 className="text-xl font-bold text-white mb-4">⚠️ 新训准考成员课程进度不足</h2>
             <p className="text-gray-400 text-sm mb-3">
               检测到以下成员阶段为"新训准考"，但未完成前四部分的所有课程：
@@ -1247,6 +1274,8 @@ export default function MemberList() {
               >
                 取消
               </button>
+            </div>
+          </div>
             </div>
           </div>
         </div>

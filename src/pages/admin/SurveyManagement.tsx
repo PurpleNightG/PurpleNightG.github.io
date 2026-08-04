@@ -1118,9 +1118,9 @@ export default function SurveyManagement() {
           <Loader2 className="animate-spin" />
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-gray-700/50">
+        <div className="student-glass-panel student-glass-panel--static overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-gray-800/80 text-gray-300">
+            <thead className="bg-white/5 text-gray-300">
               <tr>
                 <th className="px-3 py-3 text-left">标题</th>
                 <th className="px-3 py-3 text-left">状态</th>
@@ -1175,7 +1175,7 @@ export default function SurveyManagement() {
                         }}
                         type="button"
                         onClick={() => openActionMenu(s.id)}
-                        className="inline-flex items-center gap-1 rounded-lg border border-gray-600/70 bg-gray-800/80 px-2.5 py-1.5 text-xs text-gray-200 hover:bg-gray-700/80 hover:text-white transition-colors"
+                        className="inline-flex items-center gap-1 rounded-lg border border-gray-600/70 bg-white/5 px-2.5 py-1.5 text-xs text-gray-200 hover:bg-gray-700/80 hover:text-white transition-colors"
                         aria-expanded={actionMenu?.id === s.id}
                         aria-haspopup="menu"
                       >
@@ -1235,7 +1235,7 @@ export default function SurveyManagement() {
                   closeActionMenu()
                   openEdit(s.id)
                 }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-blue-400 hover:bg-gray-800"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-blue-400 hover:bg-white/10"
               >
                 <Edit size={14} /> 编辑
               </button>
@@ -1245,7 +1245,7 @@ export default function SurveyManagement() {
                   closeActionMenu()
                   duplicateSurvey(s.id)
                 }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-violet-400 hover:bg-gray-800"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-violet-400 hover:bg-white/10"
               >
                 <Copy size={14} /> 复制
               </button>
@@ -1255,7 +1255,7 @@ export default function SurveyManagement() {
                   closeActionMenu()
                   navigate(`/admin/surveys/${s.id}/results`)
                 }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-cyan-400 hover:bg-gray-800"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-cyan-400 hover:bg-white/10"
               >
                 <Eye size={14} /> 结果
               </button>
@@ -1266,7 +1266,7 @@ export default function SurveyManagement() {
                     closeActionMenu()
                     setStatus(s.id, 'published')
                   }}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-emerald-400 hover:bg-gray-800"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-emerald-400 hover:bg-white/10"
                 >
                   <Send size={14} /> 发布
                 </button>
@@ -1278,7 +1278,7 @@ export default function SurveyManagement() {
                     closeActionMenu()
                     setStatus(s.id, 'closed')
                   }}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-amber-400 hover:bg-gray-800"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-amber-400 hover:bg-white/10"
                 >
                   <Ban size={14} /> 关闭
                 </button>
@@ -1290,7 +1290,7 @@ export default function SurveyManagement() {
                   closeActionMenu()
                   remove(s.id, s.title)
                 }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-400 hover:bg-gray-800"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-400 hover:bg-white/10"
               >
                 <Trash2 size={14} /> 删除
               </button>

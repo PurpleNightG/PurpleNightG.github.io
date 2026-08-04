@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { progressAPI } from '../utils/api'
 import { toast } from '../utils/toast'
-import { BookOpen, Award, Clock, TrendingUp } from 'lucide-react'
+import { BookOpen, Award, Clock, TrendingUp, ChevronDown } from 'lucide-react'
 
 interface Course {
   id: number
@@ -13,9 +13,12 @@ interface Course {
   progress: number
 }
 
+const CATEGORIES = ['入门课程', '标准技能一阶课程', '标准技能二阶课程', '团队训练', '进阶课程']
+
 export default function StudentProgress() {
   const [courses, setCourses] = useState<Course[]>([])
   const [loading, setLoading] = useState(true)
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [stats, setStats] = useState({
     totalCourses: 0,
     completedCourses: 0,
@@ -31,29 +34,24 @@ export default function StudentProgress() {
   const loadProgress = async () => {
     setLoading(true)
     try {
-      // 从 localStorage 获取当前登录学员信息（注意：学员使用 studentUser 键）
       const userStr = localStorage.getItem('studentUser') || sessionStorage.getItem('studentUser')
       if (!userStr) {
-        // 如果没有用户信息，静默返回，让页面显示空状态
         setLoading(false)
         return
       }
 
       const user = JSON.parse(userStr)
-      
       const response = await progressAPI.getMemberProgress(String(user.id))
-      
-      const coursesData = response.data
+      const coursesData = response.data as Course[]
 
       setCourses(coursesData)
 
-      // 计算统计数据
-      const completed = coursesData.filter((c: Course) => c.progress === 100).length
-      const inProgress = coursesData.filter((c: Course) => c.progress > 0 && c.progress < 100).length
-      const totalHours = coursesData.reduce((sum: number, c: Course) => sum + c.hours, 0)
+      const completed = coursesData.filter((c) => c.progress === 100).length
+      const inProgress = coursesData.filter((c) => c.progress > 0 && c.progress < 100).length
+      const totalHours = coursesData.reduce((sum, c) => sum + c.hours, 0)
       const completedHours = coursesData
-        .filter((c: Course) => c.progress === 100)
-        .reduce((sum: number, c: Course) => sum + c.hours, 0)
+        .filter((c) => c.progress === 100)
+        .reduce((sum, c) => sum + c.hours, 0)
 
       setStats({
         totalCourses: coursesData.length,
@@ -62,12 +60,26 @@ export default function StudentProgress() {
         totalHours,
         completedHours
       })
+
+      // 已全部完成的分类默认收起，其余展开
+      const nextCollapsed: Record<string, boolean> = {}
+      for (const category of CATEGORIES) {
+        const list = coursesData.filter((c) => c.category === category)
+        if (list.length > 0 && list.every((c) => c.progress === 100)) {
+          nextCollapsed[category] = true
+        }
+      }
+      setCollapsed(nextCollapsed)
     } catch (error: any) {
       console.error('加载课程进度失败:', error)
       toast.error('加载课程进度失败')
     } finally {
       setLoading(false)
     }
+  }
+
+  const toggleCategory = (category: string) => {
+    setCollapsed((prev) => ({ ...prev, [category]: !prev[category] }))
   }
 
   const getProgressColor = (progress: number) => {
@@ -87,14 +99,10 @@ export default function StudentProgress() {
   }
 
   const groupedCourses = courses.reduce((acc, course) => {
-    if (!acc[course.category]) {
-      acc[course.category] = []
-    }
+    if (!acc[course.category]) acc[course.category] = []
     acc[course.category].push(course)
     return acc
   }, {} as Record<string, Course[]>)
-
-  const categories = ['入门课程', '标准技能一阶课程', '标准技能二阶课程', '团队训练', '进阶课程']
 
   if (loading) {
     return (
@@ -111,11 +119,10 @@ export default function StudentProgress() {
         <p className="text-gray-400">查看你的学习进度和课程完成情况</p>
       </div>
 
-      {/* 统计卡片 */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <div className="bg-gradient-to-br from-purple-600/20 to-purple-800/20 backdrop-blur-sm rounded-xl p-6 border border-purple-600/30">
+        <div className="student-glass-panel p-6">
           <div className="flex items-center justify-between mb-2">
-            <div className="w-12 h-12 bg-purple-600/30 rounded-lg flex items-center justify-center">
+            <div className="w-12 h-12 rounded-lg bg-purple-500/15 border border-purple-400/20 flex items-center justify-center">
               <BookOpen size={24} className="text-purple-400" />
             </div>
             <span className="text-3xl font-bold text-white">{stats.totalCourses}</span>
@@ -124,9 +131,9 @@ export default function StudentProgress() {
           <p className="text-gray-400 text-sm mt-1">需要学习的课程</p>
         </div>
 
-        <div className="bg-gradient-to-br from-green-600/20 to-green-800/20 backdrop-blur-sm rounded-xl p-6 border border-green-600/30">
+        <div className="student-glass-panel student-glass-panel--green p-6">
           <div className="flex items-center justify-between mb-2">
-            <div className="w-12 h-12 bg-green-600/30 rounded-lg flex items-center justify-center">
+            <div className="w-12 h-12 rounded-lg bg-green-500/15 border border-green-400/20 flex items-center justify-center">
               <Award size={24} className="text-green-400" />
             </div>
             <span className="text-3xl font-bold text-white">{stats.completedCourses}</span>
@@ -137,9 +144,9 @@ export default function StudentProgress() {
           </p>
         </div>
 
-        <div className="bg-gradient-to-br from-blue-600/20 to-blue-800/20 backdrop-blur-sm rounded-xl p-6 border border-blue-600/30">
+        <div className="student-glass-panel p-6">
           <div className="flex items-center justify-between mb-2">
-            <div className="w-12 h-12 bg-blue-600/30 rounded-lg flex items-center justify-center">
+            <div className="w-12 h-12 rounded-lg bg-blue-500/15 border border-blue-400/20 flex items-center justify-center">
               <TrendingUp size={24} className="text-blue-400" />
             </div>
             <span className="text-3xl font-bold text-white">{stats.inProgressCourses}</span>
@@ -148,9 +155,9 @@ export default function StudentProgress() {
           <p className="text-gray-400 text-sm mt-1">正在进行的课程</p>
         </div>
 
-        <div className="bg-gradient-to-br from-amber-600/20 to-amber-800/20 backdrop-blur-sm rounded-xl p-6 border border-amber-600/30">
+        <div className="student-glass-panel p-6">
           <div className="flex items-center justify-between mb-2">
-            <div className="w-12 h-12 bg-amber-600/30 rounded-lg flex items-center justify-center">
+            <div className="w-12 h-12 rounded-lg bg-amber-500/15 border border-amber-400/20 flex items-center justify-center">
               <Clock size={24} className="text-amber-400" />
             </div>
             <span className="text-3xl font-bold text-white">{stats.completedHours}</span>
@@ -160,59 +167,77 @@ export default function StudentProgress() {
         </div>
       </div>
 
-      {/* 课程列表 */}
-      <div className="space-y-6">
-        {categories.map(category => {
+      <div className="space-y-4">
+        {CATEGORIES.map((category) => {
           const categoryCourses = groupedCourses[category] || []
           if (categoryCourses.length === 0) return null
 
+          const doneCount = categoryCourses.filter((c) => c.progress === 100).length
+          const isCollapsed = !!collapsed[category]
+
           return (
-            <div key={category} className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 overflow-hidden">
-              <div className="bg-gradient-to-r from-purple-600/20 to-purple-800/20 px-6 py-4 border-b border-gray-700">
-                <h2 className="text-xl font-bold text-white">{category}</h2>
-                <p className="text-sm text-gray-400 mt-1">
-                  {categoryCourses.filter(c => c.progress === 100).length} / {categoryCourses.length} 已完成
-                </p>
-              </div>
+            <div key={category} className="student-glass-panel overflow-hidden">
+              <button
+                type="button"
+                onClick={() => toggleCategory(category)}
+                className="w-full px-6 py-4 flex items-center justify-between gap-4 text-left bg-white/[0.03] hover:bg-white/[0.05] transition-colors border-b border-white/10"
+              >
+                <div className="min-w-0">
+                  <h2 className="text-xl font-bold text-white">{category}</h2>
+                  <p className="text-sm text-gray-400 mt-1">
+                    {doneCount} / {categoryCourses.length} 已完成
+                  </p>
+                </div>
+                <ChevronDown
+                  size={22}
+                  className={`text-gray-400 shrink-0 transition-transform duration-200 ${
+                    isCollapsed ? '' : 'rotate-180'
+                  }`}
+                />
+              </button>
 
-              <div className="p-6">
-                <div className="grid gap-4">
-                  {categoryCourses.map(course => (
-                    <div
-                      key={course.id}
-                      className="bg-gray-700/30 rounded-lg p-5 border border-gray-700/50 hover:border-purple-600/50 transition-all"
-                    >
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <span className="text-purple-400 font-mono text-sm font-semibold">{course.code}</span>
-                            <span className={`px-2 py-0.5 rounded text-xs font-medium border ${getDifficultyColor(course.difficulty)}`}>
-                              {course.difficulty}
-                            </span>
-                            <span className="text-gray-500 text-sm">{course.hours} 课时</span>
+              {!isCollapsed && (
+                <div className="p-4 sm:p-5">
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                    {categoryCourses.map((course) => (
+                      <div key={course.id} className="student-glass-chip p-4">
+                        <div className="flex items-start justify-between gap-3 mb-2.5">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                              <span className="text-purple-400 font-mono text-sm font-semibold">
+                                {course.code}
+                              </span>
+                              <span className={`px-2 py-0.5 rounded text-xs font-medium border ${getDifficultyColor(course.difficulty)}`}>
+                                {course.difficulty}
+                              </span>
+                              <span className="text-gray-500 text-xs">{course.hours} 课时</span>
+                            </div>
+                            <h3 className="text-white font-semibold truncate" title={course.name}>
+                              {course.name}
+                            </h3>
                           </div>
-                          <h3 className="text-white font-semibold text-lg">{course.name}</h3>
-                        </div>
-                        <div className="text-right">
-                          <div className={`text-2xl font-bold ${
-                            course.progress === 100 ? 'text-green-400' :
-                            course.progress > 0 ? 'text-blue-400' :
-                            'text-gray-500'
-                          }`}>
-                            {course.progress}%
+                          <div className="text-right shrink-0">
+                            <div
+                              className={`text-xl font-bold tabular-nums ${
+                                course.progress === 100
+                                  ? 'text-green-400'
+                                  : course.progress > 0
+                                    ? 'text-blue-400'
+                                    : 'text-gray-500'
+                              }`}
+                            >
+                              {course.progress}%
+                            </div>
+                            {course.progress === 100 && (
+                              <span className="text-[11px] text-green-400 inline-flex items-center gap-0.5 mt-0.5">
+                                <Award size={12} />
+                                已完成
+                              </span>
+                            )}
                           </div>
-                          {course.progress === 100 && (
-                            <span className="text-xs text-green-400 flex items-center gap-1 mt-1">
-                              <Award size={14} />
-                              已完成
-                            </span>
-                          )}
                         </div>
-                      </div>
 
-                      {/* 进度条 */}
-                      <div className="relative">
-                        <div className="h-3 bg-gray-800 rounded-full overflow-hidden">
+                        <div className="h-2 bg-black/30 rounded-full overflow-hidden">
                           <div
                             className={`h-full bg-gradient-to-r ${getProgressColor(course.progress)} transition-all duration-500 relative overflow-hidden`}
                             style={{ width: `${course.progress}%` }}
@@ -221,17 +246,17 @@ export default function StudentProgress() {
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )
         })}
       </div>
 
       {courses.length === 0 && (
-        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl p-12 border border-gray-700 text-center">
+        <div className="student-glass-panel p-12 text-center">
           <BookOpen size={48} className="mx-auto text-gray-600 mb-4" />
           <p className="text-gray-400 text-lg">暂无课程数据</p>
           <p className="text-gray-500 text-sm mt-2">请联系教官为你分配课程</p>

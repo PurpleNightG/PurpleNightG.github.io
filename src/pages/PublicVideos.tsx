@@ -74,7 +74,7 @@ export default function PublicVideos() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="搜索学员、地图、标题..."
-            className="bg-gray-700 border border-gray-600 rounded-lg pl-10 pr-10 py-2 text-white placeholder-gray-400 w-64 focus:outline-none focus:border-purple-500 transition-colors"
+            className="bg-black/25 border border-white/10 rounded-lg pl-10 pr-10 py-2 text-white placeholder-gray-400 w-64 focus:outline-none focus:border-purple-400/50 transition-colors"
           />
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           {searchQuery && (
@@ -86,7 +86,7 @@ export default function PublicVideos() {
       </div>
 
       {filteredVideos.length === 0 ? (
-        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 p-12">
+        <div className="student-glass-panel p-12">
           <div className="text-center text-gray-400">
             <FileText size={48} className="mx-auto mb-4 opacity-50" />
             <p>{videos.length === 0 ? '暂无公开报告' : '未找到匹配的报告'}</p>
@@ -100,9 +100,9 @@ export default function PublicVideos() {
               <button
                 key={video.id}
                 onClick={() => setSelectedVideo(video)}
-                className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 overflow-hidden hover:border-purple-500/50 transition-colors text-left"
+                className="student-glass-panel overflow-hidden text-left w-full"
               >
-                <div className="p-4 border-b border-gray-700">
+                <div className="p-4 border-b border-white/10">
                   <h3 className="text-white font-semibold mb-2 line-clamp-2">{video.title}</h3>
                   {assessment ? (
                     <div className="flex items-center gap-2 text-sm">

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react'
 
 const API = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000/api'
 
@@ -7,11 +7,22 @@ interface Badges {
   leaveEndPending: number
   assessmentPending: number
   reminderCount: number
+  opinionPending: number
 }
 
-const defaultBadges: Badges = { leavePending: 0, leaveEndPending: 0, assessmentPending: 0, reminderCount: 0 }
+interface BadgeContextValue extends Badges {
+  refreshBadges: () => Promise<void>
+}
 
-const BadgeContext = createContext<Badges>(defaultBadges)
+const defaultBadges: Badges = {
+  leavePending: 0,
+  leaveEndPending: 0,
+  assessmentPending: 0,
+  reminderCount: 0,
+  opinionPending: 0,
+}
+
+const BadgeContext = createContext<BadgeContextValue>({ ...defaultBadges, refreshBadges: async () => {} })
 
 export function BadgeProvider({ children }: { children: React.ReactNode }) {
   const [badges, setBadges] = useState<Badges>(defaultBadges)
@@ -20,10 +31,16 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
     try {
       const token = localStorage.getItem('token')
       const res = await fetch(`${API}/badges`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {}
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        cache: 'no-store',
       })
       const data = await res.json()
-      if (data.success) setBadges(data.data)
+      if (data.success) {
+        setBadges({
+          ...defaultBadges,
+          ...data.data,
+        })
+      }
     } catch {
       // silently ignore network errors
     }
@@ -31,11 +48,26 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     fetchBadges()
-    const id = setInterval(fetchBadges, 60_000)
-    return () => clearInterval(id)
+    const id = setInterval(fetchBadges, 15_000)
+    const onFocus = () => { void fetchBadges() }
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void fetchBadges()
+    }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      clearInterval(id)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }, [fetchBadges])
 
-  return <BadgeContext.Provider value={badges}>{children}</BadgeContext.Provider>
+  const value = useMemo(
+    () => ({ ...badges, refreshBadges: fetchBadges }),
+    [badges, fetchBadges]
+  )
+
+  return <BadgeContext.Provider value={value}>{children}</BadgeContext.Provider>
 }
 
 export const useBadges = () => useContext(BadgeContext)

@@ -21,6 +21,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { courseAPI, progressAPI, memberAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
+import StyledSelect from '../../components/StyledSelect'
 
 interface Course {
   id: string
@@ -878,7 +879,7 @@ export default function CourseManagement() {
       )}
 
       {showFilters && (
-        <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4 mb-4">
+        <div className="student-glass-chip p-4 mb-4">
           <div className="flex justify-between items-center mb-3">
             <h3 className="text-white font-semibold">筛选条件</h3>
             <button onClick={clearFilters} className="text-sm text-gray-400 hover:text-white transition-colors">
@@ -969,7 +970,7 @@ export default function CourseManagement() {
         )}
       </div>
 
-      <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 overflow-hidden">
+      <div className="student-glass-panel student-glass-panel--static overflow-hidden">
         {loading ? (
           <div className="p-12 text-center text-gray-400">加载中...</div>
         ) : (
@@ -1028,8 +1029,11 @@ export default function CourseManagement() {
 
       {/* 添加/编辑课程模态框 */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-2xl border border-gray-700 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-2xl">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
             <h2 className="text-xl font-bold text-white mb-4">
               {editingCourse ? '编辑课程' : '添加课程'}
             </h2>
@@ -1042,10 +1046,10 @@ export default function CourseManagement() {
                     type="text"
                     value={formData.code}
                     onChange={e => setFormData({ ...formData, code: e.target.value })}
-                    className={`w-full bg-gray-700 border rounded-lg px-3 py-2 text-white ${
+                    className={`student-glass-field ${
                       formData.code && courses.find(c => c.code === formData.code && (!editingCourse || c.id !== editingCourse.id))
                         ? 'border-red-500'
-                        : 'border-gray-600'
+                        : ''
                     }`}
                     placeholder="如: 1.1"
                     required
@@ -1063,7 +1067,7 @@ export default function CourseManagement() {
                     type="number"
                     value={formData.hours}
                     onChange={e => setFormData({ ...formData, hours: parseInt(e.target.value) })}
-                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                    className="student-glass-field"
                     min="1"
                     required
                   />
@@ -1076,7 +1080,7 @@ export default function CourseManagement() {
                   type="text"
                   value={formData.name}
                   onChange={e => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                  className="student-glass-field"
                   placeholder="如: CQB基础理论知识"
                   required
                 />
@@ -1085,29 +1089,21 @@ export default function CourseManagement() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-1">课程类别 *</label>
-                  <select
-                    value={formData.category}
-                    onChange={e => setFormData({ ...formData, category: e.target.value })}
-                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                  <StyledSelect
                     required
-                  >
-                    {categories.map(cat => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
+                    options={categories}
+                    value={formData.category}
+                    onChange={(value) => setFormData({ ...formData, category: value })}
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-1">课程难度 *</label>
-                  <select
-                    value={formData.difficulty}
-                    onChange={e => setFormData({ ...formData, difficulty: e.target.value })}
-                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                  <StyledSelect
                     required
-                  >
-                    {difficulties.map(diff => (
-                      <option key={diff} value={diff}>{diff}</option>
-                    ))}
-                  </select>
+                    options={difficulties}
+                    value={formData.difficulty}
+                    onChange={(value) => setFormData({ ...formData, difficulty: value })}
+                  />
                 </div>
               </div>
 
@@ -1116,7 +1112,7 @@ export default function CourseManagement() {
                 <textarea
                   value={formData.description}
                   onChange={e => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white h-24"
+                  className="student-glass-field h-24"
                   placeholder="可选填写课程详细描述..."
                 />
               </div>
@@ -1140,43 +1136,40 @@ export default function CourseManagement() {
               </div>
             </form>
           </div>
+            </div>
+          </div>
         </div>
       )}
 
       {/* 批量修改模态框 */}
       {showBatchModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-md">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
             <h2 className="text-xl font-bold text-white mb-4">批量修改课程</h2>
             <p className="text-sm text-gray-400 mb-4">已选中 {selectedIds.size} 门课程，填写需要修改的字段：</p>
 
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-1">类别（留空不修改）</label>
-                <select
+                <StyledSelect
+                  placeholder="不修改"
+                  options={[{ value: '', label: '不修改' }, ...categories.map((cat) => ({ value: cat, label: cat }))]}
                   value={batchFormData.category}
-                  onChange={e => setBatchFormData({ ...batchFormData, category: e.target.value })}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
-                >
-                  <option value="">不修改</option>
-                  {categories.map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
-                </select>
+                  onChange={(value) => setBatchFormData({ ...batchFormData, category: value })}
+                />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-1">难度（留空不修改）</label>
-                <select
+                <StyledSelect
+                  placeholder="不修改"
+                  options={[{ value: '', label: '不修改' }, ...difficulties.map((diff) => ({ value: diff, label: diff }))]}
                   value={batchFormData.difficulty}
-                  onChange={e => setBatchFormData({ ...batchFormData, difficulty: e.target.value })}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
-                >
-                  <option value="">不修改</option>
-                  {difficulties.map(diff => (
-                    <option key={diff} value={diff}>{diff}</option>
-                  ))}
-                </select>
+                  onChange={(value) => setBatchFormData({ ...batchFormData, difficulty: value })}
+                />
               </div>
 
               <div>
@@ -1185,7 +1178,7 @@ export default function CourseManagement() {
                   type="number"
                   value={batchFormData.hours}
                   onChange={e => setBatchFormData({ ...batchFormData, hours: e.target.value })}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white"
+                  className="student-glass-field"
                   placeholder="不修改"
                   min="1"
                 />
@@ -1207,13 +1200,18 @@ export default function CourseManagement() {
               </div>
             </div>
           </div>
+            </div>
+          </div>
         </div>
       )}
 
       {/* 配置类别/难度模态框 */}
       {showConfigModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-md">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold text-white">配置管理</h2>
               <button onClick={() => setShowConfigModal(false)} className="text-gray-400 hover:text-white">
@@ -1262,20 +1260,22 @@ export default function CourseManagement() {
               添加新{configType === 'category' ? '类别' : '难度'}
             </button>
           </div>
+            </div>
+          </div>
         </div>
       )}
 
       {/* 添加配置项模态框 */}
       {showAddConfigModal && (
         <div 
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
           onClick={() => setShowAddConfigModal(false)}
         >
-          <div 
-            className="bg-gray-800 rounded-xl w-full max-w-md border border-gray-700"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-6 py-4 border-b border-gray-700">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal w-full">
+            <div className="px-6 py-4 border-b border-white/10">
               <h2 className="text-xl font-bold text-white">
                 添加新{configType === 'category' ? '类别' : '难度'}
               </h2>
@@ -1295,12 +1295,12 @@ export default function CourseManagement() {
                   }
                 }}
                 placeholder={`请输入${configType === 'category' ? '类别' : '难度'}名称`}
-                className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-purple-500 transition-colors"
+                className="student-glass-field"
                 autoFocus
               />
             </div>
 
-            <div className="px-6 py-4 border-t border-gray-700 flex gap-3">
+            <div className="px-6 py-4 border-t border-white/10 flex gap-3">
               <button
                 onClick={() => setShowAddConfigModal(false)}
                 className="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg transition-colors"
@@ -1315,20 +1315,22 @@ export default function CourseManagement() {
               </button>
             </div>
           </div>
+            </div>
+          </div>
         </div>
       )}
 
       {/* 课程进度分配模态框 */}
       {showAssignModal && (
         <div 
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
           onClick={closeAssignModal}
         >
-          <div 
-            className="bg-gray-800 rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-gray-700 modal-scrollbar"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="sticky top-0 bg-gray-800 border-b border-gray-700 px-6 py-4 flex justify-between items-center">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-4xl" onClick={(e) => e.stopPropagation()}>
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white/5 border-b border-white/10 px-6 py-4 flex justify-between items-center">
               <h2 className="text-xl font-bold text-white">
                 {assigningCourse 
                   ? `为课程"${assigningCourse.code} ${assigningCourse.name}"分配进度`
@@ -1390,7 +1392,7 @@ export default function CourseManagement() {
                       value={memberSearchQuery}
                       onChange={(e) => setMemberSearchQuery(e.target.value)}
                       placeholder="搜索成员ID或昵称..."
-                      className="w-full bg-gray-700 border border-gray-600 rounded-lg pl-10 pr-10 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-purple-500 transition-colors"
+                      className="student-glass-field pl-10 pr-10"
                     />
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                     {memberSearchQuery && (
@@ -1446,20 +1448,22 @@ export default function CourseManagement() {
               )}
             </div>
           </div>
+            </div>
+          </div>
         </div>
       )}
 
       {/* 删除确认模态框 */}
       {showDeleteModal && (
         <div 
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
           onClick={() => setShowDeleteModal(false)}
         >
-          <div 
-            className="bg-gray-800 rounded-xl w-full max-w-md border border-gray-700"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-6 py-4 border-b border-gray-700">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal w-full">
+            <div className="px-6 py-4 border-b border-white/10">
               <h2 className="text-xl font-bold text-white">确认删除</h2>
             </div>
 
@@ -1495,13 +1499,18 @@ export default function CourseManagement() {
               </div>
             </div>
           </div>
+            </div>
+          </div>
         </div>
       )}
 
       {/* 警告成员确认对话框 */}
       {warningModal.show && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-md">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
             <h2 className="text-xl font-bold text-white mb-4">⚠️ 新训准考成员课程进度不足</h2>
             <p className="text-gray-400 text-sm mb-3">
               检测到以下成员阶段为"新训准考"，但未完成前四部分的所有课程：
@@ -1530,6 +1539,8 @@ export default function CourseManagement() {
               >
                 取消
               </button>
+            </div>
+          </div>
             </div>
           </div>
         </div>

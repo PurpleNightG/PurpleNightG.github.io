@@ -47,10 +47,9 @@ export default function StudentBlackPoints() {
         <h1 className="text-2xl font-bold text-white">我的黑点记录</h1>
       </div>
 
-      {/* 统计卡片 */}
       <div className="grid grid-cols-2 gap-4 mb-6">
-        <div className="bg-red-900/20 border border-red-700/40 rounded-xl p-4 flex items-center gap-4">
-          <div className="w-12 h-12 bg-red-600/20 rounded-lg flex items-center justify-center">
+        <div className="student-glass-panel p-4 flex items-center gap-4">
+          <div className="w-12 h-12 rounded-lg bg-red-500/15 border border-red-400/20 flex items-center justify-center">
             <ShieldOff className="text-red-400" size={24} />
           </div>
           <div>
@@ -58,8 +57,8 @@ export default function StudentBlackPoints() {
             <p className="text-2xl font-bold text-red-400">{active.length}</p>
           </div>
         </div>
-        <div className="bg-gray-800/50 border border-gray-700/40 rounded-xl p-4 flex items-center gap-4">
-          <div className="w-12 h-12 bg-gray-700/50 rounded-lg flex items-center justify-center">
+        <div className="student-glass-panel p-4 flex items-center gap-4">
+          <div className="w-12 h-12 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center">
             <ShieldCheck className="text-gray-400" size={24} />
           </div>
           <div>
@@ -69,8 +68,7 @@ export default function StudentBlackPoints() {
         </div>
       </div>
 
-      {/* 记录列表 */}
-      <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 overflow-hidden">
+      <div className="student-glass-panel overflow-hidden">
         {loading ? (
           <div className="p-12 text-center text-gray-400">加载中...</div>
         ) : records.length === 0 ? (
@@ -82,7 +80,7 @@ export default function StudentBlackPoints() {
         ) : (
           <table className="w-full">
             <thead>
-              <tr className="border-b border-gray-700 bg-gray-800/70">
+              <tr className="border-b border-white/10 bg-white/[0.03]">
                 <th className="text-left text-gray-400 text-sm font-medium px-4 py-3">原因</th>
                 <th className="text-left text-gray-400 text-sm font-medium px-4 py-3">登记日期</th>
                 <th className="text-left text-gray-400 text-sm font-medium px-4 py-3">记录人</th>
@@ -90,9 +88,9 @@ export default function StudentBlackPoints() {
                 <th className="text-left text-gray-400 text-sm font-medium px-4 py-3">失效日期</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-700/50">
+            <tbody className="divide-y divide-white/5">
               {records.map(r => (
-                <tr key={r.id} className="hover:bg-gray-700/20 transition-colors">
+                <tr key={r.id} className="hover:bg-white/[0.03] transition-colors">
                   <td className="px-4 py-3 text-white text-sm">{r.reason}</td>
                   <td className="px-4 py-3 text-gray-300 text-sm">{formatDate(r.register_date)}</td>
                   <td className="px-4 py-3 text-gray-300 text-sm">{r.recorder_name}</td>
@@ -118,9 +116,9 @@ export default function StudentBlackPoints() {
       </div>
 
       {active.length > 0 && (
-        <div className="mt-4 bg-yellow-900/20 border border-yellow-700/40 rounded-lg p-4">
-          <p className="text-yellow-300 text-sm">
-            ⚠️ 您当前有 <span className="font-bold">{active.length}</span> 条生效中的黑点记录，请注意行为规范。如有异议请联系管理员。
+        <div className="mt-4 student-glass-chip student-glass-chip--yellow p-4">
+          <p className="text-yellow-200 text-sm">
+            您当前有 <span className="font-bold">{active.length}</span> 条生效中的黑点记录，请注意行为规范。如有异议请联系管理员。
           </p>
         </div>
       )}

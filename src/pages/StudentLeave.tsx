@@ -3,6 +3,7 @@ import { leaveAPI } from '../utils/api'
 import { Calendar, Plus, Clock, CheckCircle, Loader2 } from 'lucide-react'
 import { formatDate } from '../utils/dateFormat'
 import { toast } from '../utils/toast'
+import DateInput from '../components/DateInput'
 
 interface LeaveRecord {
   id: number
@@ -122,20 +123,20 @@ export default function StudentLeave() {
 
       {/* 状态提示 */}
       {hasActiveLeave && (
-        <div className="mb-4 bg-blue-900/20 border border-blue-700/40 rounded-lg p-3 flex items-center gap-2">
+        <div className="mb-4 student-glass-chip student-glass-chip--blue p-3 flex items-center gap-2">
           <Clock className="text-blue-400 flex-shrink-0" size={18} />
           <p className="text-blue-300 text-sm">您目前有正在进行的请假。</p>
         </div>
       )}
       {hasPendingApp && !hasActiveLeave && (
-        <div className="mb-4 bg-yellow-900/20 border border-yellow-700/40 rounded-lg p-3 flex items-center gap-2">
+        <div className="mb-4 student-glass-chip student-glass-chip--yellow p-3 flex items-center gap-2">
           <Clock className="text-yellow-400 flex-shrink-0" size={18} />
           <p className="text-yellow-300 text-sm">您有一条待审批的请假申请，请等待管理员审批。</p>
         </div>
       )}
 
       {/* Tab 切换 */}
-      <div className="flex gap-1 mb-4 bg-gray-800/50 rounded-lg p-1 w-fit">
+      <div className="flex gap-1 mb-4 student-glass-chip p-1 w-fit">
         <button
           onClick={() => setTab('records')}
           className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === 'records' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
@@ -153,7 +154,7 @@ export default function StudentLeave() {
         </button>
       </div>
 
-      <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 overflow-hidden">
+      <div className="student-glass-panel overflow-hidden">
         {loading ? (
           <div className="p-12 text-center text-gray-400">加载中...</div>
         ) : tab === 'records' ? (
@@ -165,7 +166,7 @@ export default function StudentLeave() {
           ) : (
             <table className="w-full">
               <thead>
-                <tr className="border-b border-gray-700 bg-gray-800/70">
+                <tr className="border-b border-white/10 bg-white/[0.03]">
                   <th className="text-left text-gray-400 text-sm font-medium px-4 py-3">原因</th>
                   <th className="text-left text-gray-400 text-sm font-medium px-4 py-3 w-36">开始日期</th>
                   <th className="text-left text-gray-400 text-sm font-medium px-4 py-3 w-36">结束日期</th>
@@ -173,9 +174,9 @@ export default function StudentLeave() {
                   <th className="text-left text-gray-400 text-sm font-medium px-4 py-3 w-28">状态</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-700/50">
+              <tbody className="divide-y divide-white/5">
                 {records.map(r => (
-                  <tr key={r.id} className="hover:bg-gray-700/20 transition-colors">
+                  <tr key={r.id} className="hover:bg-white/[0.03] transition-colors">
                     <td className="px-4 py-3 text-white text-sm">{r.reason || '—'}</td>
                     <td className="px-4 py-3 text-gray-300 text-sm">{formatDate(r.start_date)}</td>
                     <td className="px-4 py-3 text-gray-300 text-sm">{formatDate(r.end_date)}</td>
@@ -201,7 +202,7 @@ export default function StudentLeave() {
           ) : (
             <table className="w-full">
               <thead>
-                <tr className="border-b border-gray-700 bg-gray-800/70">
+                <tr className="border-b border-white/10 bg-white/[0.03]">
                   <th className="text-left text-gray-400 text-sm font-medium px-4 py-3">原因</th>
                   <th className="text-left text-gray-400 text-sm font-medium px-4 py-3 w-36">开始日期</th>
                   <th className="text-left text-gray-400 text-sm font-medium px-4 py-3 w-36">结束日期</th>
@@ -210,9 +211,9 @@ export default function StudentLeave() {
                   <th className="text-left text-gray-400 text-sm font-medium px-4 py-3">审批备注</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-700/50">
+              <tbody className="divide-y divide-white/5">
                 {applications.map(a => (
-                  <tr key={a.id} className="hover:bg-gray-700/20 transition-colors">
+                  <tr key={a.id} className="hover:bg-white/[0.03] transition-colors">
                     <td className="px-4 py-3 text-white text-sm">{a.reason || '—'}</td>
                     <td className="px-4 py-3 text-gray-300 text-sm">{formatDate(a.start_date)}</td>
                     <td className="px-4 py-3 text-gray-300 text-sm">{formatDate(a.end_date)}</td>
@@ -231,32 +232,27 @@ export default function StudentLeave() {
 
       {/* 申请请假模态框 */}
       {showApplyModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-md">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
             <h2 className="text-xl font-bold text-white mb-4">申请请假</h2>
             <form onSubmit={handleApply} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">开始日期 *</label>
-                <input
-                  type="date"
-                  value={form.start_date}
-                  onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))}
-                  min={today()}
-                  required
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-purple-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">结束日期 *</label>
-                <input
-                  type="date"
-                  value={form.end_date}
-                  onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))}
-                  min={form.start_date}
-                  required
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-purple-500"
-                />
-              </div>
+              <DateInput
+                label="开始日期"
+                required
+                value={form.start_date}
+                onChange={(value) => setForm(f => ({ ...f, start_date: value }))}
+                min={today()}
+              />
+              <DateInput
+                label="结束日期"
+                required
+                value={form.end_date}
+                onChange={(value) => setForm(f => ({ ...f, end_date: value }))}
+                min={form.start_date}
+              />
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-1">请假原因</label>
                 <textarea
@@ -264,10 +260,10 @@ export default function StudentLeave() {
                   onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}
                   rows={3}
                   placeholder="请简要说明请假原因（选填）"
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 resize-none"
+                  className="student-glass-field resize-none"
                 />
               </div>
-              <div className="bg-blue-900/20 border border-blue-700/40 rounded-lg p-3">
+              <div className="student-glass-chip student-glass-chip--blue p-3">
                 <p className="text-blue-300 text-xs">📌 申请提交后需等待管理员审批，批准后才会正式生效。请假期间不计入新训统计。</p>
               </div>
               <div className="flex gap-3 pt-2">
@@ -289,6 +285,8 @@ export default function StudentLeave() {
                 </button>
               </div>
             </form>
+          </div>
+            </div>
           </div>
         </div>
       )}

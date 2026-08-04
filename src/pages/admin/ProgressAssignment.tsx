@@ -454,7 +454,7 @@ export default function ProgressAssignment() {
 
       {/* 筛选面板 */}
       {showFilters && (
-        <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 p-4 mb-4">
+        <div className="student-glass-panel student-glass-panel--static p-4 mb-4">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-white font-semibold">筛选条件</h3>
             {activeFilterCount > 0 && (
@@ -504,7 +504,7 @@ export default function ProgressAssignment() {
         </div>
       )}
 
-      <div className="bg-gray-800/50 backdrop-blur-sm rounded-xl border border-gray-700 overflow-hidden">
+      <div className="student-glass-panel student-glass-panel--static overflow-hidden">
         {loading ? (
           <div className="p-12 text-center text-gray-400">加载中...</div>
         ) : (
@@ -622,14 +622,14 @@ export default function ProgressAssignment() {
       {/* 单个成员进度模态框 */}
       {showProgressModal && selectedMember && (
         <div 
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
           onClick={closeProgressModal}
         >
-          <div 
-            className="bg-gray-800 rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-gray-700 modal-scrollbar"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="sticky top-0 bg-gray-800 border-b border-gray-700 px-6 py-4 flex justify-between items-center">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-4xl" onClick={(e) => e.stopPropagation()}>
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white/5 border-b border-white/10 px-6 py-4 flex justify-between items-center">
               <h2 className="text-xl font-bold text-white">
                 {selectedMember.name} - 课程进度
               </h2>
@@ -656,7 +656,7 @@ export default function ProgressAssignment() {
                           {categoryCourses.map((course) => (
                             <div
                               key={course.id}
-                              className="flex items-center justify-between p-3 bg-gray-800/50 rounded-lg hover:bg-gray-800/70 transition-colors"
+                              className="flex items-center justify-between p-3 student-glass-chip transition-colors"
                             >
                               <div className="flex-1">
                                 <div className="flex items-center gap-2">
@@ -701,7 +701,7 @@ export default function ProgressAssignment() {
             </div>
 
             {/* 确认按钮区域 */}
-            <div className="sticky bottom-0 bg-gray-800 border-t border-gray-700 px-6 py-4 flex justify-between items-center">
+            <div className="sticky bottom-0 bg-white/5 border-t border-white/10 px-6 py-4 flex justify-between items-center">
               <div className="text-sm text-gray-400">
                 {pendingChanges.size > 0 ? (
                   <span className="text-yellow-400">
@@ -728,20 +728,22 @@ export default function ProgressAssignment() {
               </div>
             </div>
           </div>
+            </div>
+          </div>
         </div>
       )}
 
       {/* 批量修改进度模态框 */}
       {showBatchModal && (
         <div 
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
           onClick={closeBatchModal}
         >
-          <div 
-            className="bg-gray-800 rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto border border-gray-700 modal-scrollbar"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="sticky top-0 bg-gray-800 border-b border-gray-700 px-6 py-4 flex justify-between items-center">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-4xl" onClick={(e) => e.stopPropagation()}>
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white/5 border-b border-white/10 px-6 py-4 flex justify-between items-center">
               <h2 className="text-xl font-bold text-white">
                 批量修改进度 - 已选择 {selectedMemberIds.size} 名成员
               </h2>
@@ -774,7 +776,7 @@ export default function ProgressAssignment() {
                           {categoryCourses.map((course) => (
                             <div
                               key={course.id}
-                              className="flex items-center justify-between p-3 bg-gray-800/50 rounded-lg hover:bg-gray-800/70 transition-colors"
+                              className="flex items-center justify-between p-3 student-glass-chip transition-colors"
                             >
                               <div className="flex-1">
                                 <div className="flex items-center gap-2">
@@ -819,7 +821,7 @@ export default function ProgressAssignment() {
             </div>
 
             {/* 确认按钮区域 */}
-            <div className="sticky bottom-0 bg-gray-800 border-t border-gray-700 px-6 py-4 flex justify-between items-center">
+            <div className="sticky bottom-0 bg-white/5 border-t border-white/10 px-6 py-4 flex justify-between items-center">
               <div className="text-sm text-gray-400">
                 {batchPendingChanges.size > 0 ? (
                   <span className="text-yellow-400">
@@ -846,13 +848,18 @@ export default function ProgressAssignment() {
               </div>
             </div>
           </div>
+            </div>
+          </div>
         </div>
       )}
 
       {/* 警告成员确认对话框 */}
       {warningModal.show && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-md">
+            <div className="glass-modal-tilt">
+          <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
             <h2 className="text-xl font-bold text-white mb-4">⚠️ 新训准考成员课程进度不足</h2>
             <p className="text-gray-400 text-sm mb-3">
               检测到以下成员阶段为"新训准考"，但未完成前四部分的所有课程：
@@ -881,6 +888,8 @@ export default function ProgressAssignment() {
               >
                 取消
               </button>
+            </div>
+          </div>
             </div>
           </div>
         </div>

@@ -161,6 +161,42 @@ async function runMigrations() {
   }
 
   console.log('✅ surveys 相关表迁移完成')
+
+  const [phase3Col] = await pool.query(`
+    SELECT COLUMN_NAME FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'members'
+      AND COLUMN_NAME = 'phase3_reached_at'
+  `)
+  if (phase3Col.length === 0) {
+    await pool.query(`
+      ALTER TABLE members
+        ADD COLUMN phase3_reached_at DATE NULL COMMENT '首次达到新训三期的日期（下调不清除）' AFTER last_training_date
+    `)
+    // 回填：当前已达三期及以上的成员，用加入日作为保守起点
+    await pool.query(`
+      UPDATE members
+      SET phase3_reached_at = join_date
+      WHERE phase3_reached_at IS NULL
+        AND join_date IS NOT NULL
+        AND stage_role IN (
+          '新训三期', '新训准考', '紫夜', '紫夜尖兵',
+          '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师'
+        )
+    `)
+    console.log('✅ members.phase3_reached_at 字段迁移完成')
+  }
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS attendance_reminder_ignores (
+      member_id INT NOT NULL PRIMARY KEY COMMENT '成员ID',
+      ignored_by VARCHAR(100) NULL COMMENT '操作人',
+      ignored_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '忽略时间',
+      CONSTRAINT fk_attendance_ignore_member
+        FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+      COMMENT='考勤催促忽略名单'
+  `)
 }
 
 // 测试数据库连接
