@@ -492,11 +492,11 @@ export default function AdminHome() {
                   </div>
                   核心数据与阶段分布
                 </h2>
-                <div className="inline-flex rounded-xl bg-gray-800/80 border border-gray-700 p-1">
+                <div className="inline-flex student-glass-chip student-glass-seg">
                   <button
                     type="button"
                     onClick={() => setDataViewMode('cards')}
-                    className={`px-3 py-1.5 rounded-[0.65rem] text-xs font-medium flex items-center gap-1.5 transition-colors ${
+                    className={`px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 transition-colors ${
                       dataViewMode === 'cards' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
                     }`}
                   >
@@ -506,7 +506,7 @@ export default function AdminHome() {
                   <button
                     type="button"
                     onClick={() => setDataViewMode('chart')}
-                    className={`px-3 py-1.5 rounded-[0.65rem] text-xs font-medium flex items-center gap-1.5 transition-colors ${
+                    className={`px-3 py-1.5 text-xs font-medium flex items-center gap-1.5 transition-colors ${
                       dataViewMode === 'chart' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
                     }`}
                   >
