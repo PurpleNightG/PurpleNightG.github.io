@@ -473,10 +473,10 @@ export default function AssessmentRecords() {
       const aValue = a[sortConfig.key as keyof Assessment]
       const bValue = b[sortConfig.key as keyof Assessment]
       
-      // 处理null值
-      if (aValue === null && bValue === null) return 0
-      if (aValue === null) return 1
-      if (bValue === null) return -1
+      // 处理null/undefined值
+      if (aValue == null && bValue == null) return 0
+      if (aValue == null) return 1
+      if (bValue == null) return -1
       
       if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1
       if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1
