@@ -646,8 +646,8 @@ export default function AssistantRoster() {
               </p>
               <p>
                 原阶段：
-                <span className={`ml-1 px-2 py-0.5 rounded ${getRoleColor(restoreDialog.member.stage_role)}`}>
-                  {restoreDialog.member.stage_role}
+                <span className={`ml-1 px-2 py-0.5 rounded ${getRoleColor(restoreDialog.member.stage_role || '')}`}>
+                  {restoreDialog.member.stage_role || '-'}
                 </span>
               </p>
               <p>
