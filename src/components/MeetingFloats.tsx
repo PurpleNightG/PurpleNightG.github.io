@@ -173,7 +173,21 @@ export function MeetingInviteFloat() {
         await fetch(`${API_URL}/meeting/invites/respond`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ memberId, code: invite.code, accept }),
+          body: JSON.stringify({
+            memberId,
+            code: invite.code,
+            accept,
+            displayName: (() => {
+              try {
+                const u = localStorage.getItem('studentUser') || sessionStorage.getItem('studentUser')
+                if (u) {
+                  const p = JSON.parse(u)
+                  return p.nickname || p.username || ''
+                }
+              } catch {}
+              return ''
+            })(),
+          }),
         })
         const code = invite.code
         setInvite(null)
@@ -182,7 +196,21 @@ export function MeetingInviteFloat() {
         await fetch(`${API_URL}/room/invites/respond`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ memberId, roomId: invite.roomId, accept }),
+          body: JSON.stringify({
+            memberId,
+            roomId: invite.roomId,
+            accept,
+            displayName: (() => {
+              try {
+                const u = localStorage.getItem('studentUser') || sessionStorage.getItem('studentUser')
+                if (u) {
+                  const p = JSON.parse(u)
+                  return p.nickname || p.username || ''
+                }
+              } catch {}
+              return ''
+            })(),
+          }),
         })
         const roomId = invite.roomId
         setInvite(null)
@@ -515,3 +543,333 @@ export function AdminMeetingsFloat() {
     </>
   )
 }
+
+type LiveRoomItem =
+  | {
+      kind: 'share'
+      roomId: string
+      hostName: string
+      mode: string
+      viewerCount: number
+    }
+  | {
+      kind: 'meeting'
+      code: string
+      title: string
+      createdBy: string
+      memberCount: number
+      hasSharer: boolean
+    }
+
+type MyJoinStatus = { key: string; status: 'pending' | 'approved' | 'rejected' }
+
+function getStudentDisplayName(): string {
+  try {
+    const studentUser = localStorage.getItem('studentUser') || sessionStorage.getItem('studentUser')
+    if (studentUser) {
+      const parsed = JSON.parse(studentUser)
+      return parsed.nickname || parsed.username || '学员'
+    }
+  } catch {}
+  return '学员'
+}
+
+/** 学员端：在线会议 / 屏幕共享列表，申请进入需发起者同意 */
+export function StudentLiveRoomsFloat() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const [items, setItems] = useState<LiveRoomItem[]>([])
+  const [myStatuses, setMyStatuses] = useState<Record<string, MyJoinStatus['status']>>({})
+  const [busyKey, setBusyKey] = useState<string | null>(null)
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
+  const [collapsed, setCollapsed] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+  const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null)
+  const enteredRef = useRef<Set<string>>(new Set())
+
+  const poll = useCallback(async () => {
+    // 已在屏幕共享/会议页时不展示在线房间（本人已在房间流程中）
+    if (
+      !isStudentLoggedIn() ||
+      location.pathname.startsWith('/admin') ||
+      location.pathname.includes('screen-share')
+    ) {
+      setItems([])
+      return
+    }
+    const memberId = getStudentMemberId()
+    if (!memberId) {
+      setItems([])
+      return
+    }
+
+    const params = location.pathname.includes('screen-share')
+      ? new URLSearchParams(location.search)
+      : null
+    const currentMeeting = params?.get('meeting')?.toUpperCase() || null
+    const currentRoom = params?.get('room')?.toUpperCase() || null
+
+    try {
+      const [roomRes, meetRes, roomMine, meetMine] = await Promise.all([
+        fetch(`${API_URL}/room/live`),
+        fetch(`${API_URL}/meeting/active`),
+        fetch(`${API_URL}/room/join-requests/mine?memberId=${memberId}`),
+        fetch(`${API_URL}/meeting/join-requests/mine?memberId=${memberId}`),
+      ])
+      const rd = await roomRes.json()
+      const md = await meetRes.json()
+      const rMine = await roomMine.json()
+      const mMine = await meetMine.json()
+
+      const statusMap: Record<string, MyJoinStatus['status']> = {}
+      for (const r of rMine.requests || []) {
+        statusMap[`share:${String(r.roomId).toUpperCase()}`] = r.status
+      }
+      for (const r of mMine.requests || []) {
+        statusMap[`meeting:${String(r.code).toUpperCase()}`] = r.status
+      }
+      setMyStatuses(statusMap)
+
+      // 批准后自动进入（仅一次）
+      for (const [key, status] of Object.entries(statusMap)) {
+        if (status !== 'approved' || enteredRef.current.has(key)) continue
+        enteredRef.current.add(key)
+        if (key.startsWith('share:')) {
+          const roomId = key.slice(6)
+          if (roomId !== currentRoom) {
+            navigate(`/screen-share?room=${encodeURIComponent(roomId)}&fromRequest=1`)
+          }
+        } else if (key.startsWith('meeting:')) {
+          const code = key.slice(8)
+          if (code !== currentMeeting) {
+            navigate(`/screen-share?meeting=${encodeURIComponent(code)}&fromRequest=1`)
+          }
+        }
+      }
+
+      const list: LiveRoomItem[] = []
+      for (const room of rd.rooms || []) {
+        const roomId = String(room.roomId || '').toUpperCase()
+        if (!roomId || roomId === currentRoom) continue
+        list.push({
+          kind: 'share',
+          roomId,
+          hostName: room.hostName || '未知',
+          mode: room.mode || 'peerjs',
+          viewerCount: room.viewerCount || 0,
+        })
+      }
+      for (const m of md.meetings || []) {
+        const code = String(m.code || '').toUpperCase()
+        if (!code || code === currentMeeting) continue
+        list.push({
+          kind: 'meeting',
+          code,
+          title: m.title || '紫夜会议',
+          createdBy: m.createdBy || '',
+          memberCount: m.memberCount || 0,
+          hasSharer: !!m.hasSharer,
+        })
+      }
+      setItems(list)
+      if (list.length > 0) {
+        setPos((prev) => prev ?? {
+          x: 16,
+          y: Math.max(88, Math.round(window.innerHeight / 2 - 160)),
+        })
+      }
+    } catch (e) {
+      if (import.meta.env.DEV) console.warn('[StudentLiveRoomsFloat]', e)
+    }
+  }, [location.pathname, location.search, navigate])
+
+  useEffect(() => {
+    poll()
+    const iv = setInterval(poll, 2500)
+    return () => clearInterval(iv)
+  }, [poll])
+
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 2800)
+    return () => clearTimeout(t)
+  }, [toast])
+
+  const startDrag = (e: React.MouseEvent, p: { x: number; y: number }) => {
+    e.preventDefault()
+    dragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: p.x,
+      originY: p.y,
+    }
+    const onMove = (ev: MouseEvent) => {
+      const drag = dragRef.current
+      if (!drag) return
+      setPos({
+        x: Math.min(Math.max(8, drag.originX + ev.clientX - drag.startX), Math.max(8, window.innerWidth - 300)),
+        y: Math.min(Math.max(8, drag.originY + ev.clientY - drag.startY), Math.max(8, window.innerHeight - 220)),
+      })
+    }
+    const onUp = () => {
+      dragRef.current = null
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
+  const applyJoin = async (item: LiveRoomItem) => {
+    const memberId = getStudentMemberId()
+    if (!memberId || busyKey) return
+    const displayName = getStudentDisplayName()
+    const key = item.kind === 'share' ? `share:${item.roomId}` : `meeting:${item.code}`
+    setBusyKey(key)
+    try {
+      const url = item.kind === 'share'
+        ? `${API_URL}/room/${item.roomId}/join-request`
+        : `${API_URL}/meeting/${item.code}/join-request`
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memberId, displayName }),
+      })
+      const d = await r.json()
+      if (!r.ok || d.success === false) throw new Error(d.error || '申请失败')
+      if (d.status === 'approved' || d.alreadyIn) {
+        setMyStatuses((prev) => ({ ...prev, [key]: 'approved' }))
+        enteredRef.current.add(key)
+        if (item.kind === 'share') {
+          navigate(`/screen-share?room=${encodeURIComponent(item.roomId)}&fromRequest=1`)
+        } else {
+          navigate(`/screen-share?meeting=${encodeURIComponent(item.code)}&fromRequest=1`)
+        }
+      } else {
+        setMyStatuses((prev) => ({ ...prev, [key]: 'pending' }))
+        setToast('已发送申请，等待发起者同意')
+      }
+    } catch (e: any) {
+      setToast(e?.message || '申请失败')
+    } finally {
+      setBusyKey(null)
+    }
+  }
+
+  if (
+    !isStudentLoggedIn() ||
+    location.pathname.startsWith('/admin') ||
+    location.pathname.includes('screen-share')
+  ) {
+    return null
+  }
+  if (items.length === 0 || !pos) return null
+
+  return createPortal(
+    <aside
+      className="fixed z-[65] w-[18.5rem] pointer-events-none"
+      style={{ left: pos.x, top: pos.y }}
+      aria-label="在线房间"
+    >
+      <div className="pointer-events-auto">
+        <div className="student-float-panel student-float-panel--purple overflow-hidden">
+          <div
+            className="flex items-center gap-3 p-4 cursor-grab active:cursor-grabbing select-none"
+            onMouseDown={(e) => startDrag(e, pos)}
+          >
+            <div className="p-2.5 rounded-2xl ring-1 shrink-0 bg-purple-400/15 ring-purple-300/20">
+              <Monitor className="text-purple-300" size={18} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[11px] uppercase tracking-[0.14em] text-white/45 mb-0.5 flex items-center gap-1">
+                <GripVertical size={11} className="opacity-60" />
+                Live Rooms
+              </div>
+              <h3 className="text-white font-semibold leading-tight">
+                在线房间
+                <span className="ml-1.5 text-xs font-normal text-purple-300">{items.length}</span>
+              </h3>
+            </div>
+            <button
+              type="button"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={() => setCollapsed((v) => !v)}
+              className="p-1.5 rounded-lg text-white/40 hover:text-white/80 hover:bg-white/5 text-xs"
+            >
+              {collapsed ? '展开' : '收起'}
+            </button>
+          </div>
+          {!collapsed && (
+            <div className="px-4 pb-4 space-y-2.5 max-h-[min(50vh,22rem)] overflow-y-auto sidebar-scrollbar">
+              {items.map((item) => {
+                const key = item.kind === 'share' ? `share:${item.roomId}` : `meeting:${item.code}`
+                const status = myStatuses[key]
+                const busy = busyKey === key
+                return (
+                  <div
+                    key={key}
+                    className="rounded-xl bg-black/25 border border-white/10 p-3 space-y-2"
+                  >
+                    <div className="flex items-center justify-between gap-2 min-w-0">
+                      <span className="text-white text-sm font-medium truncate">
+                        {item.kind === 'share' ? `${item.hostName} 的共享` : item.title}
+                      </span>
+                      <span className={`text-[10px] shrink-0 px-1.5 py-0.5 rounded ${
+                        item.kind === 'share'
+                          ? 'bg-purple-500/20 text-purple-200'
+                          : 'bg-cyan-500/20 text-cyan-200'
+                      }`}>
+                        {item.kind === 'share' ? '共享' : '会议'}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-white/40">
+                      {item.kind === 'share'
+                        ? `${item.viewerCount} 人观看 · ${item.mode}`
+                        : `${item.createdBy} · ${item.memberCount} 人${item.hasSharer ? ' · 共享中' : ''}`}
+                    </div>
+                    {status === 'pending' ? (
+                      <div className="text-xs text-amber-200/80 py-1">等待发起者同意…</div>
+                    ) : status === 'rejected' ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-red-300/80">已拒绝</span>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => applyJoin(item)}
+                          className="ml-auto inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-white/15 bg-white/5 hover:bg-white/10 text-white/70 disabled:opacity-50"
+                        >
+                          重新申请
+                        </button>
+                      </div>
+                    ) : status === 'approved' ? (
+                      <div className="text-xs text-emerald-300/90 py-1">已同意，正在进入…</div>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => applyJoin(item)}
+                        className={`w-full inline-flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-50 ${
+                          item.kind === 'share'
+                            ? 'bg-purple-600/25 hover:bg-purple-600/40 border-purple-400/35 text-purple-100'
+                            : 'bg-cyan-600/25 hover:bg-cyan-600/40 border-cyan-400/35 text-cyan-100'
+                        }`}
+                      >
+                        <LogIn size={12} />
+                        {busy ? '申请中…' : '申请进入'}
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+              {toast && (
+                <div className="text-[11px] text-center text-white/55 pt-1">{toast}</div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </aside>,
+    document.body
+  )
+}
+

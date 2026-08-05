@@ -768,7 +768,7 @@ export default function AdminHome() {
                                 qq={member.qq}
                                 name={member.nickname || member.member_name}
                                 size="md"
-                                className="!w-[45px] !h-[45px] !text-base"
+                                className="!w-[50px] !h-[50px] !text-base"
                               />
                               <div className="min-w-0">
                                 <div className="flex flex-wrap items-center gap-2">

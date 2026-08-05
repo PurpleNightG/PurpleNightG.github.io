@@ -661,10 +661,37 @@ const rooms = new Map()
 // Active user tracking: "userType:displayName" -> { role, roomId, displayName, registeredAt }
 const activeUsers = new Map()
 const killedRooms = new Map() // roomId -> adminName
-/** memberId → 屏幕共享邀请（学员端浮窗） */
-const pendingRoomInvites = new Map()
 const ACTIVE_USER_TTL = 2 * 60 * 60 * 1000 // 2 hours
 const VIEWER_TIMEOUT = 120000 // 120 seconds without heartbeat = viewer gone (tolerates browser background tab throttling ~60s)
+
+;(async () => {
+  try {
+    await pool.execute(`
+      CREATE TABLE IF NOT EXISTS room_invites (
+        member_id INT NOT NULL PRIMARY KEY,
+        room_id VARCHAR(16) NOT NULL,
+        invited_by VARCHAR(128) NOT NULL,
+        invited_at BIGINT NOT NULL,
+        INDEX idx_room_invites_room (room_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `)
+    await pool.execute(`
+      CREATE TABLE IF NOT EXISTS room_join_requests (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        room_id VARCHAR(16) NOT NULL,
+        member_id INT NOT NULL,
+        display_name VARCHAR(128) NOT NULL,
+        status ENUM('pending', 'approved', 'rejected') NOT NULL DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uk_room_join_member (room_id, member_id),
+        INDEX idx_room_join_status (room_id, status)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `)
+  } catch (e) {
+    console.warn('[room] invite/join table init:', e.message)
+  }
+})()
 
 // Composite key to distinguish admin vs student with same name
 function userKey(displayName, userType) {
@@ -672,14 +699,52 @@ function userKey(displayName, userType) {
 }
 
 function inviteMemberKey(memberId) {
-  return Number(memberId)
+  const n = Number(memberId)
+  return Number.isFinite(n) && n > 0 ? n : 0
 }
 
-function clearInvitesForRoom(roomId) {
+async function clearInvitesForRoom(roomId) {
   const rid = String(roomId || '').toUpperCase()
-  for (const [memberId, inv] of pendingRoomInvites) {
-    if (inv.roomId === rid) pendingRoomInvites.delete(memberId)
+  try {
+    await pool.execute(`DELETE FROM room_invites WHERE room_id = ?`, [rid])
+    await pool.execute(`DELETE FROM room_join_requests WHERE room_id = ?`, [rid])
+  } catch (e) {
+    console.warn('[room] clearInvitesForRoom:', e.message)
   }
+}
+
+async function upsertRoomInvite(memberId, roomId, invitedBy) {
+  const mid = inviteMemberKey(memberId)
+  const rid = String(roomId || '').toUpperCase()
+  if (!mid || !rid) return
+  await pool.execute(
+    `INSERT INTO room_invites (member_id, room_id, invited_by, invited_at)
+     VALUES (?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE room_id = VALUES(room_id), invited_by = VALUES(invited_by), invited_at = VALUES(invited_at)`,
+    [mid, rid, String(invitedBy || '').slice(0, 128), Date.now()]
+  )
+}
+
+async function deleteRoomInvite(memberId, roomId) {
+  const mid = inviteMemberKey(memberId)
+  if (!mid) return
+  const rid = roomId ? String(roomId).toUpperCase() : ''
+  if (rid) {
+    await pool.execute(`DELETE FROM room_invites WHERE member_id = ? AND room_id = ?`, [mid, rid])
+  } else {
+    await pool.execute(`DELETE FROM room_invites WHERE member_id = ?`, [mid])
+  }
+}
+
+async function getRoomJoinStatus(roomId, memberId) {
+  const mid = inviteMemberKey(memberId)
+  const rid = String(roomId || '').toUpperCase()
+  if (!mid || !rid) return null
+  const [rows] = await pool.execute(
+    `SELECT status FROM room_join_requests WHERE room_id = ? AND member_id = ? LIMIT 1`,
+    [rid, mid]
+  )
+  return rows[0]?.status || null
 }
 
 function canInviteToRoom(room, { userType, hostName }) {
@@ -808,39 +873,94 @@ router.post('/force-leave', (req, res) => {
 })
 
 /** 学员：查询待处理屏幕共享邀请 */
-router.get('/invites/pending', (req, res) => {
-  const memberId = inviteMemberKey(req.query.memberId)
-  if (!memberId) return res.json({ invite: null })
-  const inv = pendingRoomInvites.get(memberId)
-  if (!inv) return res.json({ invite: null })
-  const room = rooms.get(inv.roomId) || findLiveRoom(inv.roomId)?.room
-  if (!room?.hostName) {
-    pendingRoomInvites.delete(memberId)
-    return res.json({ invite: null })
+router.get('/invites/pending', async (req, res) => {
+  try {
+    const memberId = inviteMemberKey(req.query.memberId)
+    if (!memberId) return res.json({ invite: null })
+    const [rows] = await pool.execute(
+      `SELECT room_id, invited_by, invited_at FROM room_invites WHERE member_id = ? LIMIT 1`,
+      [memberId]
+    )
+    const inv = rows[0]
+    if (!inv) return res.json({ invite: null })
+    const roomId = String(inv.room_id || '').toUpperCase()
+    const room = rooms.get(roomId) || findLiveRoom(roomId)?.room
+    if (!room?.hostName) {
+      await deleteRoomInvite(memberId, roomId)
+      return res.json({ invite: null })
+    }
+    res.json({
+      invite: {
+        roomId,
+        hostName: room.hostName,
+        invitedBy: inv.invited_by,
+        invitedAt: Number(inv.invited_at) || 0,
+        viewerCount: getActiveViewers(room).length,
+        mode: room.mode || 'peerjs',
+      },
+    })
+  } catch (e) {
+    console.warn('[room] invites/pending:', e.message)
+    res.json({ invite: null })
   }
-  res.json({
-    invite: {
-      roomId: inv.roomId,
-      hostName: room.hostName,
-      invitedBy: inv.invitedBy,
-      invitedAt: inv.invitedAt,
-      viewerCount: getActiveViewers(room).length,
-      mode: room.mode || 'peerjs',
-    },
-  })
 })
 
 /** 学员：接受或忽略屏幕共享邀请 */
-router.post('/invites/respond', (req, res) => {
-  const { memberId, roomId, accept } = req.body || {}
-  const mid = inviteMemberKey(memberId)
-  if (!mid) return res.status(400).json({ success: false, error: '缺少 memberId' })
-  const inv = pendingRoomInvites.get(mid)
-  const rid = roomId ? String(roomId).toUpperCase() : ''
-  if (inv && (!rid || inv.roomId === rid)) {
-    pendingRoomInvites.delete(mid)
+router.post('/invites/respond', async (req, res) => {
+  try {
+    const { memberId, roomId, accept } = req.body || {}
+    const mid = inviteMemberKey(memberId)
+    if (!mid) return res.status(400).json({ success: false, error: '缺少 memberId' })
+    const rid = roomId ? String(roomId).toUpperCase() : ''
+    const [rows] = await pool.execute(
+      rid
+        ? `SELECT room_id FROM room_invites WHERE member_id = ? AND room_id = ? LIMIT 1`
+        : `SELECT room_id FROM room_invites WHERE member_id = ? LIMIT 1`,
+      rid ? [mid, rid] : [mid]
+    )
+    const invRoom = rows[0]?.room_id ? String(rows[0].room_id).toUpperCase() : rid
+    await deleteRoomInvite(mid, invRoom || undefined)
+    // 接受邀请视为已批准进入
+    if (accept && invRoom && mid) {
+      await pool.execute(
+        `INSERT INTO room_join_requests (room_id, member_id, display_name, status)
+         VALUES (?, ?, ?, 'approved')
+         ON DUPLICATE KEY UPDATE status = 'approved', updated_at = CURRENT_TIMESTAMP`,
+        [invRoom, mid, String(req.body?.displayName || '').slice(0, 128) || `成员${mid}`]
+      )
+    }
+    res.json({ success: true, accept: !!accept })
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message })
   }
-  res.json({ success: true, accept: !!accept })
+})
+
+/** 学员：自己的进入申请状态 */
+router.get('/join-requests/mine', async (req, res) => {
+  try {
+    const mid = inviteMemberKey(req.query.memberId)
+    if (!mid) return res.json({ requests: [] })
+    const [rows] = await pool.execute(
+      `SELECT room_id, display_name, status, UNIX_TIMESTAMP(created_at)*1000 AS createdAt,
+              UNIX_TIMESTAMP(updated_at)*1000 AS updatedAt
+       FROM room_join_requests
+       WHERE member_id = ? AND status IN ('pending', 'approved', 'rejected')
+       ORDER BY updated_at DESC
+       LIMIT 20`,
+      [mid]
+    )
+    res.json({
+      requests: rows.map((r) => ({
+        roomId: String(r.room_id).toUpperCase(),
+        displayName: r.display_name,
+        status: r.status,
+        createdAt: Number(r.createdAt) || 0,
+        updatedAt: Number(r.updatedAt) || 0,
+      })),
+    })
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message, requests: [] })
+  }
 })
 
 /** 可邀请观看的成员（未退队、且当前不在该房间观看）
@@ -858,10 +978,10 @@ router.get('/:roomId/invite-candidates', async (req, res) => {
     if (excludeSelf > 0) watchingIds.add(excludeSelf)
 
     const [rows] = await pool.execute(
-      `SELECT id, nickname, username, qq, avatar, stage_role
+      `SELECT id, nickname, username, qq, avatar, stage_role, last_training_date
        FROM members
        WHERE status != '已退队'
-       ORDER BY nickname ASC, id ASC`
+       ORDER BY (last_training_date IS NULL) ASC, last_training_date DESC, nickname ASC, id ASC`
     )
     const candidates = rows
       .map((row) => {
@@ -916,7 +1036,6 @@ router.post('/:roomId/invite', async (req, res) => {
       ids
     )
 
-    const now = Date.now()
     let invitedCount = 0
     const invitedBy = displayName || hostName || room.hostName
     for (const row of rows) {
@@ -924,11 +1043,7 @@ router.post('/:roomId/invite', async (req, res) => {
       if (!mid) continue
       // 只按 memberId 判断是否已在观看，避免同名误伤
       if (watchingIds.has(mid)) continue
-      pendingRoomInvites.set(mid, {
-        roomId: String(roomId).toUpperCase(),
-        invitedBy,
-        invitedAt: now,
-      })
+      await upsertRoomInvite(mid, roomId, invitedBy)
       invitedCount++
     }
     res.json({ success: true, invitedCount })
@@ -937,7 +1052,163 @@ router.post('/:roomId/invite', async (req, res) => {
   }
 })
 
-// List all active rooms (admin only)
+/** 学员申请进入屏幕共享观看 */
+router.post('/:roomId/join-request', async (req, res) => {
+  try {
+    const found = findLiveRoom(req.params.roomId)
+    if (!found) {
+      return res.status(404).json({ success: false, error: '房间不存在或已关闭' })
+    }
+    const { roomId } = found
+    const mid = inviteMemberKey(req.body?.memberId)
+    const displayName = String(req.body?.displayName || '').trim().slice(0, 128)
+    if (!mid) return res.status(400).json({ success: false, error: '请先登录学员账号' })
+    if (!displayName) return res.status(400).json({ success: false, error: '缺少显示名' })
+    if (getWatchingMemberIds(found.room).has(mid)) {
+      return res.json({ success: true, status: 'approved', alreadyIn: true })
+    }
+    await pool.execute(
+      `INSERT INTO room_join_requests (room_id, member_id, display_name, status)
+       VALUES (?, ?, ?, 'pending')
+       ON DUPLICATE KEY UPDATE
+         display_name = VALUES(display_name),
+         status = IF(status = 'approved', 'approved', 'pending'),
+         updated_at = CURRENT_TIMESTAMP`,
+      [String(roomId).toUpperCase(), mid, displayName]
+    )
+    const status = await getRoomJoinStatus(roomId, mid)
+    res.json({ success: true, status: status || 'pending' })
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message })
+  }
+})
+
+/** 主机：待批进入申请 */
+router.get('/:roomId/join-requests', async (req, res) => {
+  try {
+    const found = findLiveRoom(req.params.roomId)
+    if (!found) return res.json({ requests: [] })
+    const { roomId, room } = found
+    const hostName = req.query.hostName || req.query.displayName
+    const userType = req.query.userType
+    if (!canInviteToRoom(room, { userType, hostName })) {
+      return res.status(403).json({ success: false, error: '仅共享者可查看申请', requests: [] })
+    }
+    const [rows] = await pool.execute(
+      `SELECT id, member_id, display_name, status, UNIX_TIMESTAMP(created_at)*1000 AS createdAt
+       FROM room_join_requests
+       WHERE room_id = ? AND status = 'pending'
+       ORDER BY created_at ASC`,
+      [String(roomId).toUpperCase()]
+    )
+    res.json({
+      requests: rows.map((r) => ({
+        id: r.id,
+        memberId: Number(r.member_id),
+        displayName: r.display_name,
+        status: r.status,
+        createdAt: Number(r.createdAt) || 0,
+      })),
+    })
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message, requests: [] })
+  }
+})
+
+/** 主机同意进入申请 */
+router.post('/:roomId/join-approve', async (req, res) => {
+  try {
+    const found = findLiveRoom(req.params.roomId)
+    if (!found) return res.status(404).json({ success: false, error: '房间不存在或已关闭' })
+    const { roomId, room } = found
+    const { userType, hostName, displayName, memberId, requestId } = req.body || {}
+    if (!canInviteToRoom(room, { userType, hostName: hostName || displayName })) {
+      return res.status(403).json({ success: false, error: '仅共享者可审批' })
+    }
+    const mid = inviteMemberKey(memberId)
+    const rid = String(roomId).toUpperCase()
+    if (requestId) {
+      await pool.execute(
+        `UPDATE room_join_requests SET status = 'approved' WHERE id = ? AND room_id = ?`,
+        [requestId, rid]
+      )
+    } else if (mid) {
+      await pool.execute(
+        `UPDATE room_join_requests SET status = 'approved' WHERE room_id = ? AND member_id = ?`,
+        [rid, mid]
+      )
+    } else {
+      return res.status(400).json({ success: false, error: '缺少申请信息' })
+    }
+    res.json({ success: true })
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message })
+  }
+})
+
+/** 主机拒绝进入申请 */
+router.post('/:roomId/join-reject', async (req, res) => {
+  try {
+    const found = findLiveRoom(req.params.roomId)
+    if (!found) return res.status(404).json({ success: false, error: '房间不存在或已关闭' })
+    const { roomId, room } = found
+    const { userType, hostName, displayName, memberId, requestId } = req.body || {}
+    if (!canInviteToRoom(room, { userType, hostName: hostName || displayName })) {
+      return res.status(403).json({ success: false, error: '仅共享者可审批' })
+    }
+    const mid = inviteMemberKey(memberId)
+    const rid = String(roomId).toUpperCase()
+    if (requestId) {
+      await pool.execute(
+        `UPDATE room_join_requests SET status = 'rejected' WHERE id = ? AND room_id = ?`,
+        [requestId, rid]
+      )
+    } else if (mid) {
+      await pool.execute(
+        `UPDATE room_join_requests SET status = 'rejected' WHERE room_id = ? AND member_id = ?`,
+        [rid, mid]
+      )
+    } else {
+      return res.status(400).json({ success: false, error: '缺少申请信息' })
+    }
+    res.json({ success: true })
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message })
+  }
+})
+
+/** 学员可读的在线共享列表（不含观众名单） */
+router.get('/live', async (req, res) => {
+  const list = []
+  const seenRoomIds = new Set()
+  for (const [roomId, room] of rooms.entries()) {
+    if (!room.hostName) continue
+    seenRoomIds.add(roomId)
+    list.push({
+      roomId,
+      hostName: room.hostName,
+      mode: room.mode || 'peerjs',
+      viewerCount: getActiveViewers(room).length,
+    })
+  }
+  try {
+    const [rows] = await pool.execute(
+      `SELECT room_id, host_name, mode FROM share_logs WHERE ended_at IS NULL`
+    )
+    for (const row of rows) {
+      if (seenRoomIds.has(row.room_id)) continue
+      list.push({
+        roomId: row.room_id,
+        hostName: row.host_name,
+        mode: row.mode,
+        viewerCount: 0,
+      })
+    }
+  } catch {}
+  res.json({ rooms: list })
+})
+
+// List all active rooms (admin)
 router.get('/active-rooms', async (req, res) => {
   const list = []
   const seenRoomIds = new Set()
@@ -1089,9 +1360,27 @@ router.post('/:roomId/host', async (req, res) => {
 })
 
 // Viewer joins room with display name
+// body.fromRequest: true 时必须已获批准（来自在线房间申请）
 router.post('/:roomId/viewer', async (req, res) => {
   const room = getRoom(req.params.roomId)
-  const { userId, displayName, userType: ut, memberId } = req.body
+  const { userId, displayName, userType: ut, memberId, fromRequest } = req.body
+  const mid = inviteMemberKey(memberId)
+  const rid = String(req.params.roomId || '').toUpperCase()
+
+  if (fromRequest) {
+    if (!mid) {
+      return res.status(403).json({ success: false, error: '申请进入需要登录学员账号' })
+    }
+    const status = await getRoomJoinStatus(rid, mid)
+    if (status !== 'approved') {
+      return res.status(403).json({
+        success: false,
+        error: status === 'pending' ? '等待共享者同意进入' : '尚未获得进入许可，请先申请',
+        joinStatus: status || 'none',
+      })
+    }
+  }
+
   if (displayName) {
     const key = userKey(displayName, ut)
     const existing = activeUsers.get(key)
@@ -1106,18 +1395,17 @@ router.post('/:roomId/viewer', async (req, res) => {
     room.viewerHeartbeats.set(userId, Date.now())
     if (room.kickedUserIds) room.kickedUserIds.delete(userId)
   }
-  const mid = inviteMemberKey(memberId)
   if (userId && mid > 0) {
     if (!room.viewerMemberIds) room.viewerMemberIds = new Map()
     room.viewerMemberIds.set(userId, mid)
   }
   if (displayName) room.allViewerNames.add(displayName)
-  // 加入后清除该成员的共享邀请
+  // 加入后清除该成员的共享邀请与申请记录
   if (mid > 0) {
-    const inv = pendingRoomInvites.get(mid)
-    if (inv && inv.roomId === String(req.params.roomId || '').toUpperCase()) {
-      pendingRoomInvites.delete(mid)
-    }
+    try {
+      await deleteRoomInvite(mid, rid)
+      await pool.execute(`DELETE FROM room_join_requests WHERE room_id = ? AND member_id = ?`, [rid, mid])
+    } catch {}
   }
   // Track peak viewers
   const currentViewers = room.viewers.size

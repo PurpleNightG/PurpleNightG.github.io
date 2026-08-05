@@ -8,7 +8,7 @@ import AdminDashboard from './pages/AdminDashboard'
 import StudentDashboard from './pages/StudentDashboard'
 import Login from './pages/Login'
 import ToastContainer from './components/ToastContainer'
-import { MeetingInviteFloat, AdminMeetingsFloat } from './components/MeetingFloats'
+import { MeetingInviteFloat, AdminMeetingsFloat, StudentLiveRoomsFloat } from './components/MeetingFloats'
 import { useSessionHeartbeat } from './hooks/useSessionHeartbeat'
 
 function App() {
@@ -23,6 +23,7 @@ function App() {
         }}
       >
         <MeetingInviteFloat />
+        <StudentLiveRoomsFloat />
         <AdminMeetingsFloat />
         <Routes>
         {/* Login Route - No Layout */}

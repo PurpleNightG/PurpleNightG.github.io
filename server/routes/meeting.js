@@ -60,20 +60,6 @@ function joinBanKey({ userType, displayName, memberId }) {
   return `${userType || 'student'}:${String(displayName || '').trim()}`
 }
 
-function getShareStatusForSession(meeting, sessionId) {
-  if (!meeting || !sessionId) return { shareStatus: null, shareCooldownMs: 0 }
-  const pending = meeting.shareRequests.find((r) => r.sessionId === sessionId && r.status === 'pending')
-  if (pending) return { shareStatus: 'pending', shareCooldownMs: 0, shareRequestId: pending.id }
-  const approved = meeting.shareRequests.find((r) => r.sessionId === sessionId && r.status === 'approved')
-  if (approved) return { shareStatus: 'approved', shareCooldownMs: 0, shareRequestId: approved.id }
-  const until = meeting.shareCooldownUntil?.get(sessionId) || 0
-  const left = Math.max(0, until - Date.now())
-  if (left > 0) return { shareStatus: 'cooldown', shareCooldownMs: left }
-  const rejected = meeting.shareRequests.find((r) => r.sessionId === sessionId && r.status === 'rejected')
-  if (rejected) return { shareStatus: 'rejected', shareCooldownMs: 0 }
-  return { shareStatus: null, shareCooldownMs: 0 }
-}
-
 ;(async () => {
   try {
     await pool.execute(`
@@ -89,23 +75,161 @@ function getShareStatusForSession(meeting, sessionId) {
         INDEX idx_meeting_status (status)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `)
+    await pool.execute(`
+      CREATE TABLE IF NOT EXISTS meeting_invites (
+        member_id INT NOT NULL PRIMARY KEY,
+        code VARCHAR(16) NOT NULL,
+        title VARCHAR(256) NOT NULL DEFAULT '',
+        invited_by VARCHAR(128) NOT NULL,
+        invited_at BIGINT NOT NULL,
+        INDEX idx_meeting_invites_code (code)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `)
+    await pool.execute(`
+      CREATE TABLE IF NOT EXISTS meeting_join_requests (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        code VARCHAR(16) NOT NULL,
+        member_id INT NOT NULL,
+        display_name VARCHAR(128) NOT NULL,
+        status ENUM('pending', 'approved', 'rejected') NOT NULL DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uk_meeting_join_member (code, member_id),
+        INDEX idx_meeting_join_status (code, status)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `)
+    await pool.execute(`
+      CREATE TABLE IF NOT EXISTS meeting_share_requests (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        code VARCHAR(16) NOT NULL,
+        session_id VARCHAR(64) NOT NULL,
+        username VARCHAR(128) NOT NULL,
+        status ENUM('pending', 'approved', 'rejected') NOT NULL DEFAULT 'pending',
+        created_at BIGINT NOT NULL,
+        UNIQUE KEY uk_meeting_share_session (code, session_id),
+        INDEX idx_meeting_share_status (code, status)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `)
   } catch (e) {
     console.warn('[meeting] table init:', e.message)
   }
 })()
 
-/** memberId → 邀请信息（仅学员侧浮窗） */
-const pendingInvites = new Map()
-
 function inviteKey(memberId) {
-  return Number(memberId)
+  const n = Number(memberId)
+  return Number.isFinite(n) && n > 0 ? n : 0
 }
 
-function clearInvitesForMeeting(code) {
+async function clearInvitesForMeeting(code) {
   const c = String(code || '').toUpperCase()
-  for (const [memberId, inv] of pendingInvites) {
-    if (inv.code === c) pendingInvites.delete(memberId)
+  try {
+    await pool.execute(`DELETE FROM meeting_invites WHERE code = ?`, [c])
+    await pool.execute(`DELETE FROM meeting_join_requests WHERE code = ?`, [c])
+    await pool.execute(`DELETE FROM meeting_share_requests WHERE code = ?`, [c])
+  } catch (e) {
+    console.warn('[meeting] clearInvitesForMeeting:', e.message)
   }
+}
+
+async function listPendingShareRequests(code) {
+  const c = String(code || '').toUpperCase()
+  try {
+    const [rows] = await pool.execute(
+      `SELECT id, session_id, username, status, created_at
+       FROM meeting_share_requests WHERE code = ? AND status = 'pending' ORDER BY created_at ASC`,
+      [c]
+    )
+    return rows.map((r) => ({
+      id: Number(r.id),
+      sessionId: r.session_id,
+      username: r.username,
+      status: r.status,
+      createdAt: Number(r.created_at) || 0,
+    }))
+  } catch {
+    return []
+  }
+}
+
+async function findShareRequestBySession(code, sessionId) {
+  const c = String(code || '').toUpperCase()
+  const sid = String(sessionId || '')
+  if (!c || !sid) return null
+  try {
+    const [rows] = await pool.execute(
+      `SELECT id, session_id, username, status, created_at
+       FROM meeting_share_requests WHERE code = ? AND session_id = ? LIMIT 1`,
+      [c, sid]
+    )
+    const r = rows[0]
+    if (!r) return null
+    return {
+      id: Number(r.id),
+      sessionId: r.session_id,
+      username: r.username,
+      status: r.status,
+      createdAt: Number(r.created_at) || 0,
+    }
+  } catch {
+    return null
+  }
+}
+
+async function getShareStatusForSessionAsync(meeting, sessionId) {
+  if (!meeting || !sessionId) return { shareStatus: null, shareCooldownMs: 0 }
+  const row = await findShareRequestBySession(meeting.code, sessionId)
+  if (row?.status === 'pending') {
+    return { shareStatus: 'pending', shareCooldownMs: 0, shareRequestId: row.id }
+  }
+  if (row?.status === 'approved') {
+    return { shareStatus: 'approved', shareCooldownMs: 0, shareRequestId: row.id }
+  }
+  const until = meeting.shareCooldownUntil?.get(sessionId) || 0
+  const left = Math.max(0, until - Date.now())
+  if (left > 0) return { shareStatus: 'cooldown', shareCooldownMs: left }
+  if (row?.status === 'rejected') return { shareStatus: 'rejected', shareCooldownMs: 0 }
+  return { shareStatus: null, shareCooldownMs: 0 }
+}
+
+async function serializeMeetingAsync(meeting) {
+  const data = serializeMeeting(meeting)
+  if (data.ended) return data
+  data.pendingShareRequests = await listPendingShareRequests(meeting.code)
+  return data
+}
+
+async function upsertMeetingInvite(memberId, code, title, invitedBy) {
+  const mid = inviteKey(memberId)
+  const c = String(code || '').toUpperCase()
+  if (!mid || !c) return
+  await pool.execute(
+    `INSERT INTO meeting_invites (member_id, code, title, invited_by, invited_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE code = VALUES(code), title = VALUES(title), invited_by = VALUES(invited_by), invited_at = VALUES(invited_at)`,
+    [mid, c, String(title || '').slice(0, 256), String(invitedBy || '').slice(0, 128), Date.now()]
+  )
+}
+
+async function deleteMeetingInvite(memberId, code) {
+  const mid = inviteKey(memberId)
+  if (!mid) return
+  const c = code ? String(code).toUpperCase() : ''
+  if (c) {
+    await pool.execute(`DELETE FROM meeting_invites WHERE member_id = ? AND code = ?`, [mid, c])
+  } else {
+    await pool.execute(`DELETE FROM meeting_invites WHERE member_id = ?`, [mid])
+  }
+}
+
+async function getMeetingJoinStatus(code, memberId) {
+  const mid = inviteKey(memberId)
+  const c = String(code || '').toUpperCase()
+  if (!mid || !c) return null
+  const [rows] = await pool.execute(
+    `SELECT status FROM meeting_join_requests WHERE code = ? AND member_id = ? LIMIT 1`,
+    [c, mid]
+  )
+  return rows[0]?.status || null
 }
 
 function generateMeetingCode() {
@@ -386,37 +510,92 @@ router.delete('/logs/:id', async (req, res) => {
 })
 
 /** 学员：查询待处理会议邀请 */
-router.get('/invites/pending', (req, res) => {
-  const memberId = inviteKey(req.query.memberId)
-  if (!memberId) return res.json({ invite: null })
-  const inv = pendingInvites.get(memberId)
-  if (!inv) return res.json({ invite: null })
-  const meeting = getMeeting(inv.code)
-  if (!meeting) {
-    pendingInvites.delete(memberId)
-    return res.json({ invite: null })
+router.get('/invites/pending', async (req, res) => {
+  try {
+    const memberId = inviteKey(req.query.memberId)
+    if (!memberId) return res.json({ invite: null })
+    const [rows] = await pool.execute(
+      `SELECT code, title, invited_by, invited_at FROM meeting_invites WHERE member_id = ? LIMIT 1`,
+      [memberId]
+    )
+    const inv = rows[0]
+    if (!inv) return res.json({ invite: null })
+    const code = String(inv.code || '').toUpperCase()
+    const meeting = getMeeting(code)
+    if (!meeting) {
+      await deleteMeetingInvite(memberId, code)
+      return res.json({ invite: null })
+    }
+    res.json({
+      invite: {
+        code,
+        title: inv.title || meeting.title,
+        invitedBy: inv.invited_by,
+        invitedAt: Number(inv.invited_at) || 0,
+        memberCount: meeting.members.size,
+      },
+    })
+  } catch (e) {
+    console.warn('[meeting] invites/pending:', e.message)
+    res.json({ invite: null })
   }
-  res.json({
-    invite: {
-      code: inv.code,
-      title: inv.title || meeting.title,
-      invitedBy: inv.invitedBy,
-      invitedAt: inv.invitedAt,
-      memberCount: meeting.members.size,
-    },
-  })
 })
 
 /** 学员：接受或忽略邀请 */
-router.post('/invites/respond', (req, res) => {
-  const { memberId, code, accept } = req.body || {}
-  const mid = inviteKey(memberId)
-  if (!mid) return res.status(400).json({ success: false, error: '缺少 memberId' })
-  const inv = pendingInvites.get(mid)
-  if (inv && (!code || inv.code === String(code).toUpperCase())) {
-    pendingInvites.delete(mid)
+router.post('/invites/respond', async (req, res) => {
+  try {
+    const { memberId, code, accept, displayName } = req.body || {}
+    const mid = inviteKey(memberId)
+    if (!mid) return res.status(400).json({ success: false, error: '缺少 memberId' })
+    const c = code ? String(code).toUpperCase() : ''
+    const [rows] = await pool.execute(
+      c
+        ? `SELECT code FROM meeting_invites WHERE member_id = ? AND code = ? LIMIT 1`
+        : `SELECT code FROM meeting_invites WHERE member_id = ? LIMIT 1`,
+      c ? [mid, c] : [mid]
+    )
+    const invCode = rows[0]?.code ? String(rows[0].code).toUpperCase() : c
+    await deleteMeetingInvite(mid, invCode || undefined)
+    if (accept && invCode && mid) {
+      await pool.execute(
+        `INSERT INTO meeting_join_requests (code, member_id, display_name, status)
+         VALUES (?, ?, ?, 'approved')
+         ON DUPLICATE KEY UPDATE status = 'approved', updated_at = CURRENT_TIMESTAMP`,
+        [invCode, mid, String(displayName || '').slice(0, 128) || `成员${mid}`]
+      )
+    }
+    res.json({ success: true, accept: !!accept })
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message })
   }
-  res.json({ success: true, accept: !!accept })
+})
+
+/** 学员：自己的会议进入申请 */
+router.get('/join-requests/mine', async (req, res) => {
+  try {
+    const mid = inviteKey(req.query.memberId)
+    if (!mid) return res.json({ requests: [] })
+    const [rows] = await pool.execute(
+      `SELECT code, display_name, status, UNIX_TIMESTAMP(created_at)*1000 AS createdAt,
+              UNIX_TIMESTAMP(updated_at)*1000 AS updatedAt
+       FROM meeting_join_requests
+       WHERE member_id = ?
+       ORDER BY updated_at DESC
+       LIMIT 20`,
+      [mid]
+    )
+    res.json({
+      requests: rows.map((r) => ({
+        code: String(r.code).toUpperCase(),
+        displayName: r.display_name,
+        status: r.status,
+        createdAt: Number(r.createdAt) || 0,
+        updatedAt: Number(r.updatedAt) || 0,
+      })),
+    })
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message, requests: [] })
+  }
 })
 
 /** 可邀请成员列表（未退队、且当前不在会议内） */
@@ -433,10 +612,10 @@ router.get('/:code/invite-candidates', async (req, res) => {
         .map((id) => Number(id))
     )
     const [rows] = await pool.execute(
-      `SELECT id, nickname, username, qq, avatar, stage_role
+      `SELECT id, nickname, username, qq, avatar, stage_role, last_training_date
        FROM members
        WHERE status != '已退队'
-       ORDER BY nickname ASC, id ASC`
+       ORDER BY (last_training_date IS NULL) ASC, last_training_date DESC, nickname ASC, id ASC`
     )
     const candidates = rows
       .map((row) => ({
@@ -491,17 +670,11 @@ router.post('/:code/invite', async (req, res) => {
       ids
     )
 
-    const now = Date.now()
     let invitedCount = 0
     for (const row of rows) {
       const mid = inviteKey(row.id)
       if (!mid || inMeetingIds.has(mid)) continue
-      pendingInvites.set(mid, {
-        code: meeting.code,
-        title: meeting.title,
-        invitedBy: displayName || meeting.createdBy,
-        invitedAt: now,
-      })
+      await upsertMeetingInvite(mid, meeting.code, meeting.title, displayName || meeting.createdBy)
       invitedCount++
     }
     res.json({ success: true, invitedCount })
@@ -510,16 +683,131 @@ router.post('/:code/invite', async (req, res) => {
   }
 })
 
-router.get('/:code', (req, res) => {
-  const meeting = getMeeting(req.params.code)
-  if (!meeting) return res.status(404).json({ exists: false, error: '会议不存在或已结束' })
-  res.json({ exists: true, ...serializeMeeting(meeting) })
+/** 学员申请进入会议 */
+router.post('/:code/join-request', async (req, res) => {
+  try {
+    const meeting = getMeeting(req.params.code)
+    if (!meeting) return res.status(404).json({ success: false, error: '会议不存在或已结束' })
+    const mid = inviteKey(req.body?.memberId)
+    const displayName = String(req.body?.displayName || '').trim().slice(0, 128)
+    if (!mid) return res.status(400).json({ success: false, error: '请先登录学员账号' })
+    if (!displayName) return res.status(400).json({ success: false, error: '缺少显示名' })
+    const inMeeting = [...meeting.members.values()].some(
+      (m) => m.userType !== 'admin' && Number(m.memberId) === mid
+    )
+    if (inMeeting) return res.json({ success: true, status: 'approved', alreadyIn: true })
+    const code = meeting.code
+    await pool.execute(
+      `INSERT INTO meeting_join_requests (code, member_id, display_name, status)
+       VALUES (?, ?, ?, 'pending')
+       ON DUPLICATE KEY UPDATE
+         display_name = VALUES(display_name),
+         status = IF(status = 'approved', 'approved', 'pending'),
+         updated_at = CURRENT_TIMESTAMP`,
+      [code, mid, displayName]
+    )
+    const status = await getMeetingJoinStatus(code, mid)
+    res.json({ success: true, status: status || 'pending' })
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message })
+  }
 })
 
-router.get('/:code/state', (req, res) => {
+/** 主持人：待批进入申请 */
+router.get('/:code/join-requests', async (req, res) => {
+  try {
+    const meeting = getMeeting(req.params.code)
+    if (!meeting) return res.json({ requests: [] })
+    if (!canModerate(meeting, { userType: req.query.userType, sessionId: req.query.sessionId })) {
+      return res.status(403).json({ success: false, error: '仅主持人可查看申请', requests: [] })
+    }
+    const [rows] = await pool.execute(
+      `SELECT id, member_id, display_name, status, UNIX_TIMESTAMP(created_at)*1000 AS createdAt
+       FROM meeting_join_requests
+       WHERE code = ? AND status = 'pending'
+       ORDER BY created_at ASC`,
+      [meeting.code]
+    )
+    res.json({
+      requests: rows.map((r) => ({
+        id: r.id,
+        memberId: Number(r.member_id),
+        displayName: r.display_name,
+        status: r.status,
+        createdAt: Number(r.createdAt) || 0,
+      })),
+    })
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message, requests: [] })
+  }
+})
+
+router.post('/:code/join-approve', async (req, res) => {
+  try {
+    const meeting = getMeeting(req.params.code)
+    if (!meeting) return res.status(404).json({ success: false, error: '会议不存在或已结束' })
+    const { userType, sessionId, memberId, requestId } = req.body || {}
+    if (!canModerate(meeting, { userType, sessionId })) {
+      return res.status(403).json({ success: false, error: '仅主持人可审批' })
+    }
+    const mid = inviteKey(memberId)
+    if (requestId) {
+      await pool.execute(
+        `UPDATE meeting_join_requests SET status = 'approved' WHERE id = ? AND code = ?`,
+        [requestId, meeting.code]
+      )
+    } else if (mid) {
+      await pool.execute(
+        `UPDATE meeting_join_requests SET status = 'approved' WHERE code = ? AND member_id = ?`,
+        [meeting.code, mid]
+      )
+    } else {
+      return res.status(400).json({ success: false, error: '缺少申请信息' })
+    }
+    res.json({ success: true })
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message })
+  }
+})
+
+router.post('/:code/join-reject', async (req, res) => {
+  try {
+    const meeting = getMeeting(req.params.code)
+    if (!meeting) return res.status(404).json({ success: false, error: '会议不存在或已结束' })
+    const { userType, sessionId, memberId, requestId } = req.body || {}
+    if (!canModerate(meeting, { userType, sessionId })) {
+      return res.status(403).json({ success: false, error: '仅主持人可审批' })
+    }
+    const mid = inviteKey(memberId)
+    if (requestId) {
+      await pool.execute(
+        `UPDATE meeting_join_requests SET status = 'rejected' WHERE id = ? AND code = ?`,
+        [requestId, meeting.code]
+      )
+    } else if (mid) {
+      await pool.execute(
+        `UPDATE meeting_join_requests SET status = 'rejected' WHERE code = ? AND member_id = ?`,
+        [meeting.code, mid]
+      )
+    } else {
+      return res.status(400).json({ success: false, error: '缺少申请信息' })
+    }
+    res.json({ success: true })
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message })
+  }
+})
+
+router.get('/:code/state', async (req, res) => {
   const meeting = getMeeting(req.params.code)
   if (!meeting) return res.status(404).json({ exists: false, error: '会议不存在或已结束' })
-  res.json({ exists: true, ...serializeMeeting(meeting) })
+  res.json({ exists: true, ...(await serializeMeetingAsync(meeting)) })
+})
+
+router.get('/:code', async (req, res) => {
+  const meeting = getMeeting(req.params.code)
+  if (!meeting) return res.status(404).json({ exists: false, error: '会议不存在或已结束' })
+  res.json({ exists: true, ...(await serializeMeetingAsync(meeting)) })
 })
 
 router.post('/:code/join', async (req, res) => {
@@ -527,7 +815,10 @@ router.post('/:code/join', async (req, res) => {
     const meeting = getMeeting(req.params.code)
     if (!meeting) return res.status(404).json({ success: false, error: '会议不存在或已结束' })
 
-    const { displayName, userType, memberId, micOn, sessionId: rawSessionId, avatar: clientAvatar, qq: clientQq } = req.body || {}
+    const {
+      displayName, userType, memberId, micOn, sessionId: rawSessionId,
+      avatar: clientAvatar, qq: clientQq, fromRequest,
+    } = req.body || {}
     if (!displayName) return res.status(400).json({ success: false, error: '缺少显示名' })
 
     const sessionId = String(rawSessionId || '').trim().slice(0, 64)
@@ -553,6 +844,22 @@ router.post('/:code/join', async (req, res) => {
     const resolvedMemberId = memberRow?.id != null
       ? Number(memberRow.id)
       : null
+
+    if (fromRequest && userType !== 'admin') {
+      const mid = inviteKey(resolvedMemberId || memberId)
+      if (!mid) {
+        return res.status(403).json({ success: false, error: '申请进入需要登录学员账号' })
+      }
+      const status = await getMeetingJoinStatus(meeting.code, mid)
+      if (status !== 'approved') {
+        return res.status(403).json({
+          success: false,
+          error: status === 'pending' ? '等待主持人同意进入' : '尚未获得进入许可，请先申请',
+          joinStatus: status || 'none',
+        })
+      }
+    }
+
     const banKey = joinBanKey({ userType, displayName, memberId: resolvedMemberId })
     if (banKey && meeting.bannedKeys?.has(banKey)) {
       return res.status(403).json({ success: false, banned: true, error: '你已被禁止进入此会议' })
@@ -594,20 +901,25 @@ router.post('/:code/join', async (req, res) => {
       meeting.hostSessionId = sessionId
     }
 
-    // 加入会议后清除该成员的待处理邀请
+    // 加入会议后清除该成员的待处理邀请与申请
     if (resolvedMemberId) {
       const mid = inviteKey(resolvedMemberId)
-      const inv = pendingInvites.get(mid)
-      if (inv && inv.code === meeting.code) pendingInvites.delete(mid)
+      try {
+        await deleteMeetingInvite(mid, meeting.code)
+        await pool.execute(
+          `DELETE FROM meeting_join_requests WHERE code = ? AND member_id = ?`,
+          [meeting.code, mid]
+        )
+      } catch {}
     }
 
-    res.json({ success: true, sessionId, userId, ...serializeMeeting(meeting) })
+    res.json({ success: true, sessionId, userId, ...(await serializeMeetingAsync(meeting)) })
   } catch (e) {
     res.status(500).json({ success: false, error: e.message })
   }
 })
 
-router.post('/:code/heartbeat', (req, res) => {
+router.post('/:code/heartbeat', async (req, res) => {
   const meeting = getMeeting(req.params.code)
   if (!meeting) return res.status(404).json({ success: false, exists: false, ended: true, error: '会议已结束' })
   const { sessionId, displayName, micOn } = req.body || {}
@@ -618,11 +930,11 @@ router.post('/:code/heartbeat', (req, res) => {
   } else if (sessionId && meeting.kickedSessionIds?.has(sessionId)) {
     return res.status(403).json({ success: false, kicked: true, error: '你已被移出会议' })
   }
-  const data = serializeMeeting(meeting)
+  const data = await serializeMeetingAsync(meeting)
   if (data.ended || !meetings.has(meeting.code)) {
     return res.status(404).json({ success: false, exists: false, ended: true, error: '会议已结束' })
   }
-  const shareMeta = getShareStatusForSession(meeting, sessionId)
+  const shareMeta = await getShareStatusForSessionAsync(meeting, sessionId)
   res.json({ success: true, ...data, ...shareMeta })
 })
 
@@ -796,17 +1108,12 @@ router.post('/:code/share-request', async (req, res) => {
       return res.json({ success: true, canShareNow: true, reason: 'assistant' })
     }
 
-    const pending = meeting.shareRequests.find(
-      (r) => r.sessionId === self.sessionId && r.status === 'pending'
-    )
-    if (pending) {
-      return res.json({ success: true, canShareNow: false, request: pending, reason: 'pending' })
+    const existing = await findShareRequestBySession(meeting.code, self.sessionId)
+    if (existing?.status === 'pending') {
+      return res.json({ success: true, canShareNow: false, request: existing, reason: 'pending' })
     }
-    const approved = meeting.shareRequests.find(
-      (r) => r.sessionId === self.sessionId && r.status === 'approved'
-    )
-    if (approved) {
-      return res.json({ success: true, canShareNow: true, reason: 'approved', request: approved })
+    if (existing?.status === 'approved') {
+      return res.json({ success: true, canShareNow: true, reason: 'approved', request: existing })
     }
 
     const cooldownUntil = meeting.shareCooldownUntil?.get(self.sessionId) || 0
@@ -821,63 +1128,110 @@ router.post('/:code/share-request', async (req, res) => {
       })
     }
 
-    // 清理本会话已拒绝记录，允许重新申请
-    meeting.shareRequests = meeting.shareRequests.filter(
-      (r) => !(r.sessionId === self.sessionId && r.status === 'rejected')
+    const now = Date.now()
+    await pool.execute(
+      `INSERT INTO meeting_share_requests (code, session_id, username, status, created_at)
+       VALUES (?, ?, ?, 'pending', ?)
+       ON DUPLICATE KEY UPDATE
+         username = VALUES(username),
+         status = 'pending',
+         created_at = VALUES(created_at)`,
+      [meeting.code, self.sessionId, self.displayName, now]
     )
-
-    const request = {
-      id: requestSeq++,
-      sessionId: self.sessionId,
-      username: self.displayName,
-      status: 'pending',
-      createdAt: Date.now(),
-    }
-    meeting.shareRequests.push(request)
+    const request = await findShareRequestBySession(meeting.code, self.sessionId)
+    // 同步内存缓存（同进程）
+    meeting.shareRequests = meeting.shareRequests.filter((r) => r.sessionId !== self.sessionId)
+    if (request) meeting.shareRequests.push(request)
     res.json({ success: true, canShareNow: false, request, reason: 'created' })
   } catch (e) {
     res.status(500).json({ success: false, error: e.message })
   }
 })
 
-router.post('/:code/share-approve', (req, res) => {
-  const meeting = getMeeting(req.params.code)
-  if (!meeting) return res.status(404).json({ success: false, error: '会议不存在' })
-  const { requestId, userType } = req.body || {}
-  if (userType !== 'admin') return res.status(403).json({ success: false, error: '仅管理员可审批' })
-  const reqItem = meeting.shareRequests.find((r) => r.id === Number(requestId))
-  if (!reqItem) return res.status(404).json({ success: false, error: '申请不存在' })
-  reqItem.status = 'approved'
-  if (meeting.shareCooldownUntil) meeting.shareCooldownUntil.delete(reqItem.sessionId)
-  const applicant = meeting.members.get(reqItem.sessionId) || null
-  res.json({
-    success: true,
-    applicantUserId: applicant?.userId || null,
-    applicantSessionId: reqItem.sessionId,
-    applicantName: reqItem.username,
-    ...serializeMeeting(meeting),
-  })
+router.post('/:code/share-approve', async (req, res) => {
+  try {
+    const meeting = getMeeting(req.params.code)
+    if (!meeting) return res.status(404).json({ success: false, error: '会议不存在' })
+    const { requestId, userType } = req.body || {}
+    if (userType !== 'admin') return res.status(403).json({ success: false, error: '仅管理员可审批' })
+    const id = Number(requestId)
+    if (!id) return res.status(404).json({ success: false, error: '申请不存在' })
+    const [rows] = await pool.execute(
+      `SELECT id, session_id, username, status, created_at FROM meeting_share_requests
+       WHERE id = ? AND code = ? LIMIT 1`,
+      [id, meeting.code]
+    )
+    const row = rows[0]
+    if (!row) return res.status(404).json({ success: false, error: '申请不存在' })
+    await pool.execute(
+      `UPDATE meeting_share_requests SET status = 'approved' WHERE id = ?`,
+      [id]
+    )
+    if (meeting.shareCooldownUntil) meeting.shareCooldownUntil.delete(row.session_id)
+    const reqItem = {
+      id: Number(row.id),
+      sessionId: row.session_id,
+      username: row.username,
+      status: 'approved',
+      createdAt: Number(row.created_at) || 0,
+    }
+    meeting.shareRequests = meeting.shareRequests.filter((r) => r.id !== reqItem.id)
+    meeting.shareRequests.push(reqItem)
+    const applicant = meeting.members.get(reqItem.sessionId) || null
+    res.json({
+      success: true,
+      applicantUserId: applicant?.userId || null,
+      applicantSessionId: reqItem.sessionId,
+      applicantName: reqItem.username,
+      ...(await serializeMeetingAsync(meeting)),
+    })
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message })
+  }
 })
 
-router.post('/:code/share-reject', (req, res) => {
-  const meeting = getMeeting(req.params.code)
-  if (!meeting) return res.status(404).json({ success: false, error: '会议不存在' })
-  const { requestId, userType } = req.body || {}
-  if (userType !== 'admin') return res.status(403).json({ success: false, error: '仅管理员可审批' })
-  const reqItem = meeting.shareRequests.find((r) => r.id === Number(requestId))
-  if (!reqItem) return res.status(404).json({ success: false, error: '申请不存在' })
-  reqItem.status = 'rejected'
-  if (!meeting.shareCooldownUntil) meeting.shareCooldownUntil = new Map()
-  meeting.shareCooldownUntil.set(reqItem.sessionId, Date.now() + SHARE_REJECT_COOLDOWN_MS)
-  const applicant = meeting.members.get(reqItem.sessionId) || null
-  res.json({
-    success: true,
-    applicantUserId: applicant?.userId || null,
-    applicantSessionId: reqItem.sessionId,
-    applicantName: reqItem.username,
-    cooldownMs: SHARE_REJECT_COOLDOWN_MS,
-    ...serializeMeeting(meeting),
-  })
+router.post('/:code/share-reject', async (req, res) => {
+  try {
+    const meeting = getMeeting(req.params.code)
+    if (!meeting) return res.status(404).json({ success: false, error: '会议不存在' })
+    const { requestId, userType } = req.body || {}
+    if (userType !== 'admin') return res.status(403).json({ success: false, error: '仅管理员可审批' })
+    const id = Number(requestId)
+    if (!id) return res.status(404).json({ success: false, error: '申请不存在' })
+    const [rows] = await pool.execute(
+      `SELECT id, session_id, username, status, created_at FROM meeting_share_requests
+       WHERE id = ? AND code = ? LIMIT 1`,
+      [id, meeting.code]
+    )
+    const row = rows[0]
+    if (!row) return res.status(404).json({ success: false, error: '申请不存在' })
+    await pool.execute(
+      `UPDATE meeting_share_requests SET status = 'rejected' WHERE id = ?`,
+      [id]
+    )
+    if (!meeting.shareCooldownUntil) meeting.shareCooldownUntil = new Map()
+    meeting.shareCooldownUntil.set(row.session_id, Date.now() + SHARE_REJECT_COOLDOWN_MS)
+    const reqItem = {
+      id: Number(row.id),
+      sessionId: row.session_id,
+      username: row.username,
+      status: 'rejected',
+      createdAt: Number(row.created_at) || 0,
+    }
+    meeting.shareRequests = meeting.shareRequests.filter((r) => r.id !== reqItem.id)
+    meeting.shareRequests.push(reqItem)
+    const applicant = meeting.members.get(reqItem.sessionId) || null
+    res.json({
+      success: true,
+      applicantUserId: applicant?.userId || null,
+      applicantSessionId: reqItem.sessionId,
+      applicantName: reqItem.username,
+      cooldownMs: SHARE_REJECT_COOLDOWN_MS,
+      ...(await serializeMeetingAsync(meeting)),
+    })
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message })
+  }
 })
 
 router.post('/:code/start-share', async (req, res) => {
@@ -907,7 +1261,7 @@ router.post('/:code/start-share', async (req, res) => {
 
     if (userType === 'admin') {
       setSharer()
-      return res.json({ success: true, ...serializeMeeting(meeting) })
+      return res.json({ success: true, ...(await serializeMeetingAsync(meeting)) })
     }
 
     let member = null
@@ -926,22 +1280,23 @@ router.post('/:code/start-share', async (req, res) => {
         'UPDATE members SET screen_share_used = screen_share_used + 1 WHERE id = ?',
         [member.id]
       )
-      meeting.shareRequests = meeting.shareRequests.filter(
-        (r) => !(r.sessionId === self.sessionId && r.status === 'approved')
+      await pool.execute(
+        `DELETE FROM meeting_share_requests WHERE code = ? AND session_id = ?`,
+        [meeting.code, self.sessionId]
       )
+      meeting.shareRequests = meeting.shareRequests.filter((r) => r.sessionId !== self.sessionId)
       setSharer()
-      return res.json({ success: true, consumed: 'assistant', ...serializeMeeting(meeting) })
+      return res.json({ success: true, consumed: 'assistant', ...(await serializeMeetingAsync(meeting)) })
     }
 
-    const approved = meeting.shareRequests.find(
-      (r) => r.sessionId === self.sessionId && r.status === 'approved'
-    )
-    if (!approved) {
+    const approved = await findShareRequestBySession(meeting.code, self.sessionId)
+    if (!approved || approved.status !== 'approved') {
       return res.status(403).json({ success: false, error: '请先申请并由管理员批准后再共享' })
     }
+    await pool.execute(`DELETE FROM meeting_share_requests WHERE id = ?`, [approved.id])
     meeting.shareRequests = meeting.shareRequests.filter((r) => r.id !== approved.id)
     setSharer()
-    res.json({ success: true, consumed: 'approval', ...serializeMeeting(meeting) })
+    res.json({ success: true, consumed: 'approval', ...(await serializeMeetingAsync(meeting)) })
   } catch (e) {
     res.status(500).json({ success: false, error: e.message })
   }

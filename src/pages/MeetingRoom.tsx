@@ -81,6 +81,8 @@ type Props = {
   /** 管理端自定义头像（admins.avatar） */
   avatar?: string | null
   qq?: string | null
+  /** 来自在线房间申请批准后的进入 */
+  fromRequest?: boolean
   /** reason 非空时由外层展示踢出/结束提示 */
   onLeave: (reason?: string) => void
 }
@@ -92,6 +94,7 @@ export default function MeetingRoom({
   memberId,
   avatar: propAvatar = null,
   qq: propQq = null,
+  fromRequest = false,
   onLeave,
 }: Props) {
   const [state, setState] = useState<MeetingState | null>(null)
@@ -163,6 +166,8 @@ export default function MeetingRoom({
   const [titleEditing, setTitleEditing] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
   const [titleBusy, setTitleBusy] = useState(false)
+  const [joinRequests, setJoinRequests] = useState<{ id: number; memberId: number; displayName: string; createdAt: number }[]>([])
+  const [joinReqBusyId, setJoinReqBusyId] = useState<number | null>(null)
 
   const engineRef = useRef<any>(null)
   const volcModuleRef = useRef<any>(null)
@@ -393,6 +398,7 @@ export default function MeetingRoom({
             micOn: true,
             avatar: propAvatar,
             qq: propQq,
+            fromRequest: fromRequest || undefined,
           }),
         })
         const joinData = await joinRes.json()
@@ -608,7 +614,67 @@ export default function MeetingRoom({
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code, displayName, userType, memberId, propAvatar, propQq])
+  }, [code, displayName, userType, memberId, propAvatar, propQq, fromRequest])
+
+  // 主持人：轮询进入申请
+  useEffect(() => {
+    if (connecting || error || !state) return
+    const host =
+      userType === 'admin' ||
+      (!!state.hostSessionId && state.hostSessionId === sessionIdRef.current)
+    if (!host) {
+      setJoinRequests([])
+      return
+    }
+    let cancelled = false
+    const poll = async () => {
+      try {
+        const q = new URLSearchParams({
+          userType,
+          sessionId: sessionIdRef.current,
+        })
+        const r = await fetch(`${API_URL}/meeting/${code}/join-requests?${q}`)
+        const d = await r.json()
+        if (!cancelled) setJoinRequests(d.requests || [])
+      } catch {
+        if (!cancelled) setJoinRequests([])
+      }
+    }
+    poll()
+    const iv = setInterval(poll, 2000)
+    return () => {
+      cancelled = true
+      clearInterval(iv)
+    }
+  }, [connecting, error, state?.hostSessionId, userType, code])
+
+  const respondMeetingJoinRequest = async (
+    reqItem: { id: number; memberId: number },
+    accept: boolean
+  ) => {
+    if (joinReqBusyId != null) return
+    setJoinReqBusyId(reqItem.id)
+    try {
+      const r = await fetch(`${API_URL}/meeting/${code}/${accept ? 'join-approve' : 'join-reject'}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userType,
+          sessionId: sessionIdRef.current,
+          memberId: reqItem.memberId,
+          requestId: reqItem.id,
+        }),
+      })
+      const d = await r.json()
+      if (!r.ok || d.success === false) throw new Error(d.error || '操作失败')
+      setJoinRequests((prev) => prev.filter((x) => x.id !== reqItem.id))
+      setToast(accept ? '已同意进入' : '已拒绝申请')
+    } catch (e: any) {
+      setToast(e?.message || '操作失败')
+    } finally {
+      setJoinReqBusyId(null)
+    }
+  }
 
   // 放大目标变化时，把画面从小窗迁到大窗（或迁回）；保留绑定记录以便正确解绑
   useEffect(() => {
@@ -938,7 +1004,7 @@ export default function MeetingRoom({
       })
       const d = await r.json()
       if (!r.ok || !d.success) throw new Error(d.error || '邀请失败')
-      setToast(d.invitedCount > 0 ? `已向 ${d.invitedCount} 位成员发出邀请` : '没有可邀请的成员')
+      setToast(d.invitedCount > 0 ? `已向 ${d.invitedCount} 位成员发出邀请（对方需已登录学员端）` : '没有可邀请的成员')
       setInviteOpen(false)
     } catch (e: any) {
       setToast(e?.message || '邀请失败')
@@ -1873,6 +1939,34 @@ export default function MeetingRoom({
               <span className="text-amber-100">{r.username} 申请共享</span>
               <button type="button" onClick={() => approveShare(r.id, true)} className="text-emerald-400 hover:underline">批准</button>
               <button type="button" onClick={() => approveShare(r.id, false)} className="text-red-400 hover:underline">拒绝</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* 进入会议申请 */}
+      {isHost && joinRequests.length > 0 && !screenMaximized && (
+        <div className="px-4 py-2 bg-cyan-500/10 border-b border-cyan-500/20 flex flex-wrap gap-2 items-center">
+          <Users size={14} className="text-cyan-300" />
+          {joinRequests.map((r) => (
+            <div key={r.id} className="flex items-center gap-2 text-xs bg-black/30 rounded-lg px-2 py-1">
+              <span className="text-cyan-100">{r.displayName} 申请进入</span>
+              <button
+                type="button"
+                disabled={joinReqBusyId === r.id}
+                onClick={() => respondMeetingJoinRequest(r, true)}
+                className="text-emerald-400 hover:underline disabled:opacity-50"
+              >
+                同意
+              </button>
+              <button
+                type="button"
+                disabled={joinReqBusyId === r.id}
+                onClick={() => respondMeetingJoinRequest(r, false)}
+                className="text-red-400 hover:underline disabled:opacity-50"
+              >
+                拒绝
+              </button>
             </div>
           ))}
         </div>
