@@ -4,11 +4,13 @@ using System.Drawing;
 using System.IO;
 using System.IO.Compression;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
+using Microsoft.Win32;
 
 namespace ZiyeGuildLocal
 {
@@ -16,10 +18,26 @@ namespace ZiyeGuildLocal
     {
         const string AppUrl = "http://127.0.0.1:3001/";
         const string MutexName = "Global\\ZiyeGuildLocalApp";
+        // Windows 通知标题用：避免显示 NotifyIconGeneratedAumid_xxx
+        const string AppUserModelId = "PurpleNight.ZiyeGuild.Local";
+        const string AppDisplayName = "紫夜公会官网";
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern int SetCurrentProcessExplicitAppUserModelID(string appID);
 
         [STAThread]
         static void Main()
         {
+            try
+            {
+                SetCurrentProcessExplicitAppUserModelID(AppUserModelId);
+            }
+            catch
+            {
+            }
+
+            RegisterToastAppIdentity();
+
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             AutoUpdate.EnableTls12();
@@ -49,6 +67,38 @@ namespace ZiyeGuildLocal
                 }
 
                 Application.Run(new TrayApplicationContext(baseDir, nodeExe, launcher));
+            }
+        }
+
+        /// <summary>
+        /// 注册托盘通知的友好显示名，否则 Win10/11 会显示 NotifyIconGeneratedAumid_…
+        /// </summary>
+        static void RegisterToastAppIdentity()
+        {
+            try
+            {
+                var exePath = Application.ExecutablePath;
+                var iconPath = Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\'),
+                    "app.ico"
+                );
+                if (!File.Exists(iconPath))
+                {
+                    iconPath = exePath;
+                }
+
+                using (var key = Registry.CurrentUser.CreateSubKey(
+                    @"Software\Classes\AppUserModelId\" + AppUserModelId))
+                {
+                    if (key != null)
+                    {
+                        key.SetValue("DisplayName", AppDisplayName, RegistryValueKind.String);
+                        key.SetValue("IconUri", iconPath, RegistryValueKind.String);
+                    }
+                }
+            }
+            catch
+            {
             }
         }
 

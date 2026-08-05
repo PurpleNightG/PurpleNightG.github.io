@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Edit, Trash2, Search, X, Filter, CheckSquare, Square, Settings, GripVertical, Users, Loader2 } from 'lucide-react'
+import { Plus, Edit, Trash2, Search, X, Filter, CheckSquare, Square, Settings, GripVertical, Users, Loader2, BookOpen } from 'lucide-react'
 import {
   DndContext,
   closestCenter,
@@ -801,7 +801,10 @@ export default function CourseManagement() {
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold text-white">课程管理</h1>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <BookOpen className="text-purple-400" size={26} />
+            课程管理
+          </h1>
           <span className="text-sm text-gray-400">共 {courses.length} 门课程</span>
           {selectedIds.size > 0 && (
             <div className="flex items-center gap-2">

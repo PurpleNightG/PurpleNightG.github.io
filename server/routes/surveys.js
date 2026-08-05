@@ -663,6 +663,7 @@ router.get('/:id/results', requireAdmin, async (req, res) => {
          FROM survey_responses r
          LEFT JOIN members m ON m.id = r.member_id
          WHERE r.survey_id = ?
+           AND (m.status IS NULL OR m.status != '已退队')
          ORDER BY r.submitted_at DESC`,
         [survey.id]
       )

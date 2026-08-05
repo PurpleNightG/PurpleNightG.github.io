@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { quitAPI, memberAPI } from '../../utils/api'
-import { Plus, Check, X, Trash2, Filter, ChevronUp, ChevronDown, Search, X as XIcon, CheckSquare, Square, Loader2 } from 'lucide-react'
+import { Plus, Check, X, Trash2, Filter, ChevronUp, ChevronDown, Search, X as XIcon, CheckSquare, Square, Loader2, UserMinus } from 'lucide-react'
 import { formatDate } from '../../utils/dateFormat'
 import { toast } from '../../utils/toast'
 import ConfirmDialog from '../../components/ConfirmDialog'
@@ -16,6 +16,7 @@ interface QuitApproval {
   apply_date: string
   source_type: string
   source_admin_name: string | null
+  source_assistant_name?: string | null
   status: string
   approver_name: string | null
   approval_date: string | null
@@ -83,7 +84,7 @@ export default function QuitApproval() {
     return saved ? JSON.parse(saved) : null
   })
 
-  const statuses = ['待审批', '已批准', '已拒绝']
+  const statuses = ['待审批', '已拒绝']
 
   useEffect(() => {
     const loadData = async () => {
@@ -111,7 +112,7 @@ export default function QuitApproval() {
   const loadMembers = async () => {
     try {
       const response = await memberAPI.getAll()
-      setMembers(response.data.filter((m: any) => m.status !== '已退队'))
+      setMembers(response.data || [])
     } catch (error: any) {
       toast.error(error.message || '加载成员列表失败')
     }
@@ -253,11 +254,6 @@ export default function QuitApproval() {
           status: '已批准',
           remarks: approval.remarks
         })
-        try {
-          await memberAPI.delete(approval.member_id)
-        } catch (e) {
-          console.error('删除成员数据失败:', e)
-        }
       }
       toast.success(`已批准 ${selectedApprovals.length} 条退队申请`)
       clearSelection()
@@ -322,6 +318,10 @@ export default function QuitApproval() {
     
     if (!formData.member_id) {
       toast.error('请选择成员')
+      return
+    }
+    if (!formData.remarks.trim()) {
+      toast.error('请填写退队原因')
       return
     }
     
@@ -403,12 +403,7 @@ export default function QuitApproval() {
       approvalCompleted = true
       
       if (approvalData.status === '已批准') {
-        try {
-          await memberAPI.delete(approval.member_id)
-          toast.success('审批完成，成员数据已删除')
-        } catch (deleteError: any) {
-          toast.warning('审批已完成，但删除成员数据失败')
-        }
+        toast.success('审批完成')
       } else {
         try {
           await updateMemberStatus(approval.member_id, '正常')
@@ -480,7 +475,10 @@ export default function QuitApproval() {
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold text-white">退队审批</h1>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <UserMinus className="text-purple-400" size={26} />
+            退队审批
+          </h1>
           {selectedIds.size > 0 && (
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-400">
@@ -646,7 +644,11 @@ export default function QuitApproval() {
                     <td>{approval.qq}</td>
                     <td>{formatDate(approval.apply_date)}</td>
                     <td>
-                      <span className="text-gray-300">{approval.source_admin_name || '-'}</span>
+                      <span className="text-gray-300">
+                        {approval.source_type === '助教' || approval.source_assistant_name
+                          ? `${approval.source_assistant_name || '-'}（助教）`
+                          : (approval.source_admin_name || '-')}
+                      </span>
                     </td>
                     <td>
                       {approval.approver_name ? (
@@ -724,12 +726,13 @@ export default function QuitApproval() {
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">备注</label>
+                <label className="block text-sm font-medium text-gray-300 mb-1">退队原因 *</label>
                 <textarea
                   value={formData.remarks}
                   onChange={(e) => setFormData({...formData, remarks: e.target.value})}
                   className="student-glass-field h-24"
-                  placeholder="可选填写退队原因等"
+                  placeholder="请填写退队原因"
+                  required
                 />
               </div>
               
@@ -762,14 +765,6 @@ export default function QuitApproval() {
             <h2 className="text-xl font-bold text-white mb-4">
               确认{approvalData.status === '已批准' ? '批准' : '拒绝'}
             </h2>
-            
-            {approvalData.status === '已批准' && (
-              <div className="bg-red-900/20 border border-red-700 rounded-lg p-3 mb-4">
-                <p className="text-red-300 text-sm">
-                  ⚠️ <strong>警告：</strong>批准退队后，将删除该成员的所有相关数据（包括黑点记录、请假记录等），此操作不可恢复！
-                </p>
-              </div>
-            )}
             
             {approvalData.status === '已拒绝' && (
               <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-3 mb-4">
@@ -845,10 +840,10 @@ export default function QuitApproval() {
       {confirmDialog.show && confirmDialog.type === 'batchApprove' && (
         <ConfirmDialog
           title="批量批准退队"
-          message="确定要批准选中的退队申请吗？⚠️ 批准后将删除所有相关成员数据，此操作不可恢复！"
+          message="确定要批准选中的退队申请吗？"
           confirmText="批准"
           cancelText="取消"
-          type="danger"
+          type="warning"
           onConfirm={confirmBatchApprove}
           onCancel={() => setConfirmDialog({show: false, type: ''})}
         />

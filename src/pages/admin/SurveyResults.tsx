@@ -421,7 +421,10 @@ export default function SurveyResults() {
           >
             <ArrowLeft size={16} /> 返回填表管理
           </button>
-          <h1 className="text-2xl font-bold text-white">结果 · {survey.title}</h1>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <BarChart3 className="text-purple-400" size={26} />
+            结果 · {survey.title}
+          </h1>
           <div className="flex flex-wrap gap-2 mt-2 text-xs">
             {survey.is_anonymous && (
               <span className="px-2 py-1 rounded bg-emerald-500/15 text-emerald-400 inline-flex items-center gap-1">

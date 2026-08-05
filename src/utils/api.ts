@@ -37,7 +37,11 @@ async function request(url: string, options: RequestInit = {}) {
   const data = await response.json()
   
   if (!response.ok) {
-    throw new Error(data.message || '请求失败')
+    const err: any = new Error(data.message || '请求失败')
+    err.code = data.code
+    err.data = data.data
+    err.status = response.status
+    throw err
   }
   
   // 缓存GET请求结果
@@ -65,6 +69,25 @@ export function clearCache(pattern?: string) {
 export const memberAPI = {
   getAll: () => request('/members'),
   getById: (id: number) => request(`/members/${id}`),
+  lookupByQq: (qq: string) =>
+    request(`/members/lookup-qq?qq=${encodeURIComponent(qq)}`),
+  getArchived: () => request('/members/archived'),
+  getArchivedById: (id: number) => request(`/members/archived/${id}`),
+  restore: async (id: number, data: { join_date?: string; nickname?: string; stage_role?: string }) => {
+    const result = await request(`/members/${id}/restore`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+    clearCache('/members')
+    return result
+  },
+  purgeArchived: async (id: number) => {
+    const result = await request(`/members/archived/${id}/purge`, {
+      method: 'DELETE',
+    })
+    clearCache('/members')
+    return result
+  },
   create: async (data: any) => {
     const result = await request('/members', {
       method: 'POST',
@@ -229,17 +252,29 @@ export const blackPointAPI = {
   getMy: (studentToken: string) => request('/blackpoints/my', {
     headers: { Authorization: `Bearer ${studentToken}` },
   }),
-  create: (data: any) => request('/blackpoints', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  }),
-  update: (id: number, data: any) => request(`/blackpoints/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  }),
-  delete: (id: number) => request(`/blackpoints/${id}`, {
-    method: 'DELETE',
-  }),
+  create: async (data: any) => {
+    const result = await request('/blackpoints', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+    clearCache('/blackpoints')
+    return result
+  },
+  update: async (id: number, data: any) => {
+    const result = await request(`/blackpoints/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    })
+    clearCache('/blackpoints')
+    return result
+  },
+  delete: async (id: number) => {
+    const result = await request(`/blackpoints/${id}`, {
+      method: 'DELETE',
+    })
+    clearCache('/blackpoints')
+    return result
+  },
 }
 
 // 催促名单 API
@@ -1156,3 +1191,222 @@ export const opinionBoxAPI = {
     return result
   },
 }
+
+function studentAuthHeaders() {
+  return { Authorization: `Bearer ${getStudentAuthToken()}` }
+}
+
+/** 紫夜助教 API（学员 token） / 管理审批（管理员 token） */
+export const assistantAPI = {
+  me: () => request('/assistant/me', { headers: studentAuthHeaders() }),
+  roster: () => request('/assistant/roster', { headers: studentAuthHeaders() }),
+  students: () => request('/assistant/students', { headers: studentAuthHeaders() }),
+  requestStudent: async (student_member_id: number, remarks?: string) => {
+    const result = await request('/assistant/assignments/request', {
+      method: 'POST',
+      headers: studentAuthHeaders(),
+      body: JSON.stringify({ student_member_id, remarks }),
+    })
+    clearCache('/assistant/roster')
+    clearCache('/assistant/my-requests')
+    clearCache('/assistant/students')
+    return result
+  },
+  setStudentStage: (id: number, data: { stage_role: string; reason?: string }) =>
+    request(`/assistant/students/${id}/stage`, {
+      method: 'PUT',
+      headers: studentAuthHeaders(),
+      body: JSON.stringify(data),
+    }),
+  proposeMember: async (data: any) => {
+    const result = await request('/assistant/members', {
+      method: 'POST',
+      headers: studentAuthHeaders(),
+      body: JSON.stringify(data),
+    })
+    clearCache('/assistant/roster')
+    clearCache('/assistant/my-requests')
+    return result
+  },
+  lookupMemberByQq: (qq: string) =>
+    request(`/assistant/members/lookup-qq?qq=${encodeURIComponent(qq)}`, {
+      headers: studentAuthHeaders(),
+    }),
+  progressMembers: () =>
+    request('/assistant/progress/members', { headers: studentAuthHeaders() }),
+  progressMember: (memberId: number) =>
+    request(`/assistant/progress/member/${memberId}`, { headers: studentAuthHeaders() }),
+  setProgress: (memberId: number, courseId: number, progress: number) =>
+    request(`/assistant/progress/member/${memberId}/course/${courseId}`, {
+      method: 'PUT',
+      headers: studentAuthHeaders(),
+      body: JSON.stringify({ progress }),
+    }),
+  syncStageAfterProgress: (memberIds: number[]) =>
+    request('/assistant/progress/sync-stage', {
+      method: 'POST',
+      headers: studentAuthHeaders(),
+      body: JSON.stringify({ memberIds }),
+    }),
+  attendance: (showAll = false) =>
+    request(`/assistant/attendance?showAll=${showAll ? '1' : '0'}`, { headers: studentAuthHeaders() }),
+  trainingReminders: (mode?: string) =>
+    request(`/assistant/reminders/training${mode ? `?mode=${mode}` : ''}`, { headers: studentAuthHeaders() }),
+  proposeQuit: (member_id: number, remarks: string) =>
+    request('/assistant/quit', {
+      method: 'POST',
+      headers: studentAuthHeaders(),
+      body: JSON.stringify({ member_id, remarks }),
+    }),
+  myRequests: () => request('/assistant/my-requests', { headers: studentAuthHeaders() }),
+  studentDetail: (id: number) =>
+    request(`/assistant/students/${id}/detail`, { headers: studentAuthHeaders() }),
+  proposeEdit: (id: number, data: Record<string, unknown>) =>
+    request(`/assistant/students/${id}/propose-edit`, {
+      method: 'POST',
+      headers: studentAuthHeaders(),
+      body: JSON.stringify(data),
+    }),
+  proposeBlackPoint: (id: number, data: { reason: string; register_date?: string }) =>
+    request(`/assistant/students/${id}/propose-black-point`, {
+      method: 'POST',
+      headers: studentAuthHeaders(),
+      body: JSON.stringify(data),
+    }),
+  proposeLeave: (id: number, data: { reason?: string; start_date: string; end_date: string }) =>
+    request(`/assistant/students/${id}/propose-leave`, {
+      method: 'POST',
+      headers: studentAuthHeaders(),
+      body: JSON.stringify(data),
+    }),
+  activeLeaves: () =>
+    request('/assistant/leaves/active', { headers: studentAuthHeaders() }),
+  endLeaveEarly: async (id: number) => {
+    const result = await request(`/assistant/leaves/${id}/end-early`, {
+      method: 'PUT',
+      headers: studentAuthHeaders(),
+    })
+    clearCache('/assistant')
+    clearCache('/leaves')
+    return result
+  },
+  setLastTrainingDate: (id: number, last_training_date?: string) =>
+    request(`/assistant/students/${id}/last-training-date`, {
+      method: 'PUT',
+      headers: studentAuthHeaders(),
+      body: JSON.stringify({ last_training_date }),
+    }),
+
+  adminList: () => request('/assistant/admin/list'),
+  adminEnable: async (id: number) => {
+    const result = await request(`/assistant/admin/${id}/enable`, { method: 'POST' })
+    clearCache('/assistant')
+    return result
+  },
+  adminDisable: async (id: number) => {
+    const result = await request(`/assistant/admin/${id}/disable`, { method: 'POST' })
+    clearCache('/assistant')
+    return result
+  },
+  adminDefaults: () => request('/assistant/admin/defaults'),
+  adminSetPermissions: async (
+    id: number,
+    permissions: Record<string, boolean>,
+    screen_share?: {
+      screen_share_enabled?: boolean
+      screen_share_quota?: number | null
+      guest_code_max?: number
+      reset_used?: boolean
+    }
+  ) => {
+    const result = await request(`/assistant/admin/${id}/permissions`, {
+      method: 'PUT',
+      body: JSON.stringify({ permissions, screen_share }),
+    })
+    clearCache('/assistant')
+    return result
+  },
+  adminAssign: async (assistant_member_id: number, student_member_id: number) => {
+    const result = await request('/assistant/admin/assignments', {
+      method: 'POST',
+      body: JSON.stringify({ assistant_member_id, student_member_id }),
+    })
+    clearCache('/assistant')
+    return result
+  },
+  adminDailyAssign: async (assistant_member_id: number, student_member_id: number, remarks?: string) => {
+    const result = await request('/assistant/admin/daily-assignments', {
+      method: 'POST',
+      body: JSON.stringify({ assistant_member_id, student_member_id, remarks }),
+    })
+    clearCache('/assistant')
+    return result
+  },
+  adminDailyUnassign: async (id: number) => {
+    const result = await request(`/assistant/admin/daily-assignments/${id}`, { method: 'DELETE' })
+    clearCache('/assistant')
+    return result
+  },
+  adminUnassign: async (id: number) => {
+    const result = await request(`/assistant/admin/assignments/${id}`, { method: 'DELETE' })
+    clearCache('/assistant')
+    return result
+  },
+  adminPending: () => request('/assistant/admin/pending'),
+  adminDeleteRequest: async (type: string, id: number) => {
+    const result = await request(`/assistant/admin/requests/${type}/${id}`, { method: 'DELETE' })
+    clearCache('/assistant')
+    return result
+  },
+  adminReviewAssignment: async (id: number, status: string, remarks?: string) => {
+    const result = await request(`/assistant/admin/assignments/${id}/review`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, remarks }),
+    })
+    clearCache('/assistant')
+    return result
+  },
+  adminReviewCreate: async (id: number, status: string, reject_reason?: string) => {
+    const result = await request(`/assistant/admin/member-creates/${id}/review`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, reject_reason }),
+    })
+    clearCache('/assistant')
+    return result
+  },
+  adminReviewPromotion: async (id: number, status: string, reject_reason?: string) => {
+    const result = await request(`/assistant/admin/stage-promotions/${id}/review`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, reject_reason }),
+    })
+    clearCache('/assistant')
+    return result
+  },
+  adminReviewEdit: async (id: number, status: string, reject_reason?: string) => {
+    const result = await request(`/assistant/admin/member-edits/${id}/review`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, reject_reason }),
+    })
+    clearCache('/assistant')
+    return result
+  },
+  adminReviewBlackPoint: async (id: number, status: string, reject_reason?: string) => {
+    const result = await request(`/assistant/admin/black-points/${id}/review`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, reject_reason }),
+    })
+    clearCache('/assistant')
+    return result
+  },
+  adminReviewLeave: async (id: number, status: string, reject_reason?: string) => {
+    const result = await request(`/assistant/admin/leaves/${id}/review`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, reject_reason }),
+    })
+    clearCache('/assistant')
+    return result
+  },
+  adminAssignmentsByAssistant: (id: number) =>
+    request(`/assistant/admin/assignments-by-assistant/${id}`),
+}
+

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { leaveAPI, memberAPI } from '../../utils/api'
-import { Plus, Edit, Trash2, Filter, ChevronUp, ChevronDown, Search, X, CheckSquare, Square, Loader2, CheckCircle, XCircle, Bell } from 'lucide-react'
+import { Plus, Edit, Trash2, Filter, ChevronUp, ChevronDown, Search, X, CheckSquare, Square, Loader2, CheckCircle, XCircle, Bell, Calendar } from 'lucide-react'
 import { formatDate, toInputDate } from '../../utils/dateFormat'
 import { toast } from '../../utils/toast'
 import ConfirmDialog from '../../components/ConfirmDialog'
@@ -429,7 +429,10 @@ export default function LeaveRecords() {
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold text-white">请假记录</h1>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <Calendar className="text-purple-400" size={26} />
+            请假记录
+          </h1>
           {selectedIds.size > 0 && (
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-400">
@@ -729,6 +732,12 @@ export default function LeaveRecords() {
                   </th>
                   <th className="w-40">天数/进度</th>
                   <th>
+                    <button onClick={() => handleSort('reason')} className="flex items-center gap-1 hover:text-white transition-colors">
+                      <span>请假原因</span>
+                      {sortConfig?.key === 'reason' && (sortConfig.direction === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />)}
+                    </button>
+                  </th>
+                  <th>
                     <button onClick={() => handleSort('status')} className="flex items-center gap-1 hover:text-white transition-colors">
                       <span>状态</span>
                       {sortConfig?.key === 'status' && (sortConfig.direction === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />)}
@@ -777,6 +786,11 @@ export default function LeaveRecords() {
                       ) : (
                         <span className="text-gray-400 text-xs">已结束（共 {record.total_days} 天）</span>
                       )}
+                    </td>
+                    <td>
+                      <span className="text-gray-300 text-sm max-w-[200px] block truncate" title={record.reason || ''}>
+                        {record.reason || '—'}
+                      </span>
                     </td>
                     <td>
                       <span

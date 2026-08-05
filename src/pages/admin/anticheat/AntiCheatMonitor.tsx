@@ -5,7 +5,7 @@ import { toast } from '../../../utils/toast'
 import { formatDateTime } from '../../../utils/dateFormat'
 import ConfirmDialog from '../../../components/ConfirmDialog'
 import MemberNameCell from '../../../components/MemberNameCell'
-import { Loader2, RefreshCw, CheckSquare, Square, Eye, Camera, Trash2, StopCircle, CheckCircle } from 'lucide-react'
+import { Loader2, RefreshCw, CheckSquare, Square, Eye, Camera, Trash2, StopCircle, CheckCircle, Monitor } from 'lucide-react'
 
 interface Session {
   id: number
@@ -127,7 +127,10 @@ export default function AntiCheatMonitor() {
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">考试监控</h1>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <Monitor className="text-purple-400" size={26} />
+            考试监控
+          </h1>
           <p className="text-sm text-gray-400 mt-1">约 {POLL_MS / 1000}s 自动刷新 · 心跳超时 30s 视为断连</p>
         </div>
         <button

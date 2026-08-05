@@ -302,6 +302,238 @@ async function runMigrations() {
       INDEX idx_meeting_status (status)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='多人会议房间'
   `)
+
+  // 紫夜助教：stage_role ENUM + 业务表
+  try {
+    await pool.query(`
+      ALTER TABLE members
+        MODIFY COLUMN stage_role ENUM(
+          '未新训','新训初期','新训一期','新训二期','新训三期','新训准考',
+          '紫夜','紫夜尖兵','紫夜助教',
+          '会长','执行官','人事','总教','尖兵教官','教官','工程师'
+        ) DEFAULT '未新训' COMMENT '阶段&角色'
+    `)
+  } catch (e) {
+    console.warn('members.stage_role ENUM 迁移跳过/失败:', e.message)
+  }
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS assistant_student_assignments (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      assistant_member_id INT NOT NULL,
+      student_member_id INT NOT NULL,
+      status ENUM('待审批','已通过','已拒绝','已解除') NOT NULL DEFAULT '待审批',
+      requested_by_type ENUM('admin','assistant') NOT NULL DEFAULT 'admin',
+      requested_by_id INT NULL,
+      reviewed_by_admin_id INT NULL,
+      reviewed_at DATETIME NULL,
+      remarks TEXT NULL,
+      hidden_from_approval TINYINT(1) NOT NULL DEFAULT 0 COMMENT '管理端审批中心隐藏（已通过认领删除记录用，不解除归属）',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_asst_student (assistant_member_id, student_member_id),
+      INDEX idx_asst_status (assistant_member_id, status),
+      INDEX idx_student_status (student_member_id, status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='助教-学员归属'
+  `)
+
+  try {
+    const [asaCols] = await pool.query(`
+      SELECT COLUMN_NAME FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'assistant_student_assignments'
+        AND COLUMN_NAME = 'hidden_from_approval'
+    `)
+    if (asaCols.length === 0) {
+      await pool.query(`
+        ALTER TABLE assistant_student_assignments
+        ADD COLUMN hidden_from_approval TINYINT(1) NOT NULL DEFAULT 0
+          COMMENT '管理端审批中心隐藏（已通过认领删除记录用，不解除归属）'
+          AFTER remarks
+      `)
+    }
+  } catch (e) {
+    console.warn('assistant_student_assignments.hidden_from_approval 迁移跳过/失败:', e.message)
+  }
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pending_member_creates (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      assistant_member_id INT NOT NULL,
+      nickname VARCHAR(100) NOT NULL,
+      qq VARCHAR(20) NOT NULL,
+      game_id VARCHAR(100) NULL,
+      join_date DATE NULL,
+      stage_role VARCHAR(50) NOT NULL DEFAULT '未新训',
+      status ENUM('待审批','已通过','已驳回') NOT NULL DEFAULT '待审批',
+      reject_reason TEXT NULL,
+      reviewed_by_admin_id INT NULL,
+      reviewed_at DATETIME NULL,
+      created_member_id INT NULL,
+      restore_member_id INT NULL COMMENT '若为恢复已退队成员则为原成员ID',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_pmc_status (status),
+      INDEX idx_pmc_asst (assistant_member_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='助教添加成员待审批'
+  `)
+
+  const [pmcRestoreCol] = await pool.query(`
+    SELECT COLUMN_NAME FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'pending_member_creates'
+      AND COLUMN_NAME = 'restore_member_id'
+  `)
+  if (pmcRestoreCol.length === 0) {
+    await pool.query(`
+      ALTER TABLE pending_member_creates
+        ADD COLUMN restore_member_id INT NULL COMMENT '若为恢复已退队成员则为原成员ID' AFTER created_member_id
+    `)
+    console.log('✅ pending_member_creates.restore_member_id 迁移完成')
+  }
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pending_stage_promotions (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      assistant_member_id INT NOT NULL,
+      student_member_id INT NOT NULL,
+      from_stage VARCHAR(50) NOT NULL,
+      to_stage VARCHAR(50) NOT NULL,
+      status ENUM('待审批','已通过','已驳回') NOT NULL DEFAULT '待审批',
+      reason TEXT NULL,
+      reject_reason TEXT NULL,
+      reviewed_by_admin_id INT NULL,
+      reviewed_at DATETIME NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_psp_status (status),
+      INDEX idx_psp_asst (assistant_member_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='助教升阶待审批'
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS assistant_permissions (
+      assistant_member_id INT PRIMARY KEY,
+      permissions_json JSON NOT NULL,
+      updated_by_admin_id INT NULL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='助教权限配置'
+  `)
+
+  const [quitAsstCol] = await pool.query(`
+    SELECT COLUMN_NAME FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'quit_approvals'
+      AND COLUMN_NAME = 'source_assistant_id'
+  `)
+  if (quitAsstCol.length === 0) {
+    await pool.query(`
+      ALTER TABLE quit_approvals
+        ADD COLUMN source_assistant_id INT NULL COMMENT '发起退队的助教成员ID' AFTER source_admin_name,
+        ADD COLUMN source_assistant_name VARCHAR(100) NULL COMMENT '发起退队的助教昵称' AFTER source_assistant_id
+    `)
+    console.log('✅ quit_approvals 助教来源字段迁移完成')
+  }
+
+  try {
+    await pool.query(`
+      ALTER TABLE quit_approvals
+        MODIFY COLUMN source_type ENUM('手动', '自动', '助教') DEFAULT '手动' COMMENT '退队来源'
+    `)
+  } catch (e) {
+    console.warn('quit_approvals.source_type ENUM 迁移跳过/失败:', e.message)
+  }
+
+  console.log('✅ 紫夜助教相关表迁移完成')
+
+  // 助教身份与 stage_role 解耦：可同时为紫夜尖兵等阶段 + 助教
+  const [ziyeAsstCol] = await pool.query(`
+    SELECT COLUMN_NAME FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'members'
+      AND COLUMN_NAME = 'is_ziye_assistant'
+  `)
+  if (ziyeAsstCol.length === 0) {
+    await pool.query(`
+      ALTER TABLE members
+        ADD COLUMN is_ziye_assistant TINYINT(1) NOT NULL DEFAULT 0
+          COMMENT '是否为紫夜助教（与 stage_role 独立，可与尖兵等并存）'
+          AFTER is_assistant
+    `)
+    await pool.query(`UPDATE members SET is_ziye_assistant = 1 WHERE stage_role = '紫夜助教'`)
+    console.log('✅ members.is_ziye_assistant 迁移完成')
+  }
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pending_member_edits (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      assistant_member_id INT NOT NULL,
+      student_member_id INT NOT NULL,
+      changes_json JSON NOT NULL COMMENT '拟修改字段',
+      status ENUM('待审批','已通过','已驳回') NOT NULL DEFAULT '待审批',
+      reject_reason TEXT NULL,
+      reviewed_by_admin_id INT NULL,
+      reviewed_at DATETIME NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_pme_status (status),
+      INDEX idx_pme_asst (assistant_member_id),
+      INDEX idx_pme_student (student_member_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='助教修改学员信息待审批'
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pending_black_points (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      assistant_member_id INT NOT NULL,
+      student_member_id INT NOT NULL,
+      reason TEXT NOT NULL,
+      register_date DATE NOT NULL,
+      status ENUM('待审批','已通过','已驳回') NOT NULL DEFAULT '待审批',
+      reject_reason TEXT NULL,
+      reviewed_by_admin_id INT NULL,
+      reviewed_at DATETIME NULL,
+      created_black_point_id INT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_pbp_status (status),
+      INDEX idx_pbp_asst (assistant_member_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='助教登记黑点待审批'
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pending_leaves (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      assistant_member_id INT NOT NULL,
+      student_member_id INT NOT NULL,
+      reason TEXT NULL,
+      start_date DATE NOT NULL,
+      end_date DATE NOT NULL,
+      status ENUM('待审批','已通过','已驳回') NOT NULL DEFAULT '待审批',
+      reject_reason TEXT NULL,
+      reviewed_by_admin_id INT NULL,
+      reviewed_at DATETIME NULL,
+      created_leave_id INT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_pl_status (status),
+      INDEX idx_pl_asst (assistant_member_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='助教登记请假待审批'
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS assistant_daily_assignments (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      assistant_member_id INT NOT NULL,
+      student_member_id INT NOT NULL,
+      assign_date DATE NOT NULL COMMENT '有效日（按上海日历日，过零点失效）',
+      assigned_by_admin_id INT NULL,
+      remarks TEXT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_daily_asst_student_date (assistant_member_id, student_member_id, assign_date),
+      INDEX idx_daily_asst_date (assistant_member_id, assign_date),
+      INDEX idx_daily_student_date (student_member_id, assign_date)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='助教当日临时学员'
+  `)
 }
 
 // 测试数据库连接

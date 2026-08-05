@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS members (
     '新训准考',
     '紫夜',
     '紫夜尖兵',
+    '紫夜助教',
     '会长',
     '执行官',
     '人事',
@@ -130,9 +131,11 @@ CREATE TABLE IF NOT EXISTS quit_approvals (
   member_name VARCHAR(100) NOT NULL COMMENT '成员昵称',
   qq VARCHAR(20) NOT NULL COMMENT 'QQ号',
   apply_date DATE NOT NULL COMMENT '申请日期',
-  source_type ENUM('手动', '自动') DEFAULT '手动' COMMENT '退队来源',
+  source_type ENUM('手动', '自动', '助教') DEFAULT '手动' COMMENT '退队来源',
   source_admin_id INT COMMENT '来源管理员ID（手动时）',
   source_admin_name VARCHAR(100) COMMENT '来源管理员姓名（手动时）',
+  source_assistant_id INT NULL COMMENT '发起退队的助教成员ID',
+  source_assistant_name VARCHAR(100) NULL COMMENT '发起退队的助教昵称',
   status ENUM('待审批', '已批准', '已拒绝') DEFAULT '待审批' COMMENT '审批状态',
   approver_id INT COMMENT '审批人ID',
   approver_name VARCHAR(100) COMMENT '审批人姓名',
@@ -169,7 +172,8 @@ CREATE TABLE IF NOT EXISTS retention_records (
   INDEX idx_approval_date (approval_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ��Ļ�����ÿ���
+
+-- 屏幕共享访客码
 CREATE TABLE IF NOT EXISTS screen_share_guest_codes (
   id INT AUTO_INCREMENT PRIMARY KEY,
   code VARCHAR(16) NOT NULL,
@@ -185,4 +189,67 @@ CREATE TABLE IF NOT EXISTS screen_share_guest_codes (
   UNIQUE KEY uk_guest_code (code),
   INDEX idx_guest_status (status),
   INDEX idx_guest_creator (created_by_member_id, status)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='��Ļ�����ÿ���';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='屏幕共享访客码';
+
+-- 紫夜助教相关表
+CREATE TABLE IF NOT EXISTS assistant_student_assignments (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  assistant_member_id INT NOT NULL,
+  student_member_id INT NOT NULL,
+  status ENUM('待审批','已通过','已拒绝','已解除') NOT NULL DEFAULT '待审批',
+  requested_by_type ENUM('admin','assistant') NOT NULL DEFAULT 'admin',
+  requested_by_id INT NULL,
+  reviewed_by_admin_id INT NULL,
+  reviewed_at DATETIME NULL,
+  remarks TEXT NULL,
+  hidden_from_approval TINYINT(1) NOT NULL DEFAULT 0 COMMENT '管理端审批中心隐藏（已通过认领删除记录用，不解除归属）',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_asst_student (assistant_member_id, student_member_id),
+  INDEX idx_asst_status (assistant_member_id, status),
+  INDEX idx_student_status (student_member_id, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='助教-学员归属';
+
+CREATE TABLE IF NOT EXISTS pending_member_creates (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  assistant_member_id INT NOT NULL,
+  nickname VARCHAR(100) NOT NULL,
+  qq VARCHAR(20) NOT NULL,
+  game_id VARCHAR(100) NULL,
+  join_date DATE NULL,
+  stage_role VARCHAR(50) NOT NULL DEFAULT '未新训',
+  status ENUM('待审批','已通过','已驳回') NOT NULL DEFAULT '待审批',
+  reject_reason TEXT NULL,
+  reviewed_by_admin_id INT NULL,
+  reviewed_at DATETIME NULL,
+  created_member_id INT NULL,
+  restore_member_id INT NULL COMMENT '若为恢复已退队成员则为原成员ID',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_pmc_status (status),
+  INDEX idx_pmc_asst (assistant_member_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='助教添加成员待审批';
+
+CREATE TABLE IF NOT EXISTS pending_stage_promotions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  assistant_member_id INT NOT NULL,
+  student_member_id INT NOT NULL,
+  from_stage VARCHAR(50) NOT NULL,
+  to_stage VARCHAR(50) NOT NULL,
+  status ENUM('待审批','已通过','已驳回') NOT NULL DEFAULT '待审批',
+  reason TEXT NULL,
+  reject_reason TEXT NULL,
+  reviewed_by_admin_id INT NULL,
+  reviewed_at DATETIME NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_psp_status (status),
+  INDEX idx_psp_asst (assistant_member_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='助教升阶待审批';
+
+CREATE TABLE IF NOT EXISTS assistant_permissions (
+  assistant_member_id INT PRIMARY KEY,
+  permissions_json JSON NOT NULL,
+  updated_by_admin_id INT NULL,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='助教权限配置';

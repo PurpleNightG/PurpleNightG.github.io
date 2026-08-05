@@ -52,6 +52,7 @@ router.get('/tickets/available', async (req, res) => {
       LEFT JOIN exam_configs ec ON aa.admission_ticket = ec.admission_ticket
       LEFT JOIN members m ON m.id = aa.member_id
       WHERE aa.status = '已通过' AND aa.admission_ticket IS NOT NULL
+        AND (m.status IS NULL OR m.status != '已退队')
       ORDER BY aa.approved_at DESC
     `)
     res.json({ success: true, data: rows })
@@ -139,6 +140,7 @@ router.get('/configs', async (req, res) => {
       FROM exam_configs ec
       LEFT JOIN members m ON m.id = ec.member_id
       LEFT JOIN mod_configs mc ON ec.id = mc.exam_config_id
+      WHERE m.status IS NULL OR m.status != '已退队'
       GROUP BY ec.id
       ORDER BY ec.created_at DESC
     `)

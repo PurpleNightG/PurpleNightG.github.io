@@ -31,6 +31,7 @@ import {
   AlertTriangle,
   UserPlus,
   MoreHorizontal,
+  ClipboardList,
 } from 'lucide-react'
 
 export type FieldType = 'single' | 'multi' | 'text' | 'textarea' | 'rating' | 'matrix'
@@ -76,7 +77,7 @@ const INSTRUCTOR_ROLES = ['总教', '尖兵教官', '教官', '紫夜尖兵']
 
 const STAGE_ROLES = [
   '未新训', '新训初期', '新训一期', '新训二期', '新训三期', '新训准考',
-  '紫夜', '紫夜尖兵', '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师',
+  '紫夜', '紫夜尖兵', '紫夜助教', '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师',
 ]
 
 const DEFAULT_SATISFACTION_COLS = ['很满意(5)', '满意(4)', '一般(3)', '不满意(2)', '很不满意(1)']
@@ -1092,7 +1093,10 @@ export default function SurveyManagement() {
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">填表管理</h1>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <ClipboardList className="text-purple-400" size={26} />
+            填表管理
+          </h1>
           <p className="text-sm text-gray-400 mt-1">创建问卷、设期限，查看统计结果</p>
         </div>
         <button

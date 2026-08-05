@@ -5,7 +5,7 @@ import { toast } from '../../../utils/toast'
 import { formatDate, formatDateTime } from '../../../utils/dateFormat'
 import ConfirmDialog from '../../../components/ConfirmDialog'
 import MemberNameCell from '../../../components/MemberNameCell'
-import { Loader2, RefreshCw, Download, CheckSquare, Square } from 'lucide-react'
+import { Loader2, RefreshCw, Download, CheckSquare, Square, Ticket } from 'lucide-react'
 
 interface Ticket {
   id: number
@@ -104,7 +104,10 @@ export default function AntiCheatTickets() {
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">准考证导入</h1>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <Ticket className="text-purple-400" size={26} />
+            准考证导入
+          </h1>
           <p className="text-sm text-gray-400 mt-1">从已通过的考核审批写入反作弊考核配置</p>
         </div>
         <button

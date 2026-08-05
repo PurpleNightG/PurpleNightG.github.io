@@ -32,6 +32,7 @@ router.get('/applications', async (req, res) => {
       SELECT la.*, m.avatar AS avatar
       FROM leave_applications la
       LEFT JOIN members m ON m.id = la.member_id
+      WHERE m.status IS NOT NULL AND m.status != '已退队'
       ORDER BY la.created_at DESC
     `)
     res.json({ success: true, data: rows })
@@ -183,6 +184,7 @@ router.get('/', async (req, res) => {
         m.avatar AS avatar
       FROM leave_records lr
       LEFT JOIN members m ON m.id = lr.member_id
+      WHERE m.status IS NOT NULL AND m.status != '已退队'
       ORDER BY lr.created_at DESC
     `)
     

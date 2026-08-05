@@ -33,6 +33,7 @@ import anticheatRoutes from './routes/anticheat.js'
 import surveysRoutes from './routes/surveys.js'
 import opinionBoxRoutes from './routes/opinionBox.js'
 import accountSecurityRoutes from './routes/accountSecurity.js'
+import assistantRoutes from './routes/assistant.js'
 
 dotenv.config()
 
@@ -113,6 +114,7 @@ app.use('/api/anticheat', anticheatRoutes)
 app.use('/api/surveys', surveysRoutes)
 app.use('/api/opinion-box', opinionBoxRoutes)
 app.use('/api/account-security', accountSecurityRoutes)
+app.use('/api/assistant', assistantRoutes)
 
 // 健康检查
 app.get('/api/health', (req, res) => {

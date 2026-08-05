@@ -12,7 +12,7 @@ import MemberAvatar from '../../components/MemberAvatar'
 
 const MEMBER_STAGE_ROLES = [
   '未新训', '新训初期', '新训一期', '新训二期', '新训三期', '新训准考',
-  '紫夜', '紫夜尖兵', '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师',
+  '紫夜', '紫夜尖兵', '紫夜助教', '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师',
 ]
 
 const MEMBER_EDIT_STATUSES = ['正常', '其他']
@@ -62,6 +62,8 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
   const [showBlackPointModal, setShowBlackPointModal] = useState(false)
   const [showLeaveModal, setShowLeaveModal] = useState(false)
   const [showQuitConfirm, setShowQuitConfirm] = useState(false)
+  const [quitRemarks, setQuitRemarks] = useState('')
+  const [quitting, setQuitting] = useState(false)
   const [showResetPasswordConfirm, setShowResetPasswordConfirm] = useState(false)
   const [blackPointForm, setBlackPointForm] = useState({ reason: '', register_date: new Date().toISOString().split('T')[0] })
   const [leaveForm, setLeaveForm] = useState({ reason: '', start_date: new Date().toISOString().split('T')[0], end_date: new Date().toISOString().split('T')[0] })
@@ -263,6 +265,7 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
 
   // 退队处理
   const handleQuit = () => {
+    setQuitRemarks('')
     setShowQuitConfirm(true)
   }
 
@@ -278,7 +281,13 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
   }
 
   const confirmQuit = async () => {
-    setShowQuitConfirm(false)
+    const reason = quitRemarks.trim()
+    if (!reason) {
+      toast.error('请填写退队原因')
+      return
+    }
+    if (quitting) return
+    setQuitting(true)
     
     const _userStr2 = localStorage.getItem('user') || sessionStorage.getItem('user')
     const _userObj2 = _userStr2 ? JSON.parse(_userStr2) : null
@@ -292,7 +301,7 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
         member_id: memberId,
         source_admin_id: adminId ? parseInt(adminId) : 1,
         source_admin_name: adminName,
-        remarks: '从成员详情快捷操作添加'
+        remarks: reason
       })
       approvalCreated = true
       
@@ -314,16 +323,21 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
         toast.warning('退队审批已添加，但成员状态更新失败')
       }
       
+      setShowQuitConfirm(false)
+      setQuitRemarks('')
       onClose()
       onUpdate()
     } catch (error: any) {
       if (approvalCreated) {
         toast.warning('退队审批已添加，但后续操作失败')
+        setShowQuitConfirm(false)
         onClose()
         onUpdate()
       } else {
         toast.error(error.message || '退队处理失败')
       }
+    } finally {
+      setQuitting(false)
     }
   }
 
@@ -865,16 +879,51 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
       )}
 
       {/* 退队确认对话框 */}
-      {showQuitConfirm && (
-        <ConfirmDialog
-          title="退队处理"
-          message={`确认要将 ${member.nickname} 添加到退队审批吗？添加后该成员状态将变为"已退队"。`}
-          confirmText="确认退队"
-          cancelText="取消"
-          type="warning"
-          onConfirm={confirmQuit}
-          onCancel={() => setShowQuitConfirm(false)}
-        />
+      {showQuitConfirm && member && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+          <div className="relative z-10 glass-modal-frame w-full max-w-md">
+            <div className="glass-modal-tilt">
+              <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
+                <h2 className="text-xl font-bold text-white mb-4">退队处理</h2>
+                <p className="text-gray-400 text-sm mb-4">
+                  确认要将 <span className="text-white">{member.nickname}</span> 添加到退队审批吗？添加后该成员状态将变为「已退队」。
+                </p>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-300 mb-1">退队原因 *</label>
+                  <textarea
+                    value={quitRemarks}
+                    onChange={(e) => setQuitRemarks(e.target.value)}
+                    className="student-glass-field h-24"
+                    placeholder="请填写退队原因"
+                  />
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={confirmQuit}
+                    disabled={quitting || !quitRemarks.trim()}
+                    className="flex-1 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-2 rounded-lg transition-colors flex items-center justify-center gap-2"
+                  >
+                    {quitting && <Loader2 size={16} className="animate-spin" />}
+                    {quitting ? '处理中...' : '确认退队'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={quitting}
+                    onClick={() => {
+                      setShowQuitConfirm(false)
+                      setQuitRemarks('')
+                    }}
+                    className="flex-1 bg-gray-600 hover:bg-gray-700 disabled:opacity-50 text-white py-2 rounded-lg transition-colors"
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 重置密码确认对话框 */}

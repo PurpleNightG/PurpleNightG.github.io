@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useBadges } from "../../contexts/BadgeContext";
 import { useSurveyPending } from "../../contexts/SurveyPendingContext";
 import { motion, AnimatePresence } from "framer-motion";
-import { Home, Users, BookOpen, FileCheck, UserMinus, ChevronDown, FileText, Video, Monitor, AlertTriangle, Calendar, BookMarked, ClipboardList, Mailbox, Shield } from "lucide-react";
+import { Home, Users, BookOpen, FileCheck, UserMinus, ChevronDown, FileText, Video, Monitor, AlertTriangle, Calendar, BookMarked, ClipboardList, Mailbox, Shield, GraduationCap } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 
 const AnimatedMenuToggle = ({
@@ -221,7 +221,7 @@ interface NavItemProps {
 
 export const NavItem = ({ path, icon, label, badge }: NavItemProps) => {
   const location = useLocation();
-  const isActive = location.pathname === path || (path !== '/student' && path !== '/admin' && location.pathname.startsWith(path));
+  const isActive = location.pathname === path || (path !== '/student' && path !== '/admin' && path !== '/assistant' && location.pathname.startsWith(path));
 
   return (
     <Link to={path} className="group block mb-1">
@@ -276,13 +276,15 @@ interface AdminNavProps {
 const AdminNav = ({ expandedMenus, toggleMenu }: AdminNavProps) => {
   const badges = useBadges();
   const leaveBadge = badges.leavePending + badges.leaveEndPending;
+  const membersBadge = leaveBadge + (badges.assistantPending || 0);
   return (
-  <nav className="flex-1 min-h-0 overflow-y-auto py-4 px-3 sidebar-scrollbar">
+  <nav className="flex-1 min-h-0 overflow-y-auto py-4 px-3 scrollbar-none">
     <NavItem path="/admin" icon={<Home size={20} />} label="首页" />
     <CollapsibleSection title="成员管理" icon={<Users size={20} />}
       isExpanded={expandedMenus.includes("成员管理")} onToggle={() => toggleMenu("成员管理")}
-      badge={leaveBadge}>
+      badge={membersBadge}>
       <SubNavItem path="/admin/members/list" label="成员列表" />
+      <SubNavItem path="/admin/members/assistants" label="助教管理" badge={badges.assistantPending} />
       <SubNavItem path="/admin/members/leave" label="请假记录" badge={leaveBadge} />
       <SubNavItem path="/admin/members/violations" label="黑点记录" />
     </CollapsibleSection>
@@ -472,8 +474,25 @@ const StudentNavItem = ({
 
 const StudentNav = () => {
   const { count } = useSurveyPending();
+  let isAssistant = false;
+  try {
+    const raw = localStorage.getItem('studentUser') || sessionStorage.getItem('studentUser');
+    if (raw) {
+      const u = JSON.parse(raw)
+      isAssistant = !!(Number(u?.is_ziye_assistant) === 1 || u?.stage_role === '紫夜助教')
+    }
+  } catch { /* ignore */ }
+
   return (
-  <nav className="overflow-x-hidden py-4 px-3">
+  <nav className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-4 px-3 scrollbar-none">
+    {isAssistant && (
+      <Link to="/assistant" className="block mb-1">
+        <div className="student-glass-nav-item">
+          <span className="text-teal-400"><GraduationCap size={20} /></span>
+          <span className="text-sm font-medium text-teal-200">助教工作台</span>
+        </div>
+      </Link>
+    )}
     {studentMenuItems.map((item) => (
       <StudentNavItem
         key={item.path}
@@ -528,8 +547,8 @@ export const StudentSidebar = () => {
         <AnimatedMenuToggle toggle={() => setIsOpen(!isOpen)} isOpen={isOpen} />
       </div>
 
-      {/* Desktop sidebar — 悬浮卡片，高度随内容 */}
-      <aside className="hidden md:flex flex-col w-60 student-glass-sidebar fixed z-40 top-3 left-3">
+      {/* Desktop sidebar — 悬浮卡片，过高时内部滚动（无滚动条） */}
+      <aside className="hidden md:flex flex-col w-60 student-glass-sidebar fixed z-40 top-3 left-3 max-h-[calc(100vh-1.5rem)]">
         <StudentSidebarLogo />
         <StudentNav />
         <div className="p-3 border-t border-white/10 shrink-0">

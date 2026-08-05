@@ -29,6 +29,7 @@ router.get('/', async (req, res) => {
       SELECT bp.*, m.avatar AS avatar
       FROM black_point_records bp
       LEFT JOIN members m ON m.id = bp.member_id
+      WHERE m.status IS NOT NULL AND m.status != '已退队'
       ORDER BY bp.register_date DESC
     `)
     

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { assessmentApplicationAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
-import { CheckCircle, XCircle, Clock, Search, Filter, X, Calendar, Users, Trash2, CheckSquare, Square, Loader2, ChevronUp, ChevronDown } from 'lucide-react'
+import { CheckCircle, XCircle, Clock, Search, Filter, X, Calendar, Users, Trash2, CheckSquare, Square, Loader2, ChevronUp, ChevronDown, FileCheck } from 'lucide-react'
 import { formatDate, formatDateTime } from '../../utils/dateFormat'
 import { useBadges } from '../../contexts/BadgeContext'
 import MemberNameCell from '../../components/MemberNameCell'
@@ -313,7 +313,10 @@ export default function AssessmentApproval() {
       <div className="mb-6">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-2xl font-bold text-white mb-1">考核审批</h1>
+            <h1 className="text-2xl font-bold text-white mb-1 flex items-center gap-2">
+              <FileCheck className="text-purple-400" size={26} />
+              考核审批
+            </h1>
             <p className="text-gray-400">
               审核学员考核申请
               {pendingCount > 0 && (

@@ -6,6 +6,7 @@ import DocsLayout from './pages/DocsLayout'
 import ScreenShare from './pages/ScreenShare'
 import AdminDashboard from './pages/AdminDashboard'
 import StudentDashboard from './pages/StudentDashboard'
+import AssistantDashboard from './pages/AssistantDashboard'
 import Login from './pages/Login'
 import ToastContainer from './components/ToastContainer'
 import { MeetingInviteFloat, AdminMeetingsFloat, StudentLiveRoomsFloat } from './components/MeetingFloats'
@@ -31,6 +32,9 @@ function App() {
         
         {/* Admin Routes - No Layout */}
         <Route path="/admin/*" element={<AdminDashboard />} />
+        
+        {/* Assistant Routes - student token + 紫夜助教 */}
+        <Route path="/assistant/*" element={<AssistantDashboard />} />
         
         {/* Student Routes - No Layout */}
         <Route path="/student/*" element={<StudentDashboard />} />

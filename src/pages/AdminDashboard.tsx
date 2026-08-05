@@ -29,6 +29,7 @@ import AntiCheatDllWhitelist from './admin/anticheat/AntiCheatDllWhitelist'
 import SurveyManagement from './admin/SurveyManagement'
 import SurveyResults from './admin/SurveyResults'
 import OpinionBoxManagement from './admin/OpinionBoxManagement'
+import AssistantManagement from './admin/AssistantManagement'
 import AccountSecurity from './AccountSecurity'
 
 function AdminDashboardContent() {
@@ -78,6 +79,7 @@ function AdminDashboardContent() {
           <Routes>
             <Route path="/" element={<AdminHome />} />
             <Route path="/members/list" element={<MemberList />} />
+            <Route path="/members/assistants" element={<AssistantManagement />} />
             <Route path="/members/leave" element={<LeaveRecords />} />
             <Route path="/members/violations" element={<BlackPointRecords />} />
             <Route path="/courses/list" element={<CourseManagement />} />

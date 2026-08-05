@@ -168,11 +168,12 @@ router.get('/', requireAdmin, async (req, res) => {
   try {
     const status = String(req.query.status || '').trim()
     const params = []
-    let where = ''
+    const conditions = ["(m.status IS NULL OR m.status != '已退队')"]
     if (status && ['pending', 'read', 'archived'].includes(status)) {
-      where = 'WHERE o.status = ?'
+      conditions.push('o.status = ?')
       params.push(status)
     }
+    const where = `WHERE ${conditions.join(' AND ')}`
 
     const [rows] = await pool.query(
       `SELECT

@@ -311,10 +311,10 @@ export default function ReminderList() {
 
   const stageOrder: { [key: string]: number } = {
     '未新训': 1, '新训初期': 2, '新训一期': 3, '新训二期': 4, '新训三期': 5,
-    '新训准考': 6, '紫夜': 7, '紫夜尖兵': 8,
-    '会长': 9, '执行官': 10, '人事': 11, '总教': 12, '尖兵教官': 13, '教官': 14, '工程师': 15
+    '新训准考': 6, '紫夜': 7, '紫夜尖兵': 8, '紫夜助教': 9,
+    '会长': 10, '执行官': 11, '人事': 12, '总教': 13, '尖兵教官': 14, '教官': 15, '工程师': 16
   }
-  const specialRoles = ['会长', '执行官', '人事', '总教', '尖兵教官', '工程师', '教官']
+  const specialRoles = ['会长', '执行官', '人事', '总教', '尖兵教官', '工程师', '教官', '紫夜助教']
 
   const clearFilters = () => setFilters({ timeout_status: [], has_custom_timeout: [], stage_role: [], inverseMode: false })
 
@@ -822,7 +822,10 @@ export default function ReminderList() {
       <div className="flex flex-col gap-4 mb-4">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-4 min-w-0">
-            <h1 className="text-2xl font-bold text-white shrink-0">催促名单</h1>
+            <h1 className="text-2xl font-bold text-white shrink-0 flex items-center gap-2">
+              <Bell className="text-purple-400" size={26} />
+              催促名单
+            </h1>
             {activeTab === 'training' && selectedIds.size > 0 && (
               <div className="flex items-center gap-2">
                 <span className="text-sm text-gray-400">
@@ -1075,7 +1078,7 @@ export default function ReminderList() {
                 <div>
                   <label className="text-sm text-gray-400 mb-2 block">阶段&角色</label>
                   <div className="flex flex-wrap gap-2">
-                    {['未新训', '新训初期', '新训一期', '新训二期', '新训三期', '新训准考', '紫夜', '紫夜尖兵', '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师'].map(stage => (
+                    {['未新训', '新训初期', '新训一期', '新训二期', '新训三期', '新训准考', '紫夜', '紫夜尖兵', '紫夜助教', '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师'].map(stage => (
                       <button
                         key={stage}
                         onClick={() => toggleAttendanceFilter('stage_role', stage)}
@@ -1382,7 +1385,7 @@ export default function ReminderList() {
             <div>
               <label className="text-sm text-gray-400 mb-2 block">阶段&角色</label>
               <div className="flex flex-wrap gap-2">
-                {['未新训', '新训初期', '新训一期', '新训二期', '新训三期', '新训准考', '紫夜', '紫夜尖兵', '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师'].map(stage => (
+                {['未新训', '新训初期', '新训一期', '新训二期', '新训三期', '新训准考', '紫夜', '紫夜尖兵', '紫夜助教', '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师'].map(stage => (
                   <button
                     key={stage}
                     onClick={() => toggleFilter('stage_role', stage)}

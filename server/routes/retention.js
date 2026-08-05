@@ -10,6 +10,7 @@ router.get('/', async (req, res) => {
       SELECT rr.*, m.avatar AS avatar
       FROM retention_records rr
       LEFT JOIN members m ON m.id = rr.member_id
+      WHERE m.status IS NOT NULL AND m.status != '已退队'
       ORDER BY rr.approval_date DESC
     `)
     

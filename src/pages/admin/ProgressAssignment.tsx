@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { progressAPI, memberAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
-import { CheckSquare, Square, X, Search, Filter, ChevronUp, ChevronDown } from 'lucide-react'
+import { CheckSquare, Square, X, Search, Filter, ChevronUp, ChevronDown, BookOpen } from 'lucide-react'
 import { formatDate } from '../../utils/dateFormat'
 import { getRoleColor } from '../../utils/roleColors'
 import MemberNameCell from '../../components/MemberNameCell'
@@ -290,13 +290,13 @@ export default function ProgressAssignment() {
   }
 
   // 阶段列表
-  const stageRoles = ['未新训', '新训初期', '新训一期', '新训二期', '新训三期', '新训准考', '紫夜', '紫夜尖兵', '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师']
+  const stageRoles = ['未新训', '新训初期', '新训一期', '新训二期', '新训三期', '新训准考', '紫夜', '紫夜尖兵', '紫夜助教', '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师']
   const stageOrder: { [key: string]: number } = {
     '未新训': 1, '新训初期': 2, '新训一期': 3, '新训二期': 4, '新训三期': 5,
-    '新训准考': 6, '紫夜': 7, '紫夜尖兵': 8,
-    '会长': 9, '执行官': 10, '人事': 11, '总教': 12, '尖兵教官': 13, '教官': 14, '工程师': 15
+    '新训准考': 6, '紫夜': 7, '紫夜尖兵': 8, '紫夜助教': 9,
+    '会长': 10, '执行官': 11, '人事': 12, '总教': 13, '尖兵教官': 14, '教官': 15, '工程师': 16
   }
-  const specialRoles = ['会长', '执行官', '人事', '总教', '尖兵教官', '工程师', '教官']
+  const specialRoles = ['会长', '执行官', '人事', '总教', '尖兵教官', '工程师', '教官', '紫夜助教']
   
   // 保存筛选条件到localStorage
   useEffect(() => {
@@ -398,7 +398,10 @@ export default function ProgressAssignment() {
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold text-white">进度分配</h1>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <BookOpen className="text-purple-400" size={26} />
+            进度分配
+          </h1>
           <span className="text-sm text-gray-400">
             共 {members.length} 名成员
             {filteredMembers.length < members.length && (

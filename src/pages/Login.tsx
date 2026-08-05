@@ -45,7 +45,13 @@ export default function Login() {
     const studentToken = localStorage.getItem('studentToken') || sessionStorage.getItem('studentToken')
     const studentUser = localStorage.getItem('studentUser') || sessionStorage.getItem('studentUser')
     if (studentToken && studentUser) {
-      navigate('/student')
+      try {
+        const u = JSON.parse(studentUser)
+        const isAsst = !!(Number(u?.is_ziye_assistant) === 1 || u?.stage_role === '紫夜助教')
+        navigate(isAsst ? '/assistant' : '/student')
+      } catch {
+        navigate('/student')
+      }
       return
     }
   }, [navigate])
@@ -166,7 +172,15 @@ export default function Login() {
         } else {
           storage.setItem('studentToken', data.data.token)
           storage.setItem('studentUser', JSON.stringify(data.data.member))
-          navigate(from || '/student')
+          const m = data.data.member
+          const isAsst = !!(Number(m?.is_ziye_assistant) === 1 || m?.stage_role === '紫夜助教')
+          if (from) {
+            navigate(from)
+          } else if (isAsst) {
+            navigate('/assistant')
+          } else {
+            navigate('/student')
+          }
         }
       } else {
         console.warn('登录失败:', data.message)

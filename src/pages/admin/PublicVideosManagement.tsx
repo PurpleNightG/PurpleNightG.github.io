@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { publicVideoAPI } from '../../utils/api'
 import { toast } from 'react-hot-toast'
-import { Plus, Trash2, Edit, Search, X, CheckSquare, Square, ChevronUp, ChevronDown, FileText, Eye, Loader2 } from 'lucide-react'
+import { Plus, Trash2, Edit, Search, X, CheckSquare, Square, ChevronUp, ChevronDown, FileText, Eye, Loader2, Video } from 'lucide-react'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import DateInput from '../../components/DateInput'
 import { formatDate, toInputDate } from '../../utils/dateFormat'
@@ -236,7 +236,10 @@ export default function PublicVideosManagement() {
     <div className="p-6">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold text-white">公开报告管理</h1>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <Video className="text-purple-400" size={26} />
+            公开报告管理
+          </h1>
           {selectedIds.size > 0 && (
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-400">

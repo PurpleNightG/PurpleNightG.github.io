@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { memberAPI, progressAPI, reminderAPI } from '../utils/api'
-import { Trophy, TrendingUp, CheckCircle, Star, Sparkles, Award, Target, BookOpen, Video, Lock, Clock, AlertTriangle, KeyRound, FileText, UserCheck, ClipboardList, ChevronRight, Bell } from 'lucide-react'
+import { Trophy, TrendingUp, CheckCircle, Target, BookOpen, Video, Lock, Clock, AlertTriangle, KeyRound, FileText, UserCheck, ClipboardList, ChevronRight, Bell } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import UserDropdown from '../components/UserDropdown'
+import CongratsModal from '../components/CongratsModal'
 import { toast } from '../utils/toast'
 import { useSurveyPending } from '../contexts/SurveyPendingContext'
 import { formatDate } from '../utils/dateFormat'
+import { resolveCongratsToShow, acknowledgeCongrats, syncCongratsBaseline, type CongratsConfig } from '../utils/stageCongrats'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
@@ -17,6 +19,7 @@ interface Member {
   status: string
   join_date?: string
   last_training_date?: string | null
+  is_ziye_assistant?: number | boolean
 }
 
 interface AttendanceInfo {
@@ -96,47 +99,6 @@ function renderAttendanceReasonLabel(label: string, compact = false) {
 // 特殊阶段（非线性流程）
 const SPECIAL_ROLES = ['会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师']
 
-// 阶段恭喜配置
-const STAGE_CONGRATULATIONS = {
-  '新训初期': {
-    title: '🎉 恭喜晋升！',
-    message: '恭喜你成功晋升为新训初期！继续努力，向着更高的目标前进！',
-    icon: <Sparkles className="text-blue-400" size={48} />
-  },
-  '新训一期': {
-    title: '🎊 恭喜晋升！',
-    message: '恭喜你晋升为新训一期！你已经掌握了基础技能，继续加油！',
-    icon: <TrendingUp className="text-blue-400" size={48} />
-  },
-  '新训二期': {
-    title: '🌟 恭喜晋升！',
-    message: '恭喜你晋升为新训二期！你的实力正在不断提升！',
-    icon: <Star className="text-blue-400" size={48} />
-  },
-  '新训三期': {
-    title: '✨ 恭喜晋升！',
-    message: '恭喜你晋升为新训三期！距离准考只有一步之遥了！',
-    icon: <Target className="text-blue-400" size={48} />
-  },
-  '新训准考': {
-    title: '🎯 恭喜达到准考阶段！',
-    message: '恭喜你达到新训准考阶段！现在可以前往考核申请页面申请新训考核了！',
-    icon: <Trophy className="text-yellow-400" size={48} />,
-    actionText: '去申请考核',
-    actionPath: '/student/apply-assessment'
-  },
-  '紫夜': {
-    title: '👑 恭喜成为正式队员！',
-    message: '恭喜你成功晋升为紫夜！你已经是紫夜战队的正式队员了！',
-    icon: <Award className="text-purple-400" size={48} />
-  },
-  '紫夜尖兵': {
-    title: '⚔️ 恭喜晋升尖兵！',
-    message: '恭喜你晋升为紫夜尖兵！你已经成为战队的精英力量！',
-    icon: <Award className="text-purple-500" size={48} />
-  }
-}
-
 export default function StudentHome() {
   const navigate = useNavigate()
   const { pending, count } = useSurveyPending()
@@ -148,7 +110,7 @@ export default function StudentHome() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showCongrats, setShowCongrats] = useState(false)
-  const [congratsConfig, setCongratsConfig] = useState<any>(null)
+  const [congratsConfig, setCongratsConfig] = useState<CongratsConfig | null>(null)
   const [showPasswordWarning, setShowPasswordWarning] = useState(false)
   const [onDutyInstructors, setOnDutyInstructors] = useState<{ username: string; nickname: string; clocked_in_at: string }[]>([])
   const [attendanceInfo, setAttendanceInfo] = useState<AttendanceInfo | null>(null)
@@ -355,57 +317,20 @@ export default function StudentHome() {
   }
 
   const checkCongratulations = (memberData: Member) => {
-    const currentStage = memberData.stage_role
-    const lastStageKey = `last_stage_${memberData.id}`
-    const lastStage = localStorage.getItem(lastStageKey)
-    
-    // 获取当前阶段和上次阶段的索引
-    const currentIndex = STAGE_FLOW.indexOf(currentStage)
-    const lastIndex = lastStage ? STAGE_FLOW.indexOf(lastStage) : -1
-    
-    // 检查是否发生阶段变化
-    if (lastStage && lastStage !== currentStage) {
-      // 判断是晋升还是降级
-      if (currentIndex !== -1 && lastIndex !== -1) {
-        if (currentIndex < lastIndex) {
-          // 降级：显示鼓励弹窗
-          const storageKey = `demotion_shown_${memberData.id}_${currentStage}_${Date.now()}`
-          setCongratsConfig({
-            title: '💪 不要气馁！',
-            message: `阶段从 ${lastStage} 调整为 ${currentStage}，这只是暂时的挫折。继续努力学习和训练，你一定能重新晋升！`,
-            icon: <Trophy className="text-blue-500" size={48} />,
-            actionText: '查看课程进度',
-            actionPath: '/student/progress',
-            isDemotion: true  // 标记为降级弹窗
-          })
-          setShowCongrats(true)
-          localStorage.setItem(storageKey, 'true')
-        } else if (currentIndex > lastIndex) {
-          // 晋升：检查是否已显示过恭喜弹窗
-          const storageKey = `congrats_shown_${memberData.id}_${currentStage}`
-          const hasShown = localStorage.getItem(storageKey)
-          
-          if (!hasShown && STAGE_CONGRATULATIONS[currentStage as keyof typeof STAGE_CONGRATULATIONS]) {
-            setCongratsConfig(STAGE_CONGRATULATIONS[currentStage as keyof typeof STAGE_CONGRATULATIONS])
-            setShowCongrats(true)
-            localStorage.setItem(storageKey, 'true')
-          }
-        }
-      }
-    } else if (!lastStage) {
-      // 首次加载，检查是否需要显示当前阶段的恭喜弹窗
-      const storageKey = `congrats_shown_${memberData.id}_${currentStage}`
-      const hasShown = localStorage.getItem(storageKey)
-      
-      if (!hasShown && STAGE_CONGRATULATIONS[currentStage as keyof typeof STAGE_CONGRATULATIONS]) {
-        setCongratsConfig(STAGE_CONGRATULATIONS[currentStage as keyof typeof STAGE_CONGRATULATIONS])
-        setShowCongrats(true)
-        localStorage.setItem(storageKey, 'true')
-      }
+    const config = resolveCongratsToShow(memberData)
+    if (config) {
+      setCongratsConfig(config)
+      setShowCongrats(true)
+    } else {
+      syncCongratsBaseline(memberData)
     }
-    
-    // 更新存储的阶段
-    localStorage.setItem(lastStageKey, currentStage)
+  }
+
+  const closeCongrats = () => {
+    if (member && congratsConfig) {
+      acknowledgeCongrats(member, congratsConfig)
+    }
+    setShowCongrats(false)
   }
 
   const checkDefaultPassword = async () => {
@@ -509,6 +434,10 @@ export default function StudentHome() {
     if (SPECIAL_ROLES.includes(currentStage)) {
       return null
     }
+    // 助教晋升路径：下一阶段为紫夜尖兵
+    if (currentStage === '紫夜助教') {
+      return '紫夜尖兵'
+    }
 
     const currentIndex = STAGE_FLOW.indexOf(currentStage)
     if (currentIndex === -1 || currentIndex === STAGE_FLOW.length - 1) {
@@ -519,7 +448,7 @@ export default function StudentHome() {
   }
 
   const getStageColor = (stage: string) => {
-    if (stage === '紫夜' || stage === '紫夜尖兵') {
+    if (stage === '紫夜' || stage === '紫夜尖兵' || stage === '紫夜助教') {
       return 'from-purple-600 to-purple-400'
     }
     if (stage === '新训准考') {
@@ -597,6 +526,13 @@ export default function StudentHome() {
         progressDescription = `完成第${targetSection}部分所有课程即可晋升${nextStageName}`
         break
 
+      case '紫夜助教':
+        // 与紫夜相同：完成第5部分课程可晋升尖兵
+        targetSection = 5
+        nextStageName = '紫夜尖兵'
+        progressDescription = `完成第${targetSection}部分所有课程即可晋升${nextStageName}`
+        break
+
       case '紫夜尖兵':
         // 已经是最高阶段
         return { progress: 100, description: '已达最高阶段' }
@@ -626,7 +562,7 @@ export default function StudentHome() {
     if (congratsConfig?.actionPath) {
       navigate(congratsConfig.actionPath)
     }
-    setShowCongrats(false)
+    closeCongrats()
   }
 
   if (loading) {
@@ -1345,64 +1281,12 @@ export default function StudentHome() {
         </div>
       </div>
 
-      {/* 恭喜弹窗 */}
       {showCongrats && congratsConfig && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fadeIn">
-          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
-          <div className="relative z-10 glass-modal-frame w-full max-w-md">
-            <div className="glass-modal-tilt">
-          <div className="student-glass-panel student-glass-panel--static student-glass-modal w-full animate-scaleIn">
-            <div className="p-8 text-center">
-              {/* 图标 */}
-              <div className="mb-6 flex justify-center animate-bounce">
-                {congratsConfig.icon}
-              </div>
-
-              {/* 标题 */}
-              <h2 className="text-3xl font-bold text-white mb-4">
-                {congratsConfig.title}
-              </h2>
-
-              {/* 消息 */}
-              <p className="text-gray-300 text-lg mb-8 leading-relaxed">
-                {congratsConfig.message}
-              </p>
-
-              {/* 按钮 */}
-              <div className="flex gap-3">
-                {congratsConfig.actionText && congratsConfig.actionPath ? (
-                  <>
-                    <button
-                      onClick={() => setShowCongrats(false)}
-                      className="flex-1 px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors font-medium"
-                    >
-                      稍后再说
-                    </button>
-                    <button
-                      onClick={handleCongratsAction}
-                      className={`flex-1 px-6 py-3 bg-gradient-to-r ${
-                        congratsConfig.isDemotion
-                          ? 'from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600'
-                          : 'from-yellow-600 to-yellow-500 hover:from-yellow-700 hover:to-yellow-600'
-                      } text-white rounded-lg transition-all font-medium shadow-lg`}
-                    >
-                      {congratsConfig.actionText}
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    onClick={() => setShowCongrats(false)}
-                    className="w-full px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-700 hover:to-purple-600 text-white rounded-lg transition-all font-medium shadow-lg"
-                  >
-                    太棒了！
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-            </div>
-          </div>
-        </div>
+        <CongratsModal
+          config={congratsConfig}
+          onClose={closeCongrats}
+          onAction={handleCongratsAction}
+        />
       )}
     </div>
   )

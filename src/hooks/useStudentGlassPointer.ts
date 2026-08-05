@@ -79,9 +79,9 @@ export function useStudentGlassPointer(options: Options = {}) {
           const nx = (xRatio - 0.5) * 2
           const ny = (yRatio - 0.5) * 2
           const span = Math.max(rect.width, rect.height)
-          const tiltScale = Math.min(1, (isModal ? 220 : 420) / span)
-          const tilt = maxTilt * tiltScale * (isModal ? 0.55 : 1)
-          const perspective = Math.round(Math.max(900, span * (isModal ? 2.1 : 1.4)))
+          const tiltScale = Math.min(1, (isModal ? 360 : 420) / span)
+          const tilt = maxTilt * tiltScale * (isModal ? 0.95 : 1)
+          const perspective = Math.round(Math.max(900, span * (isModal ? 1.85 : 1.4)))
           panel.style.transform = `perspective(${perspective}px) rotateX(${(-ny * tilt).toFixed(2)}deg) rotateY(${(nx * tilt).toFixed(2)}deg) translateZ(0)`
         }
       })

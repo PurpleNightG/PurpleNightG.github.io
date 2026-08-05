@@ -823,6 +823,12 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
+/* 左右有搜索/清除图标时留出空间（避免被上面 padding 简写盖掉 Tailwind pl/pr） */
+.student-glass-field.student-glass-field--icon {
+  padding-left: 2.5rem;
+  padding-right: 2.5rem;
+}
+
 .student-glass-field::placeholder {
   color: rgb(107, 114, 128);
 }

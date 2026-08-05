@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { anticheatAPI } from '../../../utils/api'
 import { toast } from '../../../utils/toast'
-import { Loader2, Save } from 'lucide-react'
+import { Loader2, Save, Shield } from 'lucide-react'
 
 export default function AntiCheatSettings() {
   const [clientVersion, setClientVersion] = useState('1.0.0')
@@ -49,7 +49,10 @@ export default function AntiCheatSettings() {
   return (
     <div className="p-6 max-w-xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white">反作弊系统设置</h1>
+        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+          <Shield className="text-purple-400" size={26} />
+          反作弊系统设置
+        </h1>
         <p className="text-sm text-gray-400 mt-1">
           客户端版本与地图密码。DLL 误报白名单请到「反作弊 → DLL白名单」统一管理（与会话无关）。
         </p>

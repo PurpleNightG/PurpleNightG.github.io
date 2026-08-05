@@ -1,12 +1,13 @@
 import express from 'express'
 import { pool } from '../config/database.js'
 import { ensurePhase3ReachedAt } from '../utils/attendanceReminder.js'
+import { purgeArchivedMember } from '../utils/purgeMember.js'
 import bcrypt from 'bcryptjs'
 import { toMySQLDate } from '../utils/date.js'
 
 const router = express.Router()
 
-// 获取所有成员列表
+// 获取所有成员列表（不含已退队归档；恢复仅走 lookup-qq）
 router.get('/', async (req, res) => {
   try {
     const [rows] = await pool.query(`
@@ -22,8 +23,10 @@ router.get('/', async (req, res) => {
         phase3_reached_at,
         remarks,
         avatar,
+        is_ziye_assistant,
         created_at
       FROM members
+      WHERE status != '已退队'
       ORDER BY created_at DESC
     `)
     
@@ -120,6 +123,186 @@ router.get('/exam-candidates', async (req, res) => {
   }
 })
 
+// 按 QQ 查询成员（用于添加/恢复）
+router.get('/lookup-qq', async (req, res) => {
+  try {
+    const qq = String(req.query.qq || '').trim()
+    if (!qq) {
+      return res.status(400).json({
+        success: false,
+        message: '请提供 QQ 号'
+      })
+    }
+
+    const [rows] = await pool.query(
+      `SELECT id, nickname, qq, game_id, join_date, stage_role, status,
+              last_training_date, phase3_reached_at, avatar
+       FROM members WHERE qq = ? LIMIT 1`,
+      [qq]
+    )
+
+    if (rows.length === 0) {
+      return res.json({
+        success: true,
+        data: { exists: false }
+      })
+    }
+
+    res.json({
+      success: true,
+      data: {
+        exists: true,
+        ...rows[0]
+      }
+    })
+  } catch (error) {
+    console.error('按 QQ 查询成员失败:', error)
+    res.status(500).json({
+      success: false,
+      message: '按 QQ 查询成员失败'
+    })
+  }
+})
+
+// 已退队成员（紫夜数据库，隐藏入口用）
+router.get('/archived', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT
+        m.id,
+        m.nickname,
+        m.qq,
+        m.game_id,
+        m.join_date,
+        m.stage_role,
+        m.status,
+        m.last_training_date,
+        m.phase3_reached_at,
+        m.remarks,
+        m.avatar,
+        m.created_at,
+        qa.remarks AS quit_reason,
+        qa.apply_date AS quit_apply_date,
+        qa.status AS quit_approval_status,
+        qa.approver_name AS quit_approver_name,
+        qa.approval_date AS quit_approval_date,
+        qa.source_admin_name AS quit_source_admin_name,
+        (
+          SELECT COUNT(*) FROM quit_approvals qa3 WHERE qa3.member_id = m.id
+        ) AS quit_count
+      FROM members m
+      LEFT JOIN quit_approvals qa ON qa.id = (
+        SELECT qa2.id
+        FROM quit_approvals qa2
+        WHERE qa2.member_id = m.id
+        ORDER BY
+          CASE qa2.status
+            WHEN '已批准' THEN 0
+            WHEN '待审批' THEN 1
+            ELSE 2
+          END,
+          qa2.id DESC
+        LIMIT 1
+      )
+      WHERE m.status = '已退队'
+      ORDER BY COALESCE(qa.approval_date, qa.apply_date, m.created_at) DESC
+    `)
+
+    res.json({
+      success: true,
+      data: rows
+    })
+  } catch (error) {
+    console.error('获取已退队成员失败:', error)
+    res.status(500).json({
+      success: false,
+      message: '获取已退队成员失败'
+    })
+  }
+})
+
+// 已退队成员详情（紫夜数据库）
+router.get('/archived/:id', async (req, res) => {
+  try {
+    const { id } = req.params
+    const [members] = await pool.query(
+      `SELECT
+         id, nickname, qq, game_id, join_date, stage_role, status,
+         last_training_date, phase3_reached_at, remarks, avatar, created_at
+       FROM members
+       WHERE id = ? AND status = '已退队'`,
+      [id]
+    )
+
+    if (members.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: '档案不存在或成员未退队'
+      })
+    }
+
+    const member = members[0]
+
+    const [quitHistory] = await pool.query(
+      `SELECT
+         qa.id, qa.apply_date, qa.status, qa.remarks, qa.source_type,
+         qa.source_admin_name, qa.source_assistant_name,
+         qa.approver_name, qa.approval_date,
+         COALESCE(am.nickname, qa.source_assistant_name) AS source_assistant_display
+       FROM quit_approvals qa
+       LEFT JOIN members am ON am.id = qa.source_assistant_id
+       WHERE qa.member_id = ?
+       ORDER BY qa.id DESC`,
+      [id]
+    )
+
+    const [[bpCount]] = await pool.query(
+      `SELECT COUNT(*) AS cnt FROM black_point_records WHERE member_id = ?`,
+      [id]
+    )
+    const [[leaveCount]] = await pool.query(
+      `SELECT COUNT(*) AS cnt FROM leave_records WHERE member_id = ?`,
+      [id]
+    )
+    const [[assessmentCount]] = await pool.query(
+      `SELECT COUNT(*) AS cnt FROM assessments WHERE member_id = ?`,
+      [id]
+    )
+
+    const latestQuit = quitHistory[0] || null
+
+    res.json({
+      success: true,
+      data: {
+        ...member,
+        quit_reason: latestQuit?.remarks || null,
+        quit_apply_date: latestQuit?.apply_date || null,
+        quit_approval_status: latestQuit?.status || null,
+        quit_approver_name: latestQuit?.approver_name || null,
+        quit_approval_date: latestQuit?.approval_date || null,
+        quit_source_admin_name:
+          latestQuit?.source_admin_name
+          || latestQuit?.source_assistant_display
+          || latestQuit?.source_assistant_name
+          || null,
+        quit_history: quitHistory,
+        quit_count: quitHistory.length,
+        stats: {
+          black_points: Number(bpCount?.cnt || 0),
+          leaves: Number(leaveCount?.cnt || 0),
+          assessments: Number(assessmentCount?.cnt || 0),
+        }
+      }
+    })
+  } catch (error) {
+    console.error('获取已退队成员详情失败:', error)
+    res.status(500).json({
+      success: false,
+      message: '获取已退队成员详情失败'
+    })
+  }
+})
+
 // 获取单个成员信息
 router.get('/:id', async (req, res) => {
   try {
@@ -173,17 +356,38 @@ router.post('/', async (req, res) => {
     // 用户名使用昵称，密码默认为QQ号
     const username = nickname
     const password = qq
-    
-    // 检查用户名或QQ是否已存在
-    const [existing] = await pool.query(
-      'SELECT id FROM members WHERE username = ? OR qq = ?',
-      [username, qq]
+
+    const [existingQq] = await pool.query(
+      `SELECT id, nickname, qq, game_id, join_date, stage_role, status,
+              last_training_date, phase3_reached_at, avatar
+       FROM members WHERE qq = ? LIMIT 1`,
+      [qq]
     )
-    
-    if (existing.length > 0) {
+
+    if (existingQq.length > 0) {
+      if (existingQq[0].status === '已退队') {
+        return res.status(409).json({
+          success: false,
+          code: 'ARCHIVED_QQ',
+          message: '该 QQ 对应已退队归档成员，请选择恢复',
+          data: existingQq[0]
+        })
+      }
       return res.status(400).json({
         success: false,
-        message: '昵称或QQ号已存在'
+        message: 'QQ号已存在'
+      })
+    }
+
+    const [existingName] = await pool.query(
+      'SELECT id FROM members WHERE username = ? OR nickname = ? LIMIT 1',
+      [username, nickname]
+    )
+
+    if (existingName.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: '昵称已存在'
       })
     }
     
@@ -320,6 +524,29 @@ router.put('/:id', async (req, res) => {
     if (stage_role && !hasPhase3Field) {
       await ensurePhase3ReachedAt(pool, id, stage_role)
     }
+
+    // 设为「紫夜助教」阶段时同步开启助教身份；改为其他阶段不自动取消（可与尖兵并存）
+    if (stage_role === '紫夜助教') {
+      await pool.query('UPDATE members SET is_ziye_assistant = 1 WHERE id = ?', [id])
+      await pool.query(
+        `INSERT INTO assistant_permissions (assistant_member_id, permissions_json)
+         VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE assistant_member_id = assistant_member_id`,
+        [id, JSON.stringify({
+          view_training_roster: true,
+          request_student: true,
+          manage_assigned_progress: true,
+          propose_stage_promotion: true,
+          propose_member_create: true,
+          propose_member_edit: true,
+          propose_black_point: true,
+          propose_leave: true,
+          view_assigned_attendance: true,
+          propose_quit: true,
+          screen_share_assistant: false,
+        })]
+      )
+    }
     
     res.json({
       success: true,
@@ -330,6 +557,98 @@ router.put('/:id', async (req, res) => {
     res.status(500).json({
       success: false,
       message: '更新成员信息失败'
+    })
+  }
+})
+
+// 彻底删除已退队归档（紫夜数据库）：抹除成员及全部关联数据
+router.delete('/archived/:id/purge', async (req, res) => {
+  try {
+    const purged = await purgeArchivedMember(pool, req.params.id)
+    res.json({
+      success: true,
+      message: `已彻底删除「${purged.nickname}」及其全部相关数据`,
+      data: purged,
+    })
+  } catch (error) {
+    console.error('彻底删除归档成员失败:', error)
+    const status = error.status || 500
+    res.status(status).json({
+      success: false,
+      message: error.message || '彻底删除失败',
+    })
+  }
+})
+
+// 恢复已退队归档成员
+router.post('/:id/restore', async (req, res) => {
+  try {
+    const { id } = req.params
+    const { join_date, nickname, stage_role } = req.body || {}
+
+    const [existing] = await pool.query(
+      'SELECT id, nickname, username, status, stage_role FROM members WHERE id = ?',
+      [id]
+    )
+
+    if (existing.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: '成员不存在'
+      })
+    }
+
+    if (existing[0].status !== '已退队') {
+      return res.status(400).json({
+        success: false,
+        message: '仅已退队归档成员可恢复'
+      })
+    }
+
+    const newNickname = (nickname && String(nickname).trim()) || existing[0].nickname
+    const newUsername = newNickname
+    const newStageRole = (stage_role && String(stage_role).trim()) || existing[0].stage_role
+
+    if (newNickname !== existing[0].nickname || newUsername !== existing[0].username) {
+      const [conflict] = await pool.query(
+        'SELECT id FROM members WHERE (username = ? OR nickname = ?) AND id != ? LIMIT 1',
+        [newUsername, newNickname, id]
+      )
+      if (conflict.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: '昵称已被其他成员占用'
+        })
+      }
+    }
+
+    await pool.query(
+      `UPDATE members
+       SET status = '正常',
+           join_date = ?,
+           phase3_reached_at = NULL,
+           nickname = ?,
+           username = ?,
+           stage_role = ?
+       WHERE id = ?`,
+      [
+        toMySQLDate(join_date) || toMySQLDate(new Date()),
+        newNickname,
+        newUsername,
+        newStageRole,
+        id
+      ]
+    )
+
+    res.json({
+      success: true,
+      message: '成员已恢复'
+    })
+  } catch (error) {
+    console.error('恢复成员失败:', error)
+    res.status(500).json({
+      success: false,
+      message: '恢复成员失败'
     })
   }
 })
@@ -494,7 +813,7 @@ router.post('/sync-stage', async (req, res) => {
     const { memberIds } = req.body
     
     // 定义不需要自动调整阶段的特殊职位
-    const specialRoles = ['新训准考', '紫夜', '紫夜尖兵', '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师']
+    const specialRoles = ['新训准考', '紫夜', '紫夜尖兵', '紫夜助教', '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师']
     
     let updatedCount = 0
     let skippedCount = 0

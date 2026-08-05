@@ -322,7 +322,10 @@ export default function AntiCheatConfigs() {
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">考核配置</h1>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <Settings2 className="text-purple-400" size={26} />
+            考核配置
+          </h1>
           <p className="text-sm text-gray-400 mt-1">开关、模组哈希（浏览器本地计算，不上传文件）</p>
         </div>
         <div className="flex gap-2">

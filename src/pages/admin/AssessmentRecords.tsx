@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { assessmentAPI, memberAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
-import { Plus, Trash2, Edit, CheckCircle, XCircle, ChevronDown, ChevronUp, X, Search, Filter, CheckSquare, Square, Loader2, Eye, FileText, GripVertical, BookOpen } from 'lucide-react'
+import { Plus, Trash2, Edit, CheckCircle, XCircle, ChevronDown, ChevronUp, X, Search, Filter, CheckSquare, Square, Loader2, Eye, FileText, GripVertical, BookOpen, FileCheck } from 'lucide-react'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import SearchableSelect from '../../components/SearchableSelect'
 import DateInput from '../../components/DateInput'
@@ -497,7 +497,10 @@ export default function AssessmentRecords() {
       {/* 工具栏 */}
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold text-white">考核记录</h1>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <FileCheck className="text-purple-400" size={26} />
+            考核记录
+          </h1>
           {selectedIds.size > 0 && (
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-400">

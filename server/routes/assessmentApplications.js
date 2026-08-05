@@ -29,6 +29,7 @@ router.get('/', async (req, res) => {
       SELECT aa.*, m.avatar AS avatar, m.qq AS qq
       FROM assessment_applications aa
       LEFT JOIN members m ON m.id = aa.member_id
+      WHERE m.status IS NOT NULL AND m.status != '已退队'
       ORDER BY aa.created_at DESC
     `)
     

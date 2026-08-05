@@ -18,6 +18,8 @@ export function getRoleColor(role: string): string {
       return 'bg-purple-500/30 text-purple-100'
     case '紫夜尖兵':
       return 'bg-violet-400/28 text-violet-100'
+    case '紫夜助教':
+      return 'bg-teal-500/28 text-teal-50'
 
     case '会长':
       return 'bg-fuchsia-400/28 text-fuchsia-50'

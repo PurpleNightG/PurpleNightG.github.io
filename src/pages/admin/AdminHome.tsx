@@ -48,6 +48,7 @@ export default function AdminHome() {
   const badges = useBadges()
   const [dismissLeaveEndAlert, setDismissLeaveEndAlert] = useState(false)
   const [dismissOpinionAlert, setDismissOpinionAlert] = useState(false)
+  const [dismissAssistantAlert, setDismissAssistantAlert] = useState(false)
   const [stats, setStats] = useState<Statistics>({
     totalMembers: 0,
     activeMembers: 0,
@@ -95,6 +96,10 @@ export default function AdminHome() {
   useEffect(() => {
     if (badges.opinionPending > 0) setDismissOpinionAlert(false)
   }, [badges.opinionPending])
+
+  useEffect(() => {
+    if (badges.assistantPending > 0) setDismissAssistantAlert(false)
+  }, [badges.assistantPending])
 
   const loadDutyStatus = async (username: string) => {
     try {
@@ -154,11 +159,12 @@ export default function AdminHome() {
 
   const loadStatistics = async () => {
     try {
-      const [members, leaves, blackPoints, reminders, examCandidatesRes] = await Promise.all([
+      const [members, leaves, blackPoints, reminders, attendanceReminders, examCandidatesRes] = await Promise.all([
         memberAPI.getAll(),
         leaveAPI.getAll(),
         blackPointAPI.getAll(),
         reminderAPI.getAll(),
+        reminderAPI.getAttendance(false).catch(() => ({ data: [] })),
         memberAPI.getExamCandidates().catch(() => ({ data: [] })),
       ])
 
@@ -166,6 +172,7 @@ export default function AdminHome() {
       const leavesData = leaves.data || []
       const blackPointsData = blackPoints.data || []
       const remindersData = reminders.data || []
+      const attendanceData = attendanceReminders.data || []
       const examCandidatesData = examCandidatesRes?.data || []
 
       setStats({
@@ -174,7 +181,8 @@ export default function AdminHome() {
         leavingMembers: membersData.filter((m: any) => m.status === '已退队').length,
         onLeaveMembers: leavesData.filter((l: any) => l.status === '请假中').length,
         blackPoints: blackPointsData.filter((b: any) => b.status === '生效中').length,
-        reminders: remindersData.length,
+        // 与侧栏 /badges 一致：训练催促 + 考勤催促（随本页统计一并返回，避免 badges 晚到数字闪现）
+        reminders: remindersData.length + attendanceData.length,
       })
 
       setReminderList(remindersData.slice(0, 6))
@@ -228,7 +236,8 @@ export default function AdminHome() {
     badges.assessmentPending +
     badges.leavePending +
     badges.leaveEndPending +
-    badges.reminderCount
+    stats.reminders +
+    (badges.assistantPending || 0)
 
   const metricCards = [
     {
@@ -254,7 +263,7 @@ export default function AdminHome() {
     },
     {
       label: '催促名单',
-      value: badges.reminderCount,
+      value: stats.reminders,
       hint: '需跟进训练',
       color: 'text-orange-300',
       onClick: () => navigate('/admin/leave-team/reminders'),
@@ -279,6 +288,18 @@ export default function AdminHome() {
       hint: '意见箱',
       color: 'text-fuchsia-300',
       onClick: () => navigate('/admin/opinion-box'),
+    },
+    {
+      label: '助教待审',
+      value: badges.assistantPending || 0,
+      hint: '认领/加人/升阶',
+      color: 'text-teal-300',
+      onClick: () => {
+        if ((badges.assistantPending || 0) > 0) {
+          localStorage.setItem('assistantActiveTab', 'pending')
+        }
+        navigate('/admin/members/assistants')
+      },
     },
     {
       label: '生效黑点',
@@ -397,6 +418,38 @@ export default function AdminHome() {
               <button
                 onClick={() => setDismissLeaveEndAlert(true)}
                 className="text-orange-300/60 hover:text-orange-200 transition-colors flex-shrink-0"
+                aria-label="关闭提示"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {badges.assistantPending > 0 && !dismissAssistantAlert && (
+          <div className="student-glass-panel student-glass-panel--static p-4 border-teal-400/40 shadow-2xl shadow-teal-900/30">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-teal-600/30 rounded-lg flex-shrink-0">
+                <GraduationCap size={20} className="text-teal-300" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-white font-semibold text-sm">助教有待审批事项</p>
+                <p className="text-teal-200/80 text-xs mt-1">
+                  共 {badges.assistantPending} 条（认领 / 加人 / 升阶），请及时处理
+                </p>
+                <button
+                  onClick={() => {
+                    localStorage.setItem('assistantActiveTab', 'pending')
+                    navigate('/admin/members/assistants')
+                  }}
+                  className="mt-2 text-xs text-teal-300 hover:text-teal-200 font-medium transition-colors"
+                >
+                  前往助教管理 →
+                </button>
+              </div>
+              <button
+                onClick={() => setDismissAssistantAlert(true)}
+                className="text-teal-300/60 hover:text-teal-200 transition-colors flex-shrink-0"
                 aria-label="关闭提示"
               >
                 <X size={16} />
@@ -525,7 +578,7 @@ export default function AdminHome() {
 
               {dataViewMode === 'cards' ? (
                 <div className="space-y-5">
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-3 gap-3">
                     {metricCards.map((card) => (
                       <button
                         key={card.label}
@@ -731,9 +784,9 @@ export default function AdminHome() {
                         <Bell size={18} className="text-orange-400" />
                       </div>
                       催促名单
-                      {badges.reminderCount > 0 && (
+                      {stats.reminders > 0 && (
                         <span className="ml-1 px-2.5 py-0.5 bg-orange-600/20 text-orange-400 text-sm font-semibold rounded-full">
-                          {badges.reminderCount}
+                          {stats.reminders}
                         </span>
                       )}
                     </h2>
@@ -868,6 +921,16 @@ export default function AdminHome() {
                       urgent: true,
                     },
                     {
+                      label: '助教管理',
+                      path: '/admin/members/assistants',
+                      icon: GraduationCap,
+                      iconWrap: 'bg-teal-600/20',
+                      iconClass: 'text-teal-300',
+                      count: badges.assistantPending || 0,
+                      countHint: '待审',
+                      urgent: true,
+                    },
+                    {
                       label: '请假记录',
                       path: '/admin/members/leave',
                       icon: Calendar,
@@ -895,22 +958,31 @@ export default function AdminHome() {
                       icon: Bell,
                       iconWrap: 'bg-orange-600/20',
                       iconClass: 'text-orange-300',
-                      // 与侧栏一致：训练催促 + 考勤催促
-                      count: badges.reminderCount,
+                      // 与首页统计同源，避免 badges 异步晚到造成数量闪现
+                      count: stats.reminders,
                       countHint: '待跟进',
                       urgent: true,
+                      wide: true,
                     },
                   ] as const).map((item) => {
                     const count = 'count' in item ? item.count : 0
                     const showCount = typeof count === 'number' && count > 0
                     const urgent = 'urgent' in item && item.urgent
                     const countHint = 'countHint' in item ? item.countHint : ''
+                    const wide = 'wide' in item && item.wide
                     return (
                       <button
                         key={item.path + item.label}
                         type="button"
-                        onClick={() => navigate(item.path)}
-                        className="group flex flex-col items-center gap-2.5 p-4 student-glass-chip transition-all"
+                        onClick={() => {
+                          if (item.path === '/admin/members/assistants' && (badges.assistantPending || 0) > 0) {
+                            localStorage.setItem('assistantActiveTab', 'pending')
+                          }
+                          navigate(item.path)
+                        }}
+                        className={`group flex flex-col items-center gap-2.5 p-4 student-glass-chip transition-all ${
+                          wide ? 'col-span-2' : ''
+                        }`}
                       >
                         <div className={`p-2.5 rounded-lg ${item.iconWrap}`}>
                           <item.icon size={22} className={item.iconClass} />

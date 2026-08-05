@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react'
 
-const API = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000/api'
+const API = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3000/api'
 
 interface Badges {
   leavePending: number
@@ -8,6 +8,7 @@ interface Badges {
   assessmentPending: number
   reminderCount: number
   opinionPending: number
+  assistantPending: number
 }
 
 interface BadgeContextValue extends Badges {
@@ -20,12 +21,21 @@ const defaultBadges: Badges = {
   assessmentPending: 0,
   reminderCount: 0,
   opinionPending: 0,
+  assistantPending: 0,
 }
 
 const BadgeContext = createContext<BadgeContextValue>({ ...defaultBadges, refreshBadges: async () => {} })
 
 export function BadgeProvider({ children }: { children: React.ReactNode }) {
-  const [badges, setBadges] = useState<Badges>(defaultBadges)
+  const [badges, setBadges] = useState<Badges>(() => {
+    try {
+      const raw = sessionStorage.getItem('adminBadgesCache')
+      if (!raw) return defaultBadges
+      return { ...defaultBadges, ...JSON.parse(raw) }
+    } catch {
+      return defaultBadges
+    }
+  })
 
   const fetchBadges = useCallback(async () => {
     try {
@@ -36,10 +46,16 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
       })
       const data = await res.json()
       if (data.success) {
-        setBadges({
+        const next = {
           ...defaultBadges,
           ...data.data,
-        })
+        }
+        setBadges(next)
+        try {
+          sessionStorage.setItem('adminBadgesCache', JSON.stringify(next))
+        } catch {
+          /* ignore quota */
+        }
       }
     } catch {
       // silently ignore network errors

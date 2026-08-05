@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { blackPointAPI, memberAPI } from '../../utils/api'
-import { Plus, Trash2, XCircle, Filter, ChevronUp, ChevronDown, Search, X, CheckSquare, Square, Loader2 } from 'lucide-react'
+import { Plus, Trash2, XCircle, Filter, ChevronUp, ChevronDown, Search, X, CheckSquare, Square, Loader2, AlertTriangle } from 'lucide-react'
 import { formatDate } from '../../utils/dateFormat'
 import { toast } from '../../utils/toast'
 import ConfirmDialog from '../../components/ConfirmDialog'
@@ -200,6 +200,7 @@ export default function BlackPointRecords() {
         await blackPointAPI.delete(id)
       }
       toast.success(`已删除 ${ids.length} 条黑点记录`)
+      setRecords((prev) => prev.filter((r) => !selectedIds.has(r.id)))
       clearSelection()
       loadRecords()
     } catch (error: any) {
@@ -280,6 +281,7 @@ export default function BlackPointRecords() {
     try {
       await blackPointAPI.delete(record.id)
       toast.success('黑点记录删除成功')
+      setRecords((prev) => prev.filter((r) => r.id !== record.id))
       loadRecords()
     } catch (error: any) {
       toast.error(error.message || '删除失败')
@@ -292,7 +294,10 @@ export default function BlackPointRecords() {
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
         <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold text-white">黑点记录</h1>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <AlertTriangle className="text-purple-400" size={26} />
+            黑点记录
+          </h1>
           {selectedIds.size > 0 && (
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-400">
@@ -437,7 +442,30 @@ export default function BlackPointRecords() {
                     <td>{record.qq}</td>
                     <td className="max-w-xs truncate" title={record.reason}>{record.reason}</td>
                     <td>{formatDate(record.register_date)}</td>
-                    <td>{record.recorder_name}</td>
+                    <td>
+                      {(() => {
+                        const raw = record.recorder_name || ''
+                        const m = raw.match(/^(.*?)（助教提报）$/)
+                        if (m) {
+                          return (
+                            <span className="inline-flex items-center gap-1.5 flex-wrap">
+                              <span>{m[1] || '—'}</span>
+                              <span className="student-glass-badge bg-teal-500/20 text-teal-200 text-[11px] px-1.5 py-0.5">
+                                助教提报
+                              </span>
+                            </span>
+                          )
+                        }
+                        if (raw === '助教提报') {
+                          return (
+                            <span className="student-glass-badge bg-teal-500/20 text-teal-200 text-[11px] px-1.5 py-0.5">
+                              助教提报
+                            </span>
+                          )
+                        }
+                        return raw || '—'
+                      })()}
+                    </td>
                     <td>
                       <span className={`status-badge ${record.status === '生效中' ? 'bg-red-600/20 text-red-300' : 'bg-gray-600/20 text-gray-300'}`}>
                         {record.status}

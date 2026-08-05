@@ -137,7 +137,10 @@ export default function VideoUpload() {
     <div className="p-6">
       {/* 标题 */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white mb-2">视频上传管理</h1>
+        <h1 className="text-2xl font-bold text-white mb-2 flex items-center gap-2">
+          <Upload className="text-purple-400" size={26} />
+          视频上传管理
+        </h1>
         <p className="text-gray-400">上传和管理视频到 Abyss.to</p>
       </div>
 

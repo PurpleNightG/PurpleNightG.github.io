@@ -13,29 +13,39 @@ router.get('/', async (req, res) => {
   let opinionPending = 0
   let reminderCount = 0
   let attendanceReminderCount = 0
+  let assistantPending = 0
 
   try {
-    const [[row]] = await pool.query(
-      "SELECT COUNT(*) AS cnt FROM leave_applications WHERE status = '待审批'"
-    )
+    const [[row]] = await pool.query(`
+      SELECT COUNT(*) AS cnt
+      FROM leave_applications la
+      INNER JOIN members m ON m.id = la.member_id AND m.status != '已退队'
+      WHERE la.status = '待审批'
+    `)
     leavePending = Number(row.cnt)
   } catch (e) {
     console.error('[badges] leave_applications query failed:', e.message)
   }
 
   try {
-    const [[row]] = await pool.query(
-      "SELECT COUNT(*) AS cnt FROM leave_records WHERE status = '待结束审批'"
-    )
+    const [[row]] = await pool.query(`
+      SELECT COUNT(*) AS cnt
+      FROM leave_records lr
+      INNER JOIN members m ON m.id = lr.member_id AND m.status != '已退队'
+      WHERE lr.status = '待结束审批'
+    `)
     leaveEndPending = Number(row.cnt)
   } catch (e) {
     console.error('[badges] leave_end_pending query failed:', e.message)
   }
 
   try {
-    const [[row]] = await pool.query(
-      "SELECT COUNT(*) AS cnt FROM assessment_applications WHERE status = '待审批'"
-    )
+    const [[row]] = await pool.query(`
+      SELECT COUNT(*) AS cnt
+      FROM assessment_applications aa
+      INNER JOIN members m ON m.id = aa.member_id AND m.status != '已退队'
+      WHERE aa.status = '待审批'
+    `)
     assessmentPending = Number(row.cnt)
   } catch (e) {
     console.error('[badges] assessment_applications query failed:', e.message)
@@ -105,6 +115,31 @@ router.get('/', async (req, res) => {
     console.error('[badges] opinion_box query failed:', e.message)
   }
 
+  try {
+    const [[a]] = await pool.query(
+      `SELECT COUNT(*) AS cnt FROM assistant_student_assignments WHERE status = '待审批'`
+    )
+    const [[c]] = await pool.query(
+      `SELECT COUNT(*) AS cnt FROM pending_member_creates WHERE status = '待审批'`
+    )
+    const [[p]] = await pool.query(
+      `SELECT COUNT(*) AS cnt FROM pending_stage_promotions WHERE status = '待审批'`
+    )
+    const [[e]] = await pool.query(
+      `SELECT COUNT(*) AS cnt FROM pending_member_edits WHERE status = '待审批'`
+    )
+    const [[bp]] = await pool.query(
+      `SELECT COUNT(*) AS cnt FROM pending_black_points WHERE status = '待审批'`
+    )
+    const [[lv]] = await pool.query(
+      `SELECT COUNT(*) AS cnt FROM pending_leaves WHERE status = '待审批'`
+    )
+    assistantPending =
+      Number(a.cnt) + Number(c.cnt) + Number(p.cnt) + Number(e.cnt) + Number(bp.cnt) + Number(lv.cnt)
+  } catch (e) {
+    console.error('[badges] assistant pending query failed:', e.message)
+  }
+
   res.json({
     success: true,
     data: {
@@ -112,6 +147,7 @@ router.get('/', async (req, res) => {
       leaveEndPending,
       assessmentPending,
       opinionPending,
+      assistantPending,
       reminderCount: reminderCount + attendanceReminderCount,
       trainingReminderCount: reminderCount,
       attendanceReminderCount,
