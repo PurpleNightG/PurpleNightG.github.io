@@ -522,17 +522,27 @@ router.get('/invites/pending', async (req, res) => {
     if (!inv) return res.json({ invite: null })
     const code = String(inv.code || '').toUpperCase()
     const meeting = getMeeting(code)
+    let title = inv.title || meeting?.title || '紫夜会议'
+    let memberCount = meeting?.members?.size || 0
     if (!meeting) {
-      await deleteMeetingInvite(memberId, code)
-      return res.json({ invite: null })
+      // 多实例：本进程无会议时用 meeting_rooms 确认仍 open，勿误删邀请
+      const [dbRows] = await pool.execute(
+        `SELECT title FROM meeting_rooms WHERE code = ? AND status = 'open' LIMIT 1`,
+        [code]
+      )
+      if (!dbRows[0]) {
+        await deleteMeetingInvite(memberId, code)
+        return res.json({ invite: null })
+      }
+      title = inv.title || dbRows[0].title || title
     }
     res.json({
       invite: {
         code,
-        title: inv.title || meeting.title,
+        title,
         invitedBy: inv.invited_by,
         invitedAt: Number(inv.invited_at) || 0,
-        memberCount: meeting.members.size,
+        memberCount,
       },
     })
   } catch (e) {
