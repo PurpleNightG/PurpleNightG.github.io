@@ -885,18 +885,30 @@ router.get('/invites/pending', async (req, res) => {
     if (!inv) return res.json({ invite: null })
     const roomId = String(inv.room_id || '').toUpperCase()
     const room = rooms.get(roomId) || findLiveRoom(roomId)?.room
-    if (!room?.hostName) {
-      await deleteRoomInvite(memberId, roomId)
-      return res.json({ invite: null })
+    let hostName = room?.hostName || ''
+    let mode = room?.mode || 'peerjs'
+    let viewerCount = room ? getActiveViewers(room).length : 0
+    if (!hostName) {
+      // 多实例：本进程无房间时用 share_logs 确认仍在进行，勿误删邀请
+      const [logs] = await pool.execute(
+        `SELECT host_name, mode FROM share_logs WHERE room_id = ? AND ended_at IS NULL LIMIT 1`,
+        [roomId]
+      )
+      if (!logs[0]?.host_name) {
+        await deleteRoomInvite(memberId, roomId)
+        return res.json({ invite: null })
+      }
+      hostName = logs[0].host_name
+      mode = logs[0].mode || 'peerjs'
     }
     res.json({
       invite: {
         roomId,
-        hostName: room.hostName,
+        hostName,
         invitedBy: inv.invited_by,
         invitedAt: Number(inv.invited_at) || 0,
-        viewerCount: getActiveViewers(room).length,
-        mode: room.mode || 'peerjs',
+        viewerCount,
+        mode,
       },
     })
   } catch (e) {
