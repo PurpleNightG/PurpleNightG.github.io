@@ -30,6 +30,40 @@ function dbError(res, error, fallback = '操作失败') {
   return res.status(500).json({ success: false, message: error?.message || fallback })
 }
 
+/**
+ * 截图 LONGBLOB 删除后 InnoDB 常不归还表空间（SQLPub 上 OPTIMIZE 无效）。
+ * 表已空时 DROP+重建，把占用真正清掉。
+ */
+async function reclaimScreenshotSpaceIfEmpty() {
+  try {
+    const [[row]] = await pool.query('SELECT COUNT(*) AS c FROM screenshots')
+    if (Number(row?.c) !== 0) {
+      return { reclaimed: false, reason: 'screenshots_not_empty' }
+    }
+    await pool.query('DROP TABLE IF EXISTS screenshots')
+    await pool.query(`
+      CREATE TABLE screenshots (
+        id INT NOT NULL AUTO_INCREMENT,
+        exam_session_id INT NOT NULL COMMENT '考试会话ID',
+        screenshot_data LONGBLOB NOT NULL COMMENT '截图数据',
+        screenshot_time DATETIME NOT NULL COMMENT '截图时间',
+        file_size INT DEFAULT NULL COMMENT '文件大小',
+        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        KEY idx_session (exam_session_id),
+        KEY idx_time (screenshot_time),
+        CONSTRAINT screenshots_ibfk_1 FOREIGN KEY (exam_session_id)
+          REFERENCES exam_sessions(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='截图表'
+    `)
+    console.log('[anticheat] screenshots 表已空，已重建以回收空间')
+    return { reclaimed: true }
+  } catch (e) {
+    console.warn('[anticheat] 回收截图空间失败:', e.message)
+    return { reclaimed: false, reason: e.message }
+  }
+}
+
 router.use(requireAdmin)
 
 // ─── 准考证 ───────────────────────────────────────────────
@@ -225,7 +259,8 @@ router.post('/configs/:id/reactivate', async (req, res) => {
 router.delete('/configs/:id', async (req, res) => {
   try {
     await pool.query('DELETE FROM exam_configs WHERE id = ?', [req.params.id])
-    res.json({ success: true })
+    const space = await reclaimScreenshotSpaceIfEmpty()
+    res.json({ success: true, data: { space } })
   } catch (error) {
     dbError(res, error, '删除考核配置失败')
   }
@@ -239,7 +274,8 @@ router.post('/configs/batch-delete', async (req, res) => {
     }
     const placeholders = ids.map(() => '?').join(',')
     await pool.query(`DELETE FROM exam_configs WHERE id IN (${placeholders})`, ids)
-    res.json({ success: true })
+    const space = await reclaimScreenshotSpaceIfEmpty()
+    res.json({ success: true, data: { space } })
   } catch (error) {
     dbError(res, error, '批量删除失败')
   }
@@ -407,7 +443,8 @@ router.post('/sessions/:id/terminate', async (req, res) => {
 router.delete('/sessions/:id', async (req, res) => {
   try {
     await pool.query('DELETE FROM exam_sessions WHERE id = ?', [req.params.id])
-    res.json({ success: true })
+    const space = await reclaimScreenshotSpaceIfEmpty()
+    res.json({ success: true, data: { space } })
   } catch (error) {
     dbError(res, error, '删除会话失败')
   }
@@ -453,9 +490,30 @@ router.post('/sessions/batch-delete', async (req, res) => {
     }
     const placeholders = ids.map(() => '?').join(',')
     await pool.query(`DELETE FROM exam_sessions WHERE id IN (${placeholders})`, ids)
-    res.json({ success: true })
+    const space = await reclaimScreenshotSpaceIfEmpty()
+    res.json({ success: true, data: { space } })
   } catch (error) {
     dbError(res, error, '批量删除失败')
+  }
+})
+
+/** 手动回收截图表空间（仅当 screenshots 已无数据时生效） */
+router.post('/screenshots/reclaim-space', async (req, res) => {
+  try {
+    const space = await reclaimScreenshotSpaceIfEmpty()
+    if (!space.reclaimed) {
+      return res.status(400).json({
+        success: false,
+        message:
+          space.reason === 'screenshots_not_empty'
+            ? '仍有截图数据，请先删除全部相关会话后再回收'
+            : space.reason || '回收失败',
+        data: { space },
+      })
+    }
+    res.json({ success: true, message: '已回收截图表空间', data: { space } })
+  } catch (error) {
+    dbError(res, error, '回收空间失败')
   }
 })
 

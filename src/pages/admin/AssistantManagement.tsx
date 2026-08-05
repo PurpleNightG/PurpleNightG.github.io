@@ -258,7 +258,8 @@ export default function AssistantManagement() {
     try {
       await assistantAPI.adminDisable(a.id)
       toast.success('已撤销助教身份')
-      loadList()
+      // 撤销会清归属与各类申请，列表与审批中心都要重载
+      await Promise.all([loadList(), loadPending()])
     } catch (e: any) {
       toast.error(e.message || '操作失败')
     } finally {
@@ -835,7 +836,7 @@ export default function AssistantManagement() {
                             <div className="text-xs text-gray-500">{r.student_qq || ''}</div>
                           </td>
                           <td>
-                            <span className="status-badge bg-violet-600/20 text-violet-200">
+                            <span className={`student-glass-badge ${getRoleColor(r.student_stage || '')}`}>
                               {r.student_stage || '-'}
                             </span>
                           </td>
@@ -900,6 +901,8 @@ export default function AssistantManagement() {
                         <th>类型</th>
                         <th>拟添加成员</th>
                         <th>QQ</th>
+                        <th>游戏 ID</th>
+                        <th>入队日期</th>
                         <th>初始阶段</th>
                         <th>状态</th>
                         <th>申请时间</th>
@@ -919,8 +922,10 @@ export default function AssistantManagement() {
                           </td>
                           <td className="text-white font-medium">{r.nickname || '-'}</td>
                           <td className="text-gray-400">{r.qq || '-'}</td>
+                          <td className="text-gray-400 text-sm">{r.game_id || '-'}</td>
+                          <td className="text-gray-400 text-sm">{r.join_date ? formatDate(r.join_date) : '-'}</td>
                           <td>
-                            <span className="status-badge bg-violet-600/20 text-violet-200">
+                            <span className={`student-glass-badge ${getRoleColor(r.stage_role || '未新训')}`}>
                               {r.stage_role || '未新训'}
                             </span>
                           </td>
@@ -1000,9 +1005,9 @@ export default function AssistantManagement() {
                           </td>
                           <td>
                             <div className="flex items-center gap-1.5 text-sm flex-wrap">
-                              <span className="status-badge bg-gray-600/30 text-gray-300">{r.from_stage}</span>
+                              <span className={`student-glass-badge ${getRoleColor(r.from_stage || '')}`}>{r.from_stage || '-'}</span>
                               <span className="text-purple-400">→</span>
-                              <span className="status-badge bg-purple-600/25 text-purple-200">{r.to_stage}</span>
+                              <span className={`student-glass-badge ${getRoleColor(r.to_stage || '')}`}>{r.to_stage || '-'}</span>
                             </div>
                           </td>
                           <td className="text-gray-400 text-sm max-w-[12rem] truncate" title={r.reason || ''}>

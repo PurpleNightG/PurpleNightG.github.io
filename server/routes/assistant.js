@@ -10,6 +10,7 @@ import { computeStageFromCourseProgress, STAGE_SYNC_SKIP_ROLES } from '../utils/
 import {
   ASSISTANT_ROLE,
   TRAINING_ROSTER_STAGES,
+  DIRECT_STAGE_ALLOWED,
   needsStageApproval,
   isZiyeAssistantMember,
   DEFAULT_ASSISTANT_PERMISSIONS,
