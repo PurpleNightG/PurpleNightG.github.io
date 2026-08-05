@@ -8,6 +8,7 @@ import ScreenShareGuestCodesPanel from '../components/ScreenShareGuestCodesPanel
 import MeetingRoom from './MeetingRoom'
 import MemberAvatar from '../components/MemberAvatar'
 import { loadGuestSession, saveGuestSession, clearGuestSession, type GuestSession } from '../utils/guestSession'
+import { setLiveSessionBusy } from '../utils/liveSessionFlag'
 import {
   parseVolcVoiceMessage,
   setVolcLocalMicVolume,
@@ -828,6 +829,22 @@ export default function ScreenShare() {
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
+  }, [])
+
+  // 真正进入共享/会议会话时标记忙碌，大厅选房页保持可看「在线房间」
+  useEffect(() => {
+    const inSession =
+      mode === 'meeting' ||
+      mode === 'host' ||
+      mode === 'viewer' ||
+      status === 'connecting' ||
+      status === 'streaming' ||
+      status === 'watching'
+    setLiveSessionBusy(inSession)
+  }, [mode, status])
+
+  useEffect(() => {
+    return () => setLiveSessionBusy(false)
   }, [])
 
   const cleanup = useCallback(() => {

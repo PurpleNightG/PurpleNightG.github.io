@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { Video, X, LogIn, GripVertical, PhoneOff, Monitor } from 'lucide-react'
+import { isLiveSessionBusy, onLiveSessionBusyChange } from '../utils/liveSessionFlag'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
@@ -588,12 +589,8 @@ export function StudentLiveRoomsFloat() {
   const enteredRef = useRef<Set<string>>(new Set())
 
   const poll = useCallback(async () => {
-    // 已在屏幕共享/会议页时不展示在线房间（本人已在房间流程中）
-    if (
-      !isStudentLoggedIn() ||
-      location.pathname.startsWith('/admin') ||
-      location.pathname.includes('screen-share')
-    ) {
+    // 仅当已真正进入共享/会议会话时隐藏；大厅选房页仍显示
+    if (!isStudentLoggedIn() || location.pathname.startsWith('/admin') || isLiveSessionBusy()) {
       setItems([])
       return
     }
@@ -686,7 +683,11 @@ export function StudentLiveRoomsFloat() {
   useEffect(() => {
     poll()
     const iv = setInterval(poll, 2500)
-    return () => clearInterval(iv)
+    const off = onLiveSessionBusyChange(() => { void poll() })
+    return () => {
+      clearInterval(iv)
+      off()
+    }
   }, [poll])
 
   useEffect(() => {
@@ -756,11 +757,7 @@ export function StudentLiveRoomsFloat() {
     }
   }
 
-  if (
-    !isStudentLoggedIn() ||
-    location.pathname.startsWith('/admin') ||
-    location.pathname.includes('screen-share')
-  ) {
+  if (!isStudentLoggedIn() || location.pathname.startsWith('/admin') || isLiveSessionBusy()) {
     return null
   }
   if (items.length === 0 || !pos) return null
