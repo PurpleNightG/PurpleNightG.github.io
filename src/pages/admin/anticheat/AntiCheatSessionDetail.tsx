@@ -680,7 +680,7 @@ export default function AntiCheatSessionDetail() {
             {logTypeOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setLogTypeOpen(false)} />
-                <div className="absolute left-0 top-full mt-1 z-50 min-w-[180px] rounded-lg student-glass-panel student-glass-panel--static shadow-xl py-1 max-h-64 overflow-y-auto">
+                <div className="absolute left-0 top-full mt-1 z-50 min-w-[180px] rounded-lg student-glass-panel student-glass-panel--static shadow-xl py-1 max-h-64 !overflow-y-auto">
                   {LOG_TYPES.map((t) => {
                     const label = t || '全部类型'
                     const active = logType === t
@@ -707,7 +707,7 @@ export default function AntiCheatSessionDetail() {
               </>
             )}
           </div>
-          <div className="student-glass-panel student-glass-panel--static overflow-x-auto max-h-[60vh]">
+          <div className="student-glass-panel student-glass-panel--static !overflow-auto max-h-[60vh]">
             <table className="w-full text-xs">
               <thead className="bg-white/5 sticky top-0 text-gray-300">
                 <tr>
@@ -937,7 +937,7 @@ export default function AntiCheatSessionDetail() {
           {(['mod', 'binary'] as const).map((typeKey) => {
             const list = snapshots.filter((s) => s.file_type === typeKey)
             return (
-              <div key={typeKey} className="student-glass-panel student-glass-panel--static overflow-x-auto max-h-[40vh]">
+              <div key={typeKey} className="student-glass-panel student-glass-panel--static !overflow-auto max-h-[40vh]">
                 <div className="sticky top-0 z-10 px-3 py-2 bg-white/5 border-b border-white/10 flex items-center justify-between">
                   <h3 className="text-sm font-medium text-white">
                     {typeKey === 'mod' ? '模组文件' : '二进制文件'}
@@ -982,7 +982,7 @@ export default function AntiCheatSessionDetail() {
             const others = snapshots.filter((s) => s.file_type !== 'mod' && s.file_type !== 'binary')
             if (!others.length) return null
             return (
-              <div className="student-glass-panel student-glass-panel--static overflow-x-auto max-h-[30vh]">
+              <div className="student-glass-panel student-glass-panel--static !overflow-auto max-h-[30vh]">
                 <div className="sticky top-0 z-10 px-3 py-2 bg-white/5 border-b border-white/10">
                   <h3 className="text-sm font-medium text-white">
                     其他文件
@@ -1026,7 +1026,7 @@ export default function AntiCheatSessionDetail() {
 
       {tab === 'processes' && (
         <div className="space-y-3">
-          <div className="student-glass-panel student-glass-panel--static overflow-x-auto max-h-[60vh]">
+          <div className="student-glass-panel student-glass-panel--static !overflow-auto max-h-[60vh]">
             <table className="w-full text-xs">
               <thead className="bg-white/5 sticky top-0 text-gray-300">
                 <tr>
@@ -1075,7 +1075,7 @@ export default function AntiCheatSessionDetail() {
             </button>
           </div>
           <div
-            className={`student-glass-panel student-glass-panel--static overflow-x-auto ${
+            className={`student-glass-panel student-glass-panel--static !overflow-auto ${
               clientShowAll ? 'max-h-[75vh]' : 'max-h-[60vh]'
             }`}
           >
@@ -1190,7 +1190,7 @@ export default function AntiCheatSessionDetail() {
             <h3 className="text-sm text-white font-medium">
               当前白名单（{memberDllWhitelist.length}）
             </h3>
-            <div className="student-glass-panel student-glass-panel--static overflow-x-auto">
+            <div className="student-glass-panel student-glass-panel--static !overflow-auto max-h-[50vh]">
               <table className="w-full text-sm">
                 <thead className="bg-white/5 text-gray-300">
                   <tr>
