@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Edit, Trash2, Search, X, Filter, CheckSquare, Square, Settings, GripVertical, Users, Loader2, BookOpen } from 'lucide-react'
+import { Plus, Edit, Trash2, Search, X, Filter, CheckSquare, Square, Settings, GripVertical, Users, Loader2, BookOpen, ArrowUpToLine, ArrowDownToLine } from 'lucide-react'
 import {
   DndContext,
   closestCenter,
@@ -166,7 +166,7 @@ export default function CourseManagement() {
   )
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  const [dragMode, setDragMode] = useState<'insert' | 'swap'>('insert')
+  const [dragMode, setDragMode] = useState<'insert' | 'swap' | 'free'>('insert')
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [savingOrder, setSavingOrder] = useState(false)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
@@ -374,7 +374,7 @@ export default function CourseManagement() {
           const activeStage = activeItem.code.split('.')[0]
           const overStage = overItem.code.split('.')[0]
           if (activeStage !== overStage) {
-            toast.error('插入模式下不能跨阶段调整顺序，请使用替换模式')
+            toast.error('插入模式下不能跨阶段调整顺序，请使用自由排序或批量移到末尾')
             return
           }
         }
@@ -388,6 +388,16 @@ export default function CourseManagement() {
           return { ...item, code: `${categoryPrefix}.${indexInCategory}`, order: index + 1 }
         })
         setCourses(updatedItems)
+      } else if (dragMode === 'free') {
+        // 自由排序：可跨阶段，只改 order，保留原 code
+        const oldIndex = courses.findIndex(item => item.id === active.id)
+        const newIndex = courses.findIndex(item => item.id === over.id)
+        if (oldIndex < 0 || newIndex < 0) return
+        const newItems = arrayMove(courses, oldIndex, newIndex).map((item, index) => ({
+          ...item,
+          order: index + 1,
+        }))
+        setCourses(newItems)
       } else {
         // 替换模式：仅交换课程名称，编号和序号保持不变
         setCourses(prev => {
@@ -402,6 +412,32 @@ export default function CourseManagement() {
       }
       setHasUnsavedChanges(true)
     }
+  }
+
+  /** 批量移动选中课程到开头/末尾（按全量列表，保留 code） */
+  const moveSelectedTo = (position: 'start' | 'end') => {
+    if (selectedIds.size === 0) {
+      toast.error('请先勾选要移动的课程')
+      return
+    }
+    const selected: Course[] = []
+    const rest: Course[] = []
+    for (const c of courses) {
+      if (selectedIds.has(c.id)) selected.push(c)
+      else rest.push(c)
+    }
+    if (selected.length === 0) {
+      toast.error('选中的课程不在当前列表中')
+      return
+    }
+    const merged = position === 'start' ? [...selected, ...rest] : [...rest, ...selected]
+    setCourses(merged.map((item, index) => ({ ...item, order: index + 1 })))
+    setHasUnsavedChanges(true)
+    toast.success(
+      position === 'end'
+        ? `已将 ${selected.length} 门课程移到末尾，请点击「保存顺序」`
+        : `已将 ${selected.length} 门课程移到开头，请点击「保存顺序」`
+    )
   }
 
   const handleSaveOrder = async () => {
@@ -971,9 +1007,27 @@ export default function CourseManagement() {
 
       {selectedIds.size > 0 && (
         <div className="bg-purple-900/20 border border-purple-700 rounded-lg p-4 mb-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <span className="text-white font-semibold">批量操作</span>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => moveSelectedTo('start')}
+                className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded text-sm transition-colors inline-flex items-center gap-1.5"
+                title="保留课程编号，仅调整显示顺序"
+              >
+                <ArrowUpToLine size={14} />
+                移到开头
+              </button>
+              <button
+                type="button"
+                onClick={() => moveSelectedTo('end')}
+                className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded text-sm transition-colors inline-flex items-center gap-1.5"
+                title="保留课程编号，仅调整显示顺序"
+              >
+                <ArrowDownToLine size={14} />
+                移到末尾
+              </button>
               <button onClick={openBatchAssignModal} className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm transition-colors">
                 批量分配
               </button>
@@ -1039,15 +1093,25 @@ export default function CourseManagement() {
 
       {/* 拖拽模式切换 + 未保存更改提示 */}
       <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm text-gray-400">拖拽模式：</span>
           <button
             onClick={() => setDragMode('insert')}
             className={`px-3 py-1 rounded text-sm transition-colors ${
               dragMode === 'insert' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
             }`}
+            title="同阶段内插入并排序重编号"
           >
             插入
+          </button>
+          <button
+            onClick={() => setDragMode('free')}
+            className={`px-3 py-1 rounded text-sm transition-colors ${
+              dragMode === 'free' ? 'bg-emerald-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            }`}
+            title="可跨阶段拖动，只改顺序不改编号"
+          >
+            自由排序
           </button>
           <button
             onClick={() => setDragMode('swap')}
@@ -1057,6 +1121,9 @@ export default function CourseManagement() {
           >
             替换名称
           </button>
+          {dragMode === 'free' && (
+            <span className="text-[11px] text-gray-500">可跨阶段 · 保留原编号</span>
+          )}
         </div>
         {hasUnsavedChanges && (
           <div className="flex items-center gap-3">
