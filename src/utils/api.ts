@@ -524,12 +524,13 @@ export const courseAPI = {
   getCategories: () => request('/courses/config/categories'),
   
   // 更新类别配置
-  updateCategories: async (categories: string[]) => {
+  updateCategories: async (categories: Array<string | { name: string; color?: string }>) => {
     const result = await request('/courses/config/categories', {
       method: 'PUT',
       body: JSON.stringify({ categories }),
     })
     clearCache('/courses')
+    clearCache('/courses/config/categories')
     return result
   },
   
@@ -537,12 +538,13 @@ export const courseAPI = {
   getDifficulties: () => request('/courses/config/difficulties'),
   
   // 更新难度配置
-  updateDifficulties: async (difficulties: string[]) => {
+  updateDifficulties: async (difficulties: Array<string | { name: string; color?: string }>) => {
     const result = await request('/courses/config/difficulties', {
       method: 'PUT',
       body: JSON.stringify({ difficulties }),
     })
     clearCache('/courses')
+    clearCache('/courses/config/difficulties')
     return result
   }
 }
@@ -1124,6 +1126,10 @@ export const surveyAPI = {
     return result
   },
   results: (id: number) => request(`/surveys/${id}/results`),
+  publicResults: (id: number) =>
+    request(`/surveys/${id}/public-results`, {
+      headers: { Authorization: `Bearer ${getStudentAuthToken()}` },
+    }),
 
   // 学员端（显式带 studentToken）
   available: () =>
@@ -1157,6 +1163,76 @@ export const surveyAPI = {
       method: 'POST',
       headers: { Authorization: `Bearer ${getStudentAuthToken()}` },
       body: JSON.stringify({ answers }),
+    }),
+}
+
+/** 在线表格文档 */
+export const sheetAPI = {
+  list: () => request('/sheets'),
+  get: (id: number) => request(`/sheets/${id}`),
+  create: async (data: any) => {
+    const result = await request('/sheets', { method: 'POST', body: JSON.stringify(data) })
+    clearCache('/sheets')
+    return result
+  },
+  update: async (id: number, data: any) => {
+    const result = await request(`/sheets/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+    clearCache('/sheets')
+    return result
+  },
+  delete: async (id: number) => {
+    const result = await request(`/sheets/${id}`, { method: 'DELETE' })
+    clearCache('/sheets')
+    return result
+  },
+  copy: async (
+    id: number,
+    data: {
+      title?: string
+      description?: string
+      access_mode?: string
+      status?: string
+      assignee_ids?: number[]
+    }
+  ) => {
+    const result = await request(`/sheets/${id}/copy`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+    clearCache('/sheets')
+    return result
+  },
+  studentList: () =>
+    request('/sheets/student/list', {
+      headers: { Authorization: `Bearer ${getStudentAuthToken()}` },
+    }),
+  studentGet: (id: number) =>
+    request(`/sheets/student/${id}`, {
+      headers: { Authorization: `Bearer ${getStudentAuthToken()}` },
+    }),
+  studentSave: async (id: number, content: any) => {
+    const result = await request(`/sheets/student/${id}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${getStudentAuthToken()}` },
+      body: JSON.stringify({ content }),
+    })
+    clearCache('/sheets')
+    return result
+  },
+  revisions: (id: number) => request(`/sheets/${id}/revisions`),
+  revisionDetail: (id: number, revId: number) => request(`/sheets/${id}/revisions/${revId}`),
+  restoreRevision: async (id: number, revId: number) => {
+    const result = await request(`/sheets/${id}/revisions/${revId}/restore`, { method: 'POST' })
+    clearCache('/sheets')
+    return result
+  },
+  studentRevisions: (id: number) =>
+    request(`/sheets/student/${id}/revisions`, {
+      headers: { Authorization: `Bearer ${getStudentAuthToken()}` },
+    }),
+  studentRevisionDetail: (id: number, revId: number) =>
+    request(`/sheets/student/${id}/revisions/${revId}`, {
+      headers: { Authorization: `Bearer ${getStudentAuthToken()}` },
     }),
 }
 

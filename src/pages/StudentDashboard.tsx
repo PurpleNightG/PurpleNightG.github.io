@@ -14,6 +14,9 @@ import StudentClassmates from './StudentClassmates'
 import StudentBlackPoints from './StudentBlackPoints'
 import StudentLeave from './StudentLeave'
 import StudentSurveys from './StudentSurveys'
+import StudentSurveyResults from './StudentSurveyResults'
+import StudentSheets from './StudentSheets'
+import StudentSheetView from './StudentSheetView'
 import StudentOpinionBox from './StudentOpinionBox'
 import AccountSecurity from './AccountSecurity'
 
@@ -71,7 +74,7 @@ function StudentDashboardContent() {
         className="flex-1 min-h-0 md:ml-[17.25rem] overflow-y-auto overflow-x-hidden flex flex-col"
       >
         <SurveyReminderBanner />
-        <div className="flex-1 w-full min-w-0">
+        <div className="flex-1 w-full min-w-0 min-h-0 flex flex-col">
           <Routes>
             <Route index element={<StudentHome />} />
             <Route path="progress" element={<StudentProgress />} />
@@ -82,6 +85,9 @@ function StudentDashboardContent() {
             <Route path="leave" element={<StudentLeave />} />
             <Route path="videos" element={<PublicVideos />} />
             <Route path="surveys" element={<StudentSurveys />} />
+            <Route path="surveys/:id/results" element={<StudentSurveyResults />} />
+            <Route path="sheets" element={<StudentSheets />} />
+            <Route path="sheets/:id" element={<StudentSheetView />} />
             <Route path="opinion-box" element={<StudentOpinionBox />} />
             <Route path="account-security" element={<AccountSecurity />} />
           </Routes>

@@ -1048,6 +1048,29 @@ body {
   scrollbar-width: none;  /* Firefox */
 }
 
+/* Ultra-thin scrollbar for spreadsheet */
+.sheet-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+}
+.sheet-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.sheet-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sheet-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 999px;
+}
+.sheet-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(167, 139, 250, 0.55);
+}
+.sheet-scrollbar::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* Ultra-thin scrollbar for time/date pickers */
 .picker-scrollbar::-webkit-scrollbar {
   width: 3px;

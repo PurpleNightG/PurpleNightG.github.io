@@ -68,6 +68,8 @@ interface Survey {
   end_at: string | null
   /** 填写人数上限，null/不填=不限制 */
   max_responses: number | null
+  /** 是否允许学员查看结果 */
+  results_public: boolean
   status: 'draft' | 'published' | 'closed'
   audience_roles: string[]
   response_count?: number
@@ -152,6 +154,7 @@ const emptyForm = (): Omit<Survey, 'id'> => ({
   start_at: null,
   end_at: null,
   max_responses: null,
+  results_public: false,
   status: 'draft',
   audience_roles: [],
 })
@@ -330,6 +333,7 @@ export default function SurveyManagement() {
         start_at: s.start_at,
         end_at: s.end_at,
         max_responses: s.max_responses != null && Number(s.max_responses) > 0 ? Number(s.max_responses) : null,
+        results_public: !!s.results_public,
         status: s.status,
         audience_roles: s.audience_roles || [],
       })
@@ -433,6 +437,7 @@ export default function SurveyManagement() {
         start_at: s.start_at,
         end_at: s.end_at,
         max_responses: s.max_responses != null && Number(s.max_responses) > 0 ? Number(s.max_responses) : null,
+        results_public: !!s.results_public,
         audience_roles: s.audience_roles || [],
         status: 'draft',
       })
@@ -993,6 +998,20 @@ export default function SurveyManagement() {
                     className="accent-blue-600"
                   />
                   匿名填写（登录领券，交卷不带身份）
+                </label>
+                <label className="flex items-start gap-2 text-gray-800 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!form.results_public}
+                    onChange={(e) => setForm({ ...form, results_public: e.target.checked })}
+                    className="accent-blue-600 mt-0.5"
+                  />
+                  <span>
+                    公开查看结果
+                    <span className="block text-xs text-gray-500 mt-0.5">
+                      开启后，投放范围内的学员可查看统计结果（不含答卷身份明细）
+                    </span>
+                  </span>
                 </label>
 
                 <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 space-y-2">

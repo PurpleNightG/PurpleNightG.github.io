@@ -2,8 +2,42 @@ import { useState, useEffect } from "react";
 import { useBadges } from "../../contexts/BadgeContext";
 import { useSurveyPending } from "../../contexts/SurveyPendingContext";
 import { motion, AnimatePresence } from "framer-motion";
-import { Home, Users, BookOpen, FileCheck, UserMinus, ChevronDown, FileText, Video, Monitor, AlertTriangle, Calendar, BookMarked, ClipboardList, Mailbox, Shield, GraduationCap } from "lucide-react";
+import { Home, Users, BookOpen, FileCheck, UserMinus, ChevronDown, FileText, Video, Monitor, AlertTriangle, Calendar, BookMarked, ClipboardList, Mailbox, Shield, GraduationCap, Table2 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
+import { assistantAPI } from "../../utils/api";
+
+function readAssistantFlagFromStorage(): boolean {
+  try {
+    const raw = localStorage.getItem('studentUser') || sessionStorage.getItem('studentUser');
+    if (!raw) return false;
+    const u = JSON.parse(raw);
+    return !!(Number(u?.is_ziye_assistant) === 1 || u?.stage_role === '紫夜助教');
+  } catch {
+    return false;
+  }
+}
+
+function patchStudentUserAssistant(member: Record<string, unknown> | null | undefined) {
+  if (!member) return;
+  const storages = [localStorage, sessionStorage] as const;
+  for (const storage of storages) {
+    const raw = storage.getItem('studentUser');
+    if (!raw) continue;
+    try {
+      const prev = JSON.parse(raw);
+      storage.setItem(
+        'studentUser',
+        JSON.stringify({
+          ...prev,
+          is_ziye_assistant: member.is_ziye_assistant ?? prev.is_ziye_assistant,
+          stage_role: member.stage_role ?? prev.stage_role,
+        })
+      );
+    } catch {
+      /* ignore */
+    }
+  }
+}
 
 const AnimatedMenuToggle = ({
   toggle,
@@ -321,6 +355,7 @@ const AdminNav = ({ expandedMenus, toggleMenu }: AdminNavProps) => {
       <SubNavItem path="/admin/leave-team/retention" label="留队管理" />
     </CollapsibleSection>
     <NavItem path="/admin/docs" icon={<BookMarked size={20} />} label="文档管理" />
+    <NavItem path="/admin/sheets" icon={<Table2 size={20} />} label="表格文档" />
     <NavItem path="/admin/surveys" icon={<ClipboardList size={20} />} label="填表管理" />
     <NavItem path="/admin/opinion-box" icon={<Mailbox size={20} />} label="意见箱" badge={badges.opinionPending} />
     <NavItem path="/admin/account-security" icon={<Shield size={20} />} label="账户安全" />
@@ -427,6 +462,7 @@ const studentMenuItems = [
   { path: '/student/leave', icon: <Calendar size={20} />, label: '请假记录' },
   { path: '/student/videos', icon: <Video size={20} />, label: '公开报告查看' },
   { path: '/student/surveys', icon: <ClipboardList size={20} />, label: '填表' },
+  { path: '/student/sheets', icon: <Table2 size={20} />, label: '表格文档' },
   { path: '/student/opinion-box', icon: <Mailbox size={20} />, label: '意见箱' },
   { path: '/student/account-security', icon: <Shield size={20} />, label: '账户安全' },
 ];
@@ -474,14 +510,28 @@ const StudentNavItem = ({
 
 const StudentNav = () => {
   const { count } = useSurveyPending();
-  let isAssistant = false;
-  try {
-    const raw = localStorage.getItem('studentUser') || sessionStorage.getItem('studentUser');
-    if (raw) {
-      const u = JSON.parse(raw)
-      isAssistant = !!(Number(u?.is_ziye_assistant) === 1 || u?.stage_role === '紫夜助教')
-    }
-  } catch { /* ignore */ }
+  const [isAssistant, setIsAssistant] = useState(readAssistantFlagFromStorage);
+
+  useEffect(() => {
+    let cancelled = false;
+    // 以服务端助教身份为准，避免本地缓存缺 is_ziye_assistant 导致入口消失
+    assistantAPI
+      .me()
+      .then((res) => {
+        if (cancelled) return;
+        const member = res.data?.member;
+        patchStudentUserAssistant(member);
+        setIsAssistant(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // 非助教或无权限：保留 storage 里的判断（可能离线），不强行隐藏已显示入口
+        setIsAssistant(readAssistantFlagFromStorage());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
   <nav className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden py-4 px-3 scrollbar-none">

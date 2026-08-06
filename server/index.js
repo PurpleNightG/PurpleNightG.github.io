@@ -31,6 +31,7 @@ import docsRoutes from './routes/docs.js'
 import badgesRoutes from './routes/badges.js'
 import anticheatRoutes from './routes/anticheat.js'
 import surveysRoutes from './routes/surveys.js'
+import sheetsRoutes from './routes/sheets.js'
 import opinionBoxRoutes from './routes/opinionBox.js'
 import accountSecurityRoutes from './routes/accountSecurity.js'
 import assistantRoutes from './routes/assistant.js'
@@ -112,6 +113,7 @@ app.use('/api/docs', docsRoutes)
 app.use('/api/badges', badgesRoutes)
 app.use('/api/anticheat', anticheatRoutes)
 app.use('/api/surveys', surveysRoutes)
+app.use('/api/sheets', sheetsRoutes)
 app.use('/api/opinion-box', opinionBoxRoutes)
 app.use('/api/account-security', accountSecurityRoutes)
 app.use('/api/assistant', assistantRoutes)

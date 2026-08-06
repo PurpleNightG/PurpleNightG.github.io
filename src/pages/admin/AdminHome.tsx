@@ -19,6 +19,7 @@ interface Statistics {
   activeMembers: number
   leavingMembers: number
   onLeaveMembers: number
+  assistantCount: number
   blackPoints: number
   reminders: number
 }
@@ -54,6 +55,7 @@ export default function AdminHome() {
     activeMembers: 0,
     leavingMembers: 0,
     onLeaveMembers: 0,
+    assistantCount: 0,
     blackPoints: 0,
     reminders: 0,
   })
@@ -180,6 +182,9 @@ export default function AdminHome() {
         activeMembers: membersData.filter((m: any) => m.status === '正常').length,
         leavingMembers: membersData.filter((m: any) => m.status === '已退队').length,
         onLeaveMembers: leavesData.filter((l: any) => l.status === '请假中').length,
+        assistantCount: membersData.filter(
+          (m: any) => Number(m.is_ziye_assistant) === 1 || m.stage_role === '紫夜助教'
+        ).length,
         blackPoints: blackPointsData.filter((b: any) => b.status === '生效中').length,
         // 与侧栏 /badges 一致：训练催促 + 考勤催促（随本页统计一并返回，避免 badges 晚到数字闪现）
         reminders: remindersData.length + attendanceData.length,
@@ -193,11 +198,12 @@ export default function AdminHome() {
 
       const stages = [
         '未新训', '新训初期', '新训一期', '新训二期', '新训三期',
-        '新训准考', '紫夜', '紫夜尖兵',
+        '新训准考', '紫夜', '紫夜尖兵', '紫夜助教',
       ]
       const textColors = [
         'text-gray-300', 'text-sky-300', 'text-cyan-300', 'text-teal-300',
         'text-emerald-300', 'text-amber-300', 'text-purple-300', 'text-violet-300',
+        'text-teal-200',
       ]
       setStageDistribution(
         stages.map((stage, index) => ({
@@ -262,6 +268,13 @@ export default function AdminHome() {
       onClick: () => navigate('/admin/members/leave'),
     },
     {
+      label: '助教',
+      value: stats.assistantCount,
+      hint: '紫夜助教人数',
+      color: 'text-teal-200',
+      onClick: () => navigate('/admin/members/assistants'),
+    },
+    {
       label: '催促名单',
       value: stats.reminders,
       hint: '需跟进训练',
@@ -320,7 +333,7 @@ export default function AdminHome() {
       color: '#a78bfa',
     }))
     const stages = stageDistribution.map((s, i) => {
-      const colors = ['#94a3b8', '#7dd3fc', '#67e8f9', '#5eead4', '#6ee7b7', '#fcd34d', '#c4b5fd', '#a78bfa']
+      const colors = ['#94a3b8', '#7dd3fc', '#67e8f9', '#5eead4', '#6ee7b7', '#fcd34d', '#c4b5fd', '#a78bfa', '#5eead4']
       return {
         label: s.stage,
         count: s.count,
@@ -578,7 +591,7 @@ export default function AdminHome() {
 
               {dataViewMode === 'cards' ? (
                 <div className="space-y-5">
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                     {metricCards.map((card) => (
                       <button
                         key={card.label}

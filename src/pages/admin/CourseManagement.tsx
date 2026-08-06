@@ -22,6 +22,14 @@ import { CSS } from '@dnd-kit/utilities'
 import { courseAPI, progressAPI, memberAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
 import StyledSelect from '../../components/StyledSelect'
+import {
+  TAG_COLOR_KEYS,
+  TAG_COLOR_SWATCH,
+  tagBadgeClass,
+  parseMetaOptions,
+  type MetaOption,
+  type TagColorKey,
+} from '../../utils/tagColors'
 
 interface Course {
   id: string
@@ -143,8 +151,19 @@ export default function CourseManagement() {
   const navigate = useNavigate()
   const [courses, setCourses] = useState<Course[]>([])
   const [filteredCourses, setFilteredCourses] = useState<Course[]>([])
-  const [categories, setCategories] = useState<string[]>(['入门课程', '标准技能一阶课程', '标准技能二阶课程', '团队训练', '进阶课程'])
-  const [difficulties, setDifficulties] = useState<string[]>(['初级', '中级', '高级'])
+  const [categories, setCategories] = useState<MetaOption[]>(
+    parseMetaOptions(null, ['入门课程', '标准技能一阶课程', '标准技能二阶课程', '团队训练', '进阶课程'])
+  )
+  const [difficulties, setDifficulties] = useState<MetaOption[]>(
+    parseMetaOptions(
+      [
+        { name: '初级', color: 'green' },
+        { name: '中级', color: 'blue' },
+        { name: '高级', color: 'red' },
+      ],
+      ['初级', '中级', '高级']
+    )
+  )
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [dragMode, setDragMode] = useState<'insert' | 'swap'>('insert')
@@ -209,6 +228,7 @@ export default function CourseManagement() {
 
   useEffect(() => {
     loadCourses()
+    loadMetaOptions()
   }, [])
 
   // 保存搜索关键词到localStorage
@@ -224,6 +244,32 @@ export default function CourseManagement() {
   useEffect(() => {
     filterCourses()
   }, [courses, searchQuery, filters])
+
+  const categoryNames = categories.map((c) => c.name)
+  const difficultyNames = difficulties.map((d) => d.name)
+
+  const loadMetaOptions = async () => {
+    try {
+      const [catRes, diffRes] = await Promise.all([
+        courseAPI.getCategories(),
+        courseAPI.getDifficulties(),
+      ])
+      setCategories(
+        parseMetaOptions(catRes.data, [
+          '入门课程',
+          '标准技能一阶课程',
+          '标准技能二阶课程',
+          '团队训练',
+          '进阶课程',
+        ])
+      )
+      setDifficulties(
+        parseMetaOptions(diffRes.data, ['初级', '中级', '高级'])
+      )
+    } catch (error: any) {
+      console.error('加载类别/难度配置失败:', error)
+    }
+  }
 
   const loadCourses = async () => {
     setLoading(true)
@@ -412,8 +458,8 @@ export default function CourseManagement() {
     setFormData({
       code: '',
       name: '',
-      category: categories[0],
-      difficulty: difficulties[0],
+      category: categoryNames[0] || '入门课程',
+      difficulty: difficultyNames[0] || '初级',
       hours: 1,
       description: ''
     })
@@ -585,35 +631,105 @@ export default function CourseManagement() {
     setShowAddConfigModal(true)
   }
 
-  const addConfig = () => {
-    if (newConfigName && newConfigName.trim()) {
+  const addConfig = async () => {
+    const name = newConfigName?.trim()
+    if (!name) {
+      toast.error('请输入名称')
+      return
+    }
+    try {
+      setSubmitting(true)
       if (configType === 'category') {
-        if (!categories.includes(newConfigName.trim())) {
-          setCategories([...categories, newConfigName.trim()])
-          toast.success(`类别 "${newConfigName.trim()}" 添加成功`)
-        } else {
+        if (categories.some((c) => c.name === name)) {
           toast.error('该类别已存在')
+          return
         }
+        const color = TAG_COLOR_KEYS[categories.length % TAG_COLOR_KEYS.length]
+        const next = [...categories, { name, color }]
+        const res = await courseAPI.updateCategories(next)
+        setCategories(parseMetaOptions(res.data, next.map((x) => x.name)))
+        toast.success(`类别 "${name}" 添加成功`)
       } else {
-        if (!difficulties.includes(newConfigName.trim())) {
-          setDifficulties([...difficulties, newConfigName.trim()])
-          toast.success(`难度 "${newConfigName.trim()}" 添加成功`)
-        } else {
+        if (difficulties.some((d) => d.name === name)) {
           toast.error('该难度已存在')
+          return
         }
+        const color = TAG_COLOR_KEYS[difficulties.length % TAG_COLOR_KEYS.length]
+        const next = [...difficulties, { name, color }]
+        const res = await courseAPI.updateDifficulties(next)
+        setDifficulties(parseMetaOptions(res.data, next.map((x) => x.name)))
+        toast.success(`难度 "${name}" 添加成功`)
       }
       setShowAddConfigModal(false)
       setNewConfigName('')
-    } else {
-      toast.error('请输入名称')
+    } catch (error: any) {
+      toast.error(error.message || '保存失败')
+    } finally {
+      setSubmitting(false)
     }
   }
 
-  const removeConfig = (name: string) => {
+  const removeConfig = async (name: string) => {
     if (configType === 'category') {
-      setCategories(categories.filter(c => c !== name))
+      if (courses.some((c) => c.category === name)) {
+        toast.error('仍有课程使用该类别，无法删除')
+        return
+      }
+      if (categories.length <= 1) {
+        toast.error('至少保留一个类别')
+        return
+      }
+      try {
+        setSubmitting(true)
+        const next = categories.filter((c) => c.name !== name)
+        const res = await courseAPI.updateCategories(next)
+        setCategories(parseMetaOptions(res.data, next.map((x) => x.name)))
+        toast.success('类别已删除')
+      } catch (error: any) {
+        toast.error(error.message || '删除失败')
+      } finally {
+        setSubmitting(false)
+      }
     } else {
-      setDifficulties(difficulties.filter(d => d !== name))
+      if (courses.some((c) => c.difficulty === name)) {
+        toast.error('仍有课程使用该难度，无法删除')
+        return
+      }
+      if (difficulties.length <= 1) {
+        toast.error('至少保留一个难度')
+        return
+      }
+      try {
+        setSubmitting(true)
+        const next = difficulties.filter((d) => d.name !== name)
+        const res = await courseAPI.updateDifficulties(next)
+        setDifficulties(parseMetaOptions(res.data, next.map((x) => x.name)))
+        toast.success('难度已删除')
+      } catch (error: any) {
+        toast.error(error.message || '删除失败')
+      } finally {
+        setSubmitting(false)
+      }
+    }
+  }
+
+  const changeOptionColor = async (name: string, color: TagColorKey) => {
+    try {
+      setSubmitting(true)
+      if (configType === 'category') {
+        const next = categories.map((c) => (c.name === name ? { ...c, color } : c))
+        const res = await courseAPI.updateCategories(next)
+        setCategories(parseMetaOptions(res.data, next.map((x) => x.name)))
+      } else {
+        const next = difficulties.map((d) => (d.name === name ? { ...d, color } : d))
+        const res = await courseAPI.updateDifficulties(next)
+        setDifficulties(parseMetaOptions(res.data, next.map((x) => x.name)))
+      }
+      toast.success('颜色已更新')
+    } catch (error: any) {
+      toast.error(error.message || '颜色保存失败')
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -775,24 +891,15 @@ export default function CourseManagement() {
   }
 
   const getDifficultyColor = (difficulty: string) => {
-    switch (difficulty) {
-      case '初级': return 'bg-green-600/20 text-green-300'
-      case '中级': return 'bg-blue-600/20 text-blue-300'
-      case '高级': return 'bg-red-600/20 text-red-300'
-      default: return 'bg-gray-600/20 text-gray-300'
-    }
+    const found = difficulties.find((d) => d.name === difficulty)
+    return tagBadgeClass(found?.color || (difficulty === '初级' ? 'green' : difficulty === '高级' ? 'red' : 'blue'))
   }
 
   const getCategoryColor = (category: string) => {
-    const index = categories.indexOf(category)
-    const colors = [
-      'bg-purple-600/20 text-purple-300',
-      'bg-blue-600/20 text-blue-300',
-      'bg-cyan-600/20 text-cyan-300',
-      'bg-yellow-600/20 text-yellow-300',
-      'bg-orange-600/20 text-orange-300'
-    ]
-    return colors[index % colors.length] || 'bg-gray-600/20 text-gray-300'
+    const found = categories.find((c) => c.name === category)
+    if (found) return tagBadgeClass(found.color)
+    const index = Math.max(0, categoryNames.indexOf(category))
+    return tagBadgeClass(TAG_COLOR_KEYS[index % TAG_COLOR_KEYS.length])
   }
 
   const activeFilterCount = filters.categories.length + filters.difficulties.length
@@ -893,7 +1000,7 @@ export default function CourseManagement() {
             <div>
               <label className="text-sm text-gray-400 mb-2 block">课程类别</label>
               <div className="flex flex-wrap gap-2">
-                {categories.map(cat => (
+                {categoryNames.map(cat => (
                   <button
                     key={cat}
                     onClick={() => toggleFilter('categories', cat)}
@@ -911,7 +1018,7 @@ export default function CourseManagement() {
             <div>
               <label className="text-sm text-gray-400 mb-2 block">课程难度</label>
               <div className="flex flex-wrap gap-2">
-                {difficulties.map(diff => (
+                {difficultyNames.map(diff => (
                   <button
                     key={diff}
                     onClick={() => toggleFilter('difficulties', diff)}
@@ -1094,7 +1201,7 @@ export default function CourseManagement() {
                   <label className="block text-sm font-medium text-gray-300 mb-1">课程类别 *</label>
                   <StyledSelect
                     required
-                    options={categories}
+                    options={categoryNames}
                     value={formData.category}
                     onChange={(value) => setFormData({ ...formData, category: value })}
                   />
@@ -1103,7 +1210,7 @@ export default function CourseManagement() {
                   <label className="block text-sm font-medium text-gray-300 mb-1">课程难度 *</label>
                   <StyledSelect
                     required
-                    options={difficulties}
+                    options={difficultyNames}
                     value={formData.difficulty}
                     onChange={(value) => setFormData({ ...formData, difficulty: value })}
                   />
@@ -1159,7 +1266,7 @@ export default function CourseManagement() {
                 <label className="block text-sm font-medium text-gray-300 mb-1">类别（留空不修改）</label>
                 <StyledSelect
                   placeholder="不修改"
-                  options={[{ value: '', label: '不修改' }, ...categories.map((cat) => ({ value: cat, label: cat }))]}
+                  options={[{ value: '', label: '不修改' }, ...categoryNames.map((cat) => ({ value: cat, label: cat }))]}
                   value={batchFormData.category}
                   onChange={(value) => setBatchFormData({ ...batchFormData, category: value })}
                 />
@@ -1169,7 +1276,7 @@ export default function CourseManagement() {
                 <label className="block text-sm font-medium text-gray-300 mb-1">难度（留空不修改）</label>
                 <StyledSelect
                   placeholder="不修改"
-                  options={[{ value: '', label: '不修改' }, ...difficulties.map((diff) => ({ value: diff, label: diff }))]}
+                  options={[{ value: '', label: '不修改' }, ...difficultyNames.map((diff) => ({ value: diff, label: diff }))]}
                   value={batchFormData.difficulty}
                   onChange={(value) => setBatchFormData({ ...batchFormData, difficulty: value })}
                 />
@@ -1241,16 +1348,34 @@ export default function CourseManagement() {
               </button>
             </div>
 
-            <div className="space-y-2 mb-4 max-h-64 overflow-y-auto">
-              {(configType === 'category' ? categories : difficulties).map(item => (
-                <div key={item} className="flex justify-between items-center bg-gray-700/50 px-3 py-2 rounded">
-                  <span className="text-white">{item}</span>
-                  <button
-                    onClick={() => removeConfig(item)}
-                    className="text-red-400 hover:text-red-300 transition-colors"
-                  >
-                    <X size={16} />
-                  </button>
+            <div className="space-y-2 mb-4 max-h-72 overflow-y-auto">
+              {(configType === 'category' ? categories : difficulties).map((item) => (
+                <div key={item.name} className="bg-gray-700/50 px-3 py-2 rounded space-y-2">
+                  <div className="flex justify-between items-center gap-2">
+                    <span className={`status-badge ${tagBadgeClass(item.color)}`}>{item.name}</span>
+                    <button
+                      onClick={() => removeConfig(item.name)}
+                      className="text-red-400 hover:text-red-300 transition-colors shrink-0"
+                      title="删除"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {TAG_COLOR_KEYS.map((key) => (
+                      <button
+                        key={key}
+                        type="button"
+                        title={key}
+                        disabled={submitting}
+                        onClick={() => changeOptionColor(item.name, key)}
+                        className={`w-5 h-5 rounded-full border-2 transition-transform ${
+                          item.color === key ? 'border-white scale-110' : 'border-transparent opacity-80 hover:opacity-100'
+                        }`}
+                        style={{ backgroundColor: TAG_COLOR_SWATCH[key] }}
+                      />
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
@@ -1312,9 +1437,10 @@ export default function CourseManagement() {
               </button>
               <button
                 onClick={addConfig}
-                className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors"
+                disabled={submitting}
+                className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors disabled:opacity-50"
               >
-                添加
+                {submitting ? '保存中…' : '添加'}
               </button>
             </div>
           </div>

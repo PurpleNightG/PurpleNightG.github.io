@@ -171,6 +171,16 @@ async function runMigrations() {
     if (e.code !== 'ER_DUP_FIELDNAME') throw e
   }
 
+  try {
+    await pool.query(`
+      ALTER TABLE surveys
+      ADD COLUMN results_public TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否允许学员公开查看结果' AFTER max_responses
+    `)
+    console.log('✅ surveys.results_public 字段迁移完成')
+  } catch (e) {
+    if (e.code !== 'ER_DUP_FIELDNAME') throw e
+  }
+
   console.log('✅ surveys 相关表迁移完成')
 
   const [phase3Col] = await pool.query(`
@@ -544,6 +554,154 @@ async function runMigrations() {
       INDEX idx_daily_asst_date (assistant_member_id, assign_date),
       INDEX idx_daily_student_date (student_member_id, assign_date)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='助教当日临时学员'
+  `)
+
+  // 课程类别 / 难度配置（独立于 courses 行，空类别也可持久化）
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS course_meta_options (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      kind ENUM('category', 'difficulty') NOT NULL COMMENT '类别或难度',
+      name VARCHAR(100) NOT NULL COMMENT '显示名称',
+      color VARCHAR(32) NOT NULL DEFAULT 'purple' COMMENT '标签颜色token',
+      sort_order INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uk_kind_name (kind, name),
+      INDEX idx_kind_order (kind, sort_order)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='课程类别与难度配置'
+  `)
+
+  try {
+    await pool.query(`
+      ALTER TABLE course_meta_options
+      ADD COLUMN color VARCHAR(32) NOT NULL DEFAULT 'purple' COMMENT '标签颜色token' AFTER name
+    `)
+    console.log('✅ course_meta_options.color 字段迁移完成')
+  } catch (e) {
+    if (e.code !== 'ER_DUP_FIELDNAME') throw e
+  }
+
+  const [[catCount]] = await pool.query(
+    `SELECT COUNT(*) AS c FROM course_meta_options WHERE kind = 'category'`
+  )
+  if (!Number(catCount?.c)) {
+    const defaultCategories = [
+      '入门课程',
+      '标准技能一阶课程',
+      '标准技能二阶课程',
+      '团队训练',
+      '进阶课程',
+    ]
+    for (let i = 0; i < defaultCategories.length; i++) {
+      const colors = ['purple', 'blue', 'cyan', 'yellow', 'orange']
+      await pool.query(
+        `INSERT IGNORE INTO course_meta_options (kind, name, color, sort_order) VALUES ('category', ?, ?, ?)`,
+        [defaultCategories[i], colors[i] || 'purple', i]
+      )
+    }
+    // 把课程表里已有、但不在默认列表中的类别也写入
+    try {
+      const [usedCats] = await pool.query(
+        `SELECT DISTINCT category AS name FROM courses WHERE category IS NOT NULL AND category != ''`
+      )
+      let order = defaultCategories.length
+      const palette = ['purple', 'blue', 'cyan', 'yellow', 'orange', 'green', 'red', 'pink', 'gray']
+      for (const row of usedCats) {
+        if (!defaultCategories.includes(row.name)) {
+          await pool.query(
+            `INSERT IGNORE INTO course_meta_options (kind, name, color, sort_order) VALUES ('category', ?, ?, ?)`,
+            [row.name, palette[order % palette.length], order++]
+          )
+        }
+      }
+    } catch (e) {
+      // courses 表可能尚未创建，忽略
+    }
+    console.log('✅ course_meta_options 类别默认值已初始化')
+  }
+
+  const [[diffCount]] = await pool.query(
+    `SELECT COUNT(*) AS c FROM course_meta_options WHERE kind = 'difficulty'`
+  )
+  if (!Number(diffCount?.c)) {
+    const defaultDifficulties = [
+      { name: '初级', color: 'green' },
+      { name: '中级', color: 'blue' },
+      { name: '高级', color: 'red' },
+    ]
+    for (let i = 0; i < defaultDifficulties.length; i++) {
+      await pool.query(
+        `INSERT IGNORE INTO course_meta_options (kind, name, color, sort_order) VALUES ('difficulty', ?, ?, ?)`,
+        [defaultDifficulties[i].name, defaultDifficulties[i].color, i]
+      )
+    }
+    try {
+      const [usedDiffs] = await pool.query(
+        `SELECT DISTINCT difficulty AS name FROM courses WHERE difficulty IS NOT NULL AND difficulty != ''`
+      )
+      let order = defaultDifficulties.length
+      const palette = ['purple', 'blue', 'cyan', 'yellow', 'orange', 'green', 'red', 'pink', 'gray']
+      for (const row of usedDiffs) {
+        if (!defaultDifficulties.some((d) => d.name === row.name)) {
+          await pool.query(
+            `INSERT IGNORE INTO course_meta_options (kind, name, color, sort_order) VALUES ('difficulty', ?, ?, ?)`,
+            [row.name, palette[order % palette.length], order++]
+          )
+        }
+      }
+    } catch (e) {
+      // courses 表可能尚未创建，忽略
+    }
+    console.log('✅ course_meta_options 难度默认值已初始化')
+  }
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS workbooks (
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      title VARCHAR(200) NOT NULL,
+      description TEXT NULL,
+      access_mode ENUM('shared', 'student_readonly', 'assigned') NOT NULL DEFAULT 'student_readonly'
+        COMMENT 'shared=全员可改; student_readonly=学员只读; assigned=指定学员可填',
+      status ENUM('draft', 'published', 'archived') NOT NULL DEFAULT 'draft',
+      content_json LONGTEXT NOT NULL,
+      created_by VARCHAR(100) NULL,
+      updated_by VARCHAR(100) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_workbook_status (status),
+      INDEX idx_workbook_mode (access_mode)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='在线表格文档'
+  `)
+  try {
+    await pool.query(`
+      ALTER TABLE workbooks
+      MODIFY COLUMN access_mode ENUM('shared', 'student_readonly', 'assigned') NOT NULL DEFAULT 'student_readonly'
+        COMMENT 'shared=全员可改; student_readonly=学员只读; assigned=指定学员可填'
+    `)
+  } catch (e) {
+    /* 已是新枚举 */
+  }
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS workbook_revisions (
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      workbook_id INT NOT NULL,
+      content_json LONGTEXT NOT NULL COMMENT '该次编辑之前的表格快照',
+      edited_by VARCHAR(100) NULL COMMENT '本次编辑者（回退即回到此人改之前）',
+      edited_by_type ENUM('admin', 'student') NOT NULL DEFAULT 'admin',
+      edited_by_id INT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_wb_rev_workbook (workbook_id, id DESC)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='表格编辑历史（存编辑前状态）'
+  `)
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS workbook_assignees (
+      workbook_id INT NOT NULL,
+      member_id INT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (workbook_id, member_id),
+      INDEX idx_wb_assignee_member (member_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='指定可填写学员'
   `)
 }
 

@@ -28,6 +28,8 @@ import AntiCheatSettings from './admin/anticheat/AntiCheatSettings'
 import AntiCheatDllWhitelist from './admin/anticheat/AntiCheatDllWhitelist'
 import SurveyManagement from './admin/SurveyManagement'
 import SurveyResults from './admin/SurveyResults'
+import SheetManagement from './admin/SheetManagement'
+import SheetEditor from './admin/SheetEditor'
 import OpinionBoxManagement from './admin/OpinionBoxManagement'
 import AssistantManagement from './admin/AssistantManagement'
 import AccountSecurity from './AccountSecurity'
@@ -99,6 +101,8 @@ function AdminDashboardContent() {
             <Route path="/leave-team/approval" element={<QuitApproval />} />
             <Route path="/leave-team/retention" element={<RetentionManagement />} />
             <Route path="/docs" element={<DocManagement />} />
+            <Route path="/sheets" element={<SheetManagement />} />
+            <Route path="/sheets/:id" element={<SheetEditor />} />
             <Route path="/surveys" element={<SurveyManagement />} />
             <Route path="/surveys/:id/results" element={<SurveyResults />} />
             <Route path="/opinion-box" element={<OpinionBoxManagement />} />

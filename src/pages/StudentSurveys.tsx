@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { surveyAPI } from '../utils/api'
 import { toast } from '../utils/toast'
 import { isFieldVisible, NOT_ATTENDED } from '../utils/surveyHelpers'
@@ -12,6 +13,7 @@ import {
   Send,
   KeyRound,
   AlertTriangle,
+  BarChart3,
 } from 'lucide-react'
 
 type FieldType = 'single' | 'multi' | 'text' | 'textarea' | 'rating' | 'matrix' | 'subject_gate'
@@ -43,6 +45,7 @@ interface SurveyListItem {
   field_count: number
   is_satisfaction?: boolean
   window_message?: string | null
+  results_public?: boolean
 }
 
 interface SurveyDetail {
@@ -60,6 +63,7 @@ interface SurveyDetail {
   can_submit: boolean
   window_ok?: boolean
   window_message?: string | null
+  results_public?: boolean
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -102,6 +106,7 @@ function clearStoredClaim(surveyId: number) {
 }
 
 export default function StudentSurveys() {
+  const navigate = useNavigate()
   const { refresh: refreshPending } = useSurveyPending()
   const [list, setList] = useState<SurveyListItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -532,6 +537,15 @@ export default function StudentSurveys() {
                 <span className="px-2 py-1 rounded bg-gray-100 text-gray-600">
                   {STATUS_LABEL[detail.my_status] || detail.my_status}
                 </span>
+                {detail.results_public && (
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/student/surveys/${detail.id}/results`)}
+                    className="px-2 py-1 rounded bg-violet-100 text-violet-700 inline-flex items-center gap-1 hover:bg-violet-200"
+                  >
+                    <BarChart3 size={12} /> 查看结果
+                  </button>
+                )}
               </div>
             </div>
 
@@ -668,13 +682,13 @@ export default function StudentSurveys() {
       ) : (
         <div className="space-y-3">
           {list.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => openSurvey(s.id)}
-              className="student-glass-btn !items-start w-full"
-            >
+            <div key={s.id} className="student-glass-btn !items-start w-full !cursor-default">
               <div className="flex items-start justify-between gap-3 w-full min-w-0">
-                <div className="min-w-0 flex-1 text-left">
+                <button
+                  type="button"
+                  onClick={() => openSurvey(s.id)}
+                  className="min-w-0 flex-1 text-left"
+                >
                   <div className="font-medium text-white flex flex-wrap items-center gap-2">
                     <span className="break-words">{s.title}</span>
                     {s.my_status === 'ended' && (
@@ -685,6 +699,11 @@ export default function StudentSurveys() {
                     {s.my_status === 'full' && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 shrink-0">
                         人数已满
+                      </span>
+                    )}
+                    {s.results_public && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 shrink-0">
+                        结果公开
                       </span>
                     )}
                   </div>
@@ -700,11 +719,20 @@ export default function StudentSurveys() {
                     {s.is_satisfaction && <span className="text-blue-300">按人</span>}
                     <span className="text-gray-500">{s.field_count} 题</span>
                   </div>
-                </div>
+                </button>
                 <div className="shrink-0 text-right flex flex-col items-end gap-1 pt-0.5">
                   <span className="text-xs px-2 py-1 rounded bg-white/10 text-gray-300 whitespace-nowrap">
                     {STATUS_LABEL[s.my_status] || s.my_status}
                   </span>
+                  {s.results_public && (
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/student/surveys/${s.id}/results`)}
+                      className="text-[11px] px-2 py-1 rounded bg-violet-600/80 text-white hover:bg-violet-500 inline-flex items-center gap-1"
+                    >
+                      <BarChart3 size={12} /> 结果
+                    </button>
+                  )}
                   {s.end_at ? (
                     <span className="text-[11px] text-gray-500 whitespace-nowrap tabular-nums">
                       截止 {formatDateTime(s.end_at)}
@@ -714,7 +742,7 @@ export default function StudentSurveys() {
                   )}
                 </div>
               </div>
-            </button>
+            </div>
           ))}
           {!list.length && (
             <div className="text-center text-gray-500 py-16">暂无可填问卷</div>

@@ -77,6 +77,14 @@ async function ensureSurveyTables() {
   } catch (e) {
     if (e.code !== 'ER_DUP_FIELDNAME') throw e
   }
+  try {
+    await pool.query(`
+      ALTER TABLE surveys
+      ADD COLUMN results_public TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否允许学员公开查看结果' AFTER max_responses
+    `)
+  } catch (e) {
+    if (e.code !== 'ER_DUP_FIELDNAME') throw e
+  }
   tablesReady = true
 }
 
@@ -214,7 +222,7 @@ router.get('/available', requireStudent, async (req, res) => {
 
     const [rows] = await pool.query(`
       SELECT id, title, description, fields_json, subjects_json, is_anonymous, start_at, end_at,
-             max_responses, status, audience_roles_json, created_at
+             max_responses, results_public, status, audience_roles_json, created_at
       FROM surveys
       WHERE status = 'published'
          OR (
@@ -223,6 +231,7 @@ router.get('/available', requireStudent, async (req, res) => {
            AND max_responses > 0
            AND (SELECT COUNT(*) FROM survey_responses r WHERE r.survey_id = surveys.id) >= max_responses
          )
+         OR (results_public = 1 AND status IN ('published', 'closed'))
       ORDER BY created_at DESC
     `)
 
@@ -236,9 +245,12 @@ router.get('/available', requireStudent, async (req, res) => {
 
       let myStatus = 'open'
       let windowMessage = window.ok ? null : window.message
-      if (row.status === 'closed' || !capacity.ok) {
+      if (!capacity.ok) {
         myStatus = 'full'
         windowMessage = FULL_MESSAGE
+      } else if (row.status === 'closed') {
+        myStatus = 'ended'
+        windowMessage = '填表已关闭'
       } else if (!window.ok) {
         myStatus = window.message.includes('尚未') ? 'not_started' : 'ended'
       }
@@ -267,6 +279,7 @@ router.get('/available', requireStudent, async (req, res) => {
         end_at: survey.end_at,
         max_responses: capacity.max,
         response_count: capacity.count,
+        results_public: !!row.results_public,
         my_status: myStatus,
         field_count: Array.isArray(activeFields(survey)) ? activeFields(survey).length : 0,
         is_satisfaction: survey.is_satisfaction,
@@ -303,8 +316,9 @@ router.get('/available/:id', requireStudent, async (req, res) => {
     const capacity = await checkCapacity(pool, row)
     const closedDueToFull =
       row.status === 'closed' && parseMaxResponses(row.max_responses) != null && !capacity.ok
+    const canViewPublicClosed = row.status === 'closed' && !!row.results_public
 
-    if (row.status !== 'published' && !closedDueToFull) {
+    if (row.status !== 'published' && !closedDueToFull && !canViewPublicClosed) {
       return res.status(404).json({ success: false, message: '问卷不存在或未发布' })
     }
 
@@ -315,6 +329,9 @@ router.get('/available/:id', requireStudent, async (req, res) => {
     if (closedDueToFull || (myStatus === 'open' && !capacity.ok)) {
       myStatus = 'full'
       windowMessage = FULL_MESSAGE
+    } else if (row.status === 'closed' && myStatus === 'open') {
+      myStatus = 'ended'
+      windowMessage = '填表已关闭'
     }
     let claimed = false
     let submitted = false
@@ -356,6 +373,7 @@ router.get('/available/:id', requireStudent, async (req, res) => {
         end_at: survey.end_at,
         max_responses: capacity.max,
         response_count: capacity.count,
+        results_public: !!row.results_public,
         my_status: myStatus,
         claimed,
         submitted,
@@ -615,6 +633,7 @@ router.post('/', requireAdmin, async (req, res) => {
       start_at = null,
       end_at = null,
       max_responses = null,
+      results_public = false,
       audience_roles = [],
       status = 'draft',
     } = req.body || {}
@@ -630,8 +649,8 @@ router.post('/', requireAdmin, async (req, res) => {
     const maxResp = parseMaxResponses(max_responses)
     const [result] = await pool.query(
       `INSERT INTO surveys
-        (title, description, fields_json, subjects_json, is_anonymous, start_at, end_at, max_responses, status, audience_roles_json, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (title, description, fields_json, subjects_json, is_anonymous, start_at, end_at, max_responses, results_public, status, audience_roles_json, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         title.trim(),
         description || '',
@@ -641,6 +660,7 @@ router.post('/', requireAdmin, async (req, res) => {
         start_at || null,
         end_at || null,
         maxResp,
+        results_public ? 1 : 0,
         ['draft', 'published', 'closed'].includes(status) ? status : 'draft',
         JSON.stringify(audience_roles || []),
         req.admin.username || null,
@@ -673,6 +693,8 @@ router.put('/:id', requireAdmin, async (req, res) => {
       req.body.max_responses !== undefined
         ? parseMaxResponses(req.body.max_responses)
         : parseMaxResponses(row.max_responses)
+    const results_public =
+      req.body.results_public !== undefined ? (req.body.results_public ? 1 : 0) : row.results_public ? 1 : 0
     const status = req.body.status ?? row.status
     const audience_roles =
       req.body.audience_roles !== undefined
@@ -682,7 +704,7 @@ router.put('/:id', requireAdmin, async (req, res) => {
     await pool.query(
       `UPDATE surveys SET
         title = ?, description = ?, fields_json = ?, subjects_json = ?, is_anonymous = ?,
-        start_at = ?, end_at = ?, max_responses = ?, status = ?, audience_roles_json = ?
+        start_at = ?, end_at = ?, max_responses = ?, results_public = ?, status = ?, audience_roles_json = ?
        WHERE id = ?`,
       [
         String(title).trim(),
@@ -693,6 +715,7 @@ router.put('/:id', requireAdmin, async (req, res) => {
         start_at || null,
         end_at || null,
         max_responses,
+        results_public,
         status,
         JSON.stringify(audience_roles || []),
         req.params.id,
@@ -755,137 +778,169 @@ router.get('/:id/results', requireAdmin, async (req, res) => {
   try {
     const [[row]] = await pool.query('SELECT * FROM surveys WHERE id = ?', [req.params.id])
     if (!row) return res.status(404).json({ success: false, message: '问卷不存在' })
-    const survey = normalizeSurvey(row)
-
-    // 故意不 join claims / 不返回 token_hash，避免管理端关联身份
-    let responses
-    if (survey.is_anonymous) {
-      const [rows] = await pool.query(
-        `SELECT id, answers_json, submitted_at
-         FROM survey_responses
-         WHERE survey_id = ?
-         ORDER BY submitted_at DESC`,
-        [survey.id]
-      )
-      responses = rows.map((r) => ({
-        id: r.id,
-        answers: parseJsonField(r.answers_json, {}),
-        submitted_at: r.submitted_at,
-      }))
-    } else {
-      const [rows] = await pool.query(
-        `SELECT r.id, r.answers_json, r.submitted_at, r.member_id, m.nickname, m.qq, m.avatar
-         FROM survey_responses r
-         LEFT JOIN members m ON m.id = r.member_id
-         WHERE r.survey_id = ?
-           AND (m.status IS NULL OR m.status != '已退队')
-         ORDER BY r.submitted_at DESC`,
-        [survey.id]
-      )
-      responses = rows.map((r) => ({
-        id: r.id,
-        answers: parseJsonField(r.answers_json, {}),
-        submitted_at: r.submitted_at,
-        member_id: r.member_id,
-        nickname: r.nickname,
-        qq: r.qq,
-        avatar: r.avatar || null,
-      }))
-    }
-
-    const [[claimStats]] = await pool.query(
-      `SELECT
-         COUNT(*) AS claimed,
-         SUM(submitted_at IS NOT NULL) AS submitted_claims
-       FROM survey_claims WHERE survey_id = ?`,
-      [survey.id]
-    )
-
-    // 聚合：用展开后的题目 id（满意度按人）；文本题收录原文列表
-    const fieldsForStats = activeFields(survey)
-    const stats = {}
-    for (const field of fieldsForStats || []) {
-      if (
-        !['single', 'multi', 'rating', 'matrix', 'subject_gate', 'text', 'textarea'].includes(
-          field.type
-        )
-      ) {
-        continue
-      }
-      const isText = field.type === 'text' || field.type === 'textarea'
-      stats[field.id] = {
-        label: field.label,
-        type: field.type,
-        subject_id: field.subject_id || null,
-        subject_name: field.subject_name || null,
-        counts: {},
-        samples: isText ? [] : undefined,
-      }
-      const rowLabels = Object.fromEntries(
-        (field.rows || []).map((r) => [r.id, r.label || r.id])
-      )
-      for (const resp of responses) {
-        const val = resp.answers?.[field.id]
-        if (val == null || val === '') continue
-        if (isText) {
-          const text = String(val).trim()
-          if (!text) continue
-          stats[field.id].samples.push(text)
-          continue
-        }
-        if (field.type === 'matrix' && typeof val === 'object' && !Array.isArray(val)) {
-          for (const [rowId, col] of Object.entries(val)) {
-            const key = `${rowLabels[rowId] || rowId} · ${col}`
-            stats[field.id].counts[key] = (stats[field.id].counts[key] || 0) + 1
-          }
-        } else if (Array.isArray(val)) {
-          for (const v of val) {
-            const key = String(v)
-            stats[field.id].counts[key] = (stats[field.id].counts[key] || 0) + 1
-          }
-        } else {
-          const key = String(val)
-          stats[field.id].counts[key] = (stats[field.id].counts[key] || 0) + 1
-        }
-      }
-    }
-
-    const satisfaction_ranking = survey.is_satisfaction
-      ? buildSatisfactionSummary(survey.subjects, fieldsForStats, responses)
-      : null
-
-    const window = isWithinWindow(row)
-
-    res.json({
-      success: true,
-      data: {
-        survey: {
-          id: survey.id,
-          title: survey.title,
-          description: survey.description,
-          is_anonymous: survey.is_anonymous,
-          is_satisfaction: survey.is_satisfaction,
-          subjects: survey.subjects,
-          fields: fieldsForStats,
-          templates: survey.fields,
-          start_at: survey.start_at,
-          end_at: survey.end_at,
-          status: survey.status,
-          expired: !window.ok && String(window.message || '').includes('结束'),
-          not_started: !window.ok && String(window.message || '').includes('尚未'),
-          window_message: window.ok ? null : window.message,
-        },
-        response_count: responses.length,
-        claim_count: survey.is_anonymous ? Number(claimStats?.claimed || 0) : null,
-        stats,
-        satisfaction_ranking,
-        responses,
-      },
-    })
+    const data = await buildSurveyResultsPayload(row, { includeIdentities: true })
+    res.json({ success: true, data })
   } catch (error) {
     console.error('[surveys] results', error)
     res.status(500).json({ success: false, message: '获取结果失败' })
   }
 })
 
+/** 学员端：公开结果（仅统计聚合；实名答卷不返回身份） */
+router.get('/:id/public-results', requireStudent, async (req, res) => {
+  try {
+    const memberId = req.student.id
+    const [[member]] = await pool.query(
+      'SELECT id, stage_role FROM members WHERE id = ?',
+      [memberId]
+    )
+    if (!member) return res.status(404).json({ success: false, message: '成员不存在' })
+
+    const [[row]] = await pool.query('SELECT * FROM surveys WHERE id = ?', [req.params.id])
+    if (!row) return res.status(404).json({ success: false, message: '问卷不存在' })
+    if (!row.results_public) {
+      return res.status(403).json({ success: false, message: '该问卷结果未公开' })
+    }
+    if (!['published', 'closed'].includes(row.status)) {
+      return res.status(404).json({ success: false, message: '问卷不存在或未发布' })
+    }
+    if (!roleAllowed(row, member.stage_role)) {
+      return res.status(403).json({ success: false, message: '不在投放范围内' })
+    }
+
+    const data = await buildSurveyResultsPayload(row, { includeIdentities: false })
+    res.json({ success: true, data })
+  } catch (error) {
+    console.error('[surveys] public-results', error)
+    res.status(500).json({ success: false, message: '获取结果失败' })
+  }
+})
+
 export default router
+
+async function buildSurveyResultsPayload(row, { includeIdentities }) {
+  const survey = normalizeSurvey(row)
+
+  let responses
+  if (survey.is_anonymous || !includeIdentities) {
+    const [rows] = await pool.query(
+      `SELECT id, answers_json, submitted_at
+       FROM survey_responses
+       WHERE survey_id = ?
+       ORDER BY submitted_at DESC`,
+      [survey.id]
+    )
+    responses = rows.map((r) => ({
+      id: r.id,
+      answers: parseJsonField(r.answers_json, {}),
+      submitted_at: r.submitted_at,
+    }))
+  } else {
+    const [rows] = await pool.query(
+      `SELECT r.id, r.answers_json, r.submitted_at, r.member_id, m.nickname, m.qq, m.avatar
+       FROM survey_responses r
+       LEFT JOIN members m ON m.id = r.member_id
+       WHERE r.survey_id = ?
+         AND (m.status IS NULL OR m.status != '已退队')
+       ORDER BY r.submitted_at DESC`,
+      [survey.id]
+    )
+    responses = rows.map((r) => ({
+      id: r.id,
+      answers: parseJsonField(r.answers_json, {}),
+      submitted_at: r.submitted_at,
+      member_id: r.member_id,
+      nickname: r.nickname,
+      qq: r.qq,
+      avatar: r.avatar || null,
+    }))
+  }
+
+  const [[claimStats]] = await pool.query(
+    `SELECT
+       COUNT(*) AS claimed,
+       SUM(submitted_at IS NOT NULL) AS submitted_claims
+     FROM survey_claims WHERE survey_id = ?`,
+    [survey.id]
+  )
+
+  const fieldsForStats = activeFields(survey)
+  const stats = {}
+  for (const field of fieldsForStats || []) {
+    if (
+      !['single', 'multi', 'rating', 'matrix', 'subject_gate', 'text', 'textarea'].includes(
+        field.type
+      )
+    ) {
+      continue
+    }
+    const isText = field.type === 'text' || field.type === 'textarea'
+    stats[field.id] = {
+      label: field.label,
+      type: field.type,
+      subject_id: field.subject_id || null,
+      subject_name: field.subject_name || null,
+      counts: {},
+      samples: isText ? [] : undefined,
+    }
+    const rowLabels = Object.fromEntries(
+      (field.rows || []).map((r) => [r.id, r.label || r.id])
+    )
+    for (const resp of responses) {
+      const val = resp.answers?.[field.id]
+      if (val == null || val === '') continue
+      if (isText) {
+        const text = String(val).trim()
+        if (!text) continue
+        stats[field.id].samples.push(text)
+        continue
+      }
+      if (field.type === 'matrix' && typeof val === 'object' && !Array.isArray(val)) {
+        for (const [rowId, col] of Object.entries(val)) {
+          const key = `${rowLabels[rowId] || rowId} · ${col}`
+          stats[field.id].counts[key] = (stats[field.id].counts[key] || 0) + 1
+        }
+      } else if (Array.isArray(val)) {
+        for (const v of val) {
+          const key = String(v)
+          stats[field.id].counts[key] = (stats[field.id].counts[key] || 0) + 1
+        }
+      } else {
+        const key = String(val)
+        stats[field.id].counts[key] = (stats[field.id].counts[key] || 0) + 1
+      }
+    }
+  }
+
+  const satisfaction_ranking = survey.is_satisfaction
+    ? buildSatisfactionSummary(survey.subjects, fieldsForStats, responses)
+    : null
+
+  const window = isWithinWindow(row)
+
+  return {
+    survey: {
+      id: survey.id,
+      title: survey.title,
+      description: survey.description,
+      is_anonymous: survey.is_anonymous,
+      is_satisfaction: survey.is_satisfaction,
+      results_public: !!row.results_public,
+      subjects: survey.subjects,
+      fields: fieldsForStats,
+      templates: survey.fields,
+      start_at: survey.start_at,
+      end_at: survey.end_at,
+      status: survey.status,
+      expired: !window.ok && String(window.message || '').includes('结束'),
+      not_started: !window.ok && String(window.message || '').includes('尚未'),
+      window_message: window.ok ? null : window.message,
+    },
+    response_count: responses.length,
+    claim_count: survey.is_anonymous ? Number(claimStats?.claimed || 0) : null,
+    stats,
+    satisfaction_ranking,
+    // 学员公开结果只返回统计，不返回原始答卷明细（避免隐私问题）
+    responses: includeIdentities ? responses : undefined,
+  }
+}

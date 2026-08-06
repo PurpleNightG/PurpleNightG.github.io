@@ -39,7 +39,8 @@ function computeDropdownStyle(el: HTMLElement, minWidth = 0): React.CSSPropertie
     bottom: openUp ? window.innerHeight - rect.top + 4 : undefined,
     left,
     width,
-    zIndex: 9999,
+    // 须高于常见模态（如 z-[10000]/z-[10020]），否则 portal 下拉会被盖住
+    zIndex: 11000,
   }
 }
 

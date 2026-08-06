@@ -12,6 +12,8 @@ interface ConfirmDialogProps {
   type?: 'danger' | 'warning' | 'info'
   /** 为 false 时隐藏取消按钮（纯提示） */
   showCancel?: boolean
+  /** 叠在更高层模态之上时传入，例如 z-[10020] */
+  zClassName?: string
 }
 
 export default function ConfirmDialog({
@@ -23,6 +25,7 @@ export default function ConfirmDialog({
   onCancel,
   type = 'warning',
   showCancel = true,
+  zClassName = 'z-[10000]',
 }: ConfirmDialogProps) {
   const { onGlassPointerMove, resetGlassTilt } = useStudentGlassPointer({ maxTilt: 4 })
   const colors = {
@@ -33,7 +36,7 @@ export default function ConfirmDialog({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[10000] flex items-center justify-center"
+      className={`fixed inset-0 ${zClassName} flex items-center justify-center`}
       onMouseMove={onGlassPointerMove}
       onMouseLeave={resetGlassTilt}
     >
