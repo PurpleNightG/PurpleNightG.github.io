@@ -66,6 +66,8 @@ interface Survey {
   is_anonymous: boolean
   start_at: string | null
   end_at: string | null
+  /** 填写人数上限，null/不填=不限制 */
+  max_responses: number | null
   status: 'draft' | 'published' | 'closed'
   audience_roles: string[]
   response_count?: number
@@ -149,6 +151,7 @@ const emptyForm = (): Omit<Survey, 'id'> => ({
   is_anonymous: true,
   start_at: null,
   end_at: null,
+  max_responses: null,
   status: 'draft',
   audience_roles: [],
 })
@@ -326,6 +329,7 @@ export default function SurveyManagement() {
         is_anonymous: !!s.is_anonymous,
         start_at: s.start_at,
         end_at: s.end_at,
+        max_responses: s.max_responses != null && Number(s.max_responses) > 0 ? Number(s.max_responses) : null,
         status: s.status,
         audience_roles: s.audience_roles || [],
       })
@@ -428,6 +432,7 @@ export default function SurveyManagement() {
         is_anonymous: !!s.is_anonymous,
         start_at: s.start_at,
         end_at: s.end_at,
+        max_responses: s.max_responses != null && Number(s.max_responses) > 0 ? Number(s.max_responses) : null,
         audience_roles: s.audience_roles || [],
         status: 'draft',
       })
@@ -957,6 +962,29 @@ export default function SurveyManagement() {
                     />
                   </label>
                 </div>
+                <label className="block space-y-1">
+                  <span className="text-gray-500">填写人数上限</span>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    placeholder="留空表示不限制"
+                    value={form.max_responses ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value.trim()
+                      if (!v) {
+                        setForm({ ...form, max_responses: null })
+                        return
+                      }
+                      const n = Math.floor(Number(v))
+                      setForm({ ...form, max_responses: Number.isFinite(n) && n > 0 ? n : null })
+                    }}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-900"
+                  />
+                  <span className="text-xs text-gray-500">
+                    达到上限后将自动关闭问卷，并提示「此表格填写人数已达上限」
+                  </span>
+                </label>
                 <label className="flex items-center gap-2 text-gray-800 cursor-pointer">
                   <input
                     type="checkbox"
@@ -1172,6 +1200,9 @@ export default function SurveyManagement() {
                     </td>
                     <td className="px-3 py-2">
                       {s.response_count ?? 0}
+                      {s.max_responses != null && Number(s.max_responses) > 0 && (
+                        <span className="text-xs text-gray-500"> / {s.max_responses}</span>
+                      )}
                       {s.is_anonymous && s.claim_count != null && (
                         <span className="text-xs text-gray-500 ml-1">（领券 {s.claim_count}）</span>
                       )}

@@ -68,6 +68,7 @@ const STATUS_LABEL: Record<string, string> = {
   submitted: '已提交',
   not_started: '尚未开始',
   ended: '已结束',
+  full: '人数已满',
 }
 
 const DEFAULT_COLS = ['很满意(5)', '满意(4)', '一般(3)', '不满意(2)', '很不满意(1)']
@@ -546,9 +547,25 @@ export default function StudentSurveys() {
               </div>
             )}
 
+            {detail.my_status === 'full' && (
+              <div className="mx-6 md:mx-10 mt-4 rounded-lg border-2 border-rose-400 bg-rose-50 px-4 py-3 flex gap-3">
+                <AlertTriangle className="text-rose-600 shrink-0" size={20} />
+                <div>
+                  <div className="font-medium text-rose-900">填写人数已达上限</div>
+                  <p className="text-sm text-rose-800 mt-0.5">
+                    {detail.window_message || '此表格填写人数已达上限'}
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div className="px-6 md:px-10 lg:px-12 py-6 space-y-6">
               {detail.submitted ? (
                 <div className="py-12 text-center text-gray-500">您已提交过该问卷，感谢参与。</div>
+              ) : detail.my_status === 'full' ? (
+                <div className="py-12 text-center text-rose-600 font-medium">
+                  {detail.window_message || '此表格填写人数已达上限'}
+                </div>
               ) : !detail.can_submit ? (
                 <div className="py-12 text-center text-gray-500">
                   {STATUS_LABEL[detail.my_status] || '当前不可填写'}
@@ -634,6 +651,16 @@ export default function StudentSurveys() {
         </div>
       )}
 
+      {list.some((s) => s.my_status === 'full') && (
+        <div className="student-glass-chip student-glass-chip--pink px-4 py-3 flex gap-3 text-sm text-rose-100">
+          <AlertTriangle className="text-rose-400 shrink-0" size={18} />
+          <span>
+            以下问卷填写人数已达上限：
+            {list.filter((s) => s.my_status === 'full').map((s) => s.title).join('、')}
+          </span>
+        </div>
+      )}
+
       {loading ? (
         <div className="flex justify-center py-16 text-gray-400">
           <Loader2 className="animate-spin" />
@@ -653,6 +680,11 @@ export default function StudentSurveys() {
                     {s.my_status === 'ended' && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 shrink-0">
                         已过期
+                      </span>
+                    )}
+                    {s.my_status === 'full' && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 shrink-0">
+                        人数已满
                       </span>
                     )}
                   </div>

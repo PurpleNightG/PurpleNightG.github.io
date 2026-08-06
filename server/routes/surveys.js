@@ -25,6 +25,7 @@ async function ensureSurveyTables() {
       is_anonymous TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否匿名',
       start_at DATETIME NULL COMMENT '开始时间',
       end_at DATETIME NULL COMMENT '结束时间',
+      max_responses INT NULL COMMENT '填写人数上限，NULL为不限制',
       status ENUM('draft','published','closed') NOT NULL DEFAULT 'draft' COMMENT '状态',
       audience_roles_json JSON NULL COMMENT '可填阶段角色，空=全体',
       created_by VARCHAR(100) NULL,
@@ -64,6 +65,14 @@ async function ensureSurveyTables() {
     await pool.query(`
       ALTER TABLE surveys
       ADD COLUMN subjects_json JSON NULL COMMENT '满意度评价对象' AFTER fields_json
+    `)
+  } catch (e) {
+    if (e.code !== 'ER_DUP_FIELDNAME') throw e
+  }
+  try {
+    await pool.query(`
+      ALTER TABLE surveys
+      ADD COLUMN max_responses INT NULL COMMENT '填写人数上限，NULL为不限制' AFTER end_at
     `)
   } catch (e) {
     if (e.code !== 'ER_DUP_FIELDNAME') throw e
@@ -131,6 +140,8 @@ function normalizeSurvey(row) {
   }
 }
 
+const FULL_MESSAGE = '此表格填写人数已达上限'
+
 function isWithinWindow(survey, now = new Date()) {
   if (survey.start_at) {
     const start = new Date(String(survey.start_at).replace(' ', 'T'))
@@ -141,6 +152,43 @@ function isWithinWindow(survey, now = new Date()) {
     if (!Number.isNaN(end.getTime()) && now > end) return { ok: false, message: '填表已结束' }
   }
   return { ok: true }
+}
+
+function parseMaxResponses(value) {
+  if (value === null || value === undefined || value === '') return null
+  const n = Number(value)
+  if (!Number.isFinite(n) || n <= 0) return null
+  return Math.floor(n)
+}
+
+async function getResponseCount(db, surveyId) {
+  const [rows] = await db.query(
+    'SELECT COUNT(*) AS c FROM survey_responses WHERE survey_id = ?',
+    [surveyId]
+  )
+  return Number(rows[0]?.c || 0)
+}
+
+/** 是否仍有空位；max 为 null 表示不限制 */
+async function checkCapacity(db, survey) {
+  const max = parseMaxResponses(survey.max_responses)
+  if (max == null) return { ok: true, max: null, count: null }
+  const count = await getResponseCount(db, survey.id)
+  if (count >= max) {
+    return { ok: false, message: FULL_MESSAGE, max, count }
+  }
+  return { ok: true, max, count }
+}
+
+async function closeSurveyIfFull(db, surveyId, max) {
+  if (max == null) return false
+  const count = await getResponseCount(db, surveyId)
+  if (count < max) return false
+  await db.query(
+    `UPDATE surveys SET status = 'closed' WHERE id = ? AND status = 'published'`,
+    [surveyId]
+  )
+  return true
 }
 
 function roleAllowed(survey, stageRole) {
@@ -166,9 +214,15 @@ router.get('/available', requireStudent, async (req, res) => {
 
     const [rows] = await pool.query(`
       SELECT id, title, description, fields_json, subjects_json, is_anonymous, start_at, end_at,
-             status, audience_roles_json, created_at
+             max_responses, status, audience_roles_json, created_at
       FROM surveys
       WHERE status = 'published'
+         OR (
+           status = 'closed'
+           AND max_responses IS NOT NULL
+           AND max_responses > 0
+           AND (SELECT COUNT(*) FROM survey_responses r WHERE r.survey_id = surveys.id) >= max_responses
+         )
       ORDER BY created_at DESC
     `)
 
@@ -178,9 +232,14 @@ router.get('/available', requireStudent, async (req, res) => {
       if (!roleAllowed(row, member.stage_role)) continue
       const window = isWithinWindow(row, now)
       const survey = normalizeSurvey(row)
+      const capacity = await checkCapacity(pool, row)
 
       let myStatus = 'open'
-      if (!window.ok) {
+      let windowMessage = window.ok ? null : window.message
+      if (row.status === 'closed' || !capacity.ok) {
+        myStatus = 'full'
+        windowMessage = FULL_MESSAGE
+      } else if (!window.ok) {
         myStatus = window.message.includes('尚未') ? 'not_started' : 'ended'
       }
 
@@ -206,12 +265,14 @@ router.get('/available', requireStudent, async (req, res) => {
         is_anonymous: survey.is_anonymous,
         start_at: survey.start_at,
         end_at: survey.end_at,
+        max_responses: capacity.max,
+        response_count: capacity.count,
         my_status: myStatus,
         field_count: Array.isArray(activeFields(survey)) ? activeFields(survey).length : 0,
         is_satisfaction: survey.is_satisfaction,
         subject_count: survey.subjects?.length || 0,
-        window_ok: window.ok,
-        window_message: window.ok ? null : window.message,
+        window_ok: window.ok && capacity.ok && row.status === 'published',
+        window_message: windowMessage,
       })
     }
 
@@ -232,16 +293,29 @@ router.get('/available/:id', requireStudent, async (req, res) => {
     if (!member) return res.status(404).json({ success: false, message: '成员不存在' })
 
     const [[row]] = await pool.query('SELECT * FROM surveys WHERE id = ?', [req.params.id])
-    if (!row || row.status !== 'published') {
+    if (!row) {
       return res.status(404).json({ success: false, message: '问卷不存在或未发布' })
     }
     if (!roleAllowed(row, member.stage_role)) {
       return res.status(403).json({ success: false, message: '不在投放范围内' })
     }
 
+    const capacity = await checkCapacity(pool, row)
+    const closedDueToFull =
+      row.status === 'closed' && parseMaxResponses(row.max_responses) != null && !capacity.ok
+
+    if (row.status !== 'published' && !closedDueToFull) {
+      return res.status(404).json({ success: false, message: '问卷不存在或未发布' })
+    }
+
     const survey = normalizeSurvey(row)
     const window = isWithinWindow(row)
     let myStatus = window.ok ? 'open' : (window.message.includes('尚未') ? 'not_started' : 'ended')
+    let windowMessage = window.ok ? null : window.message
+    if (closedDueToFull || (myStatus === 'open' && !capacity.ok)) {
+      myStatus = 'full'
+      windowMessage = FULL_MESSAGE
+    }
     let claimed = false
     let submitted = false
 
@@ -280,12 +354,14 @@ router.get('/available/:id', requireStudent, async (req, res) => {
         is_anonymous: survey.is_anonymous,
         start_at: survey.start_at,
         end_at: survey.end_at,
+        max_responses: capacity.max,
+        response_count: capacity.count,
         my_status: myStatus,
         claimed,
         submitted,
         can_submit: myStatus === 'open' || myStatus === 'claimed',
-        window_ok: window.ok,
-        window_message: window.ok ? null : window.message,
+        window_ok: window.ok && capacity.ok && row.status === 'published',
+        window_message: windowMessage,
       },
     })
   } catch (error) {
@@ -315,6 +391,8 @@ router.post('/:id/claim', requireStudent, async (req, res) => {
     }
     const window = isWithinWindow(row)
     if (!window.ok) return res.status(400).json({ success: false, message: window.message })
+    const capacity = await checkCapacity(pool, row)
+    if (!capacity.ok) return res.status(400).json({ success: false, message: capacity.message })
 
     const [existing] = await pool.query(
       'SELECT id, submitted_at FROM survey_claims WHERE survey_id = ? AND member_id = ?',
@@ -356,108 +434,137 @@ router.post('/:id/claim', requireStudent, async (req, res) => {
 })
 
 router.post('/:id/submit', async (req, res) => {
+  const conn = await pool.getConnection()
   try {
-    const [[row]] = await pool.query('SELECT * FROM surveys WHERE id = ?', [req.params.id])
+    await conn.beginTransaction()
+    const [[row]] = await conn.query('SELECT * FROM surveys WHERE id = ? FOR UPDATE', [
+      req.params.id,
+    ])
     if (!row || row.status !== 'published') {
+      await conn.rollback()
       return res.status(404).json({ success: false, message: '问卷不存在或未发布' })
     }
     const window = isWithinWindow(row)
-    if (!window.ok) return res.status(400).json({ success: false, message: window.message })
+    if (!window.ok) {
+      await conn.rollback()
+      return res.status(400).json({ success: false, message: window.message })
+    }
+    const capacity = await checkCapacity(conn, row)
+    if (!capacity.ok) {
+      await closeSurveyIfFull(conn, row.id, capacity.max)
+      await conn.commit()
+      return res.status(400).json({ success: false, message: capacity.message })
+    }
 
     const survey = normalizeSurvey(row)
     const fields = activeFields(survey)
     const { answers, token } = req.body || {}
     const err = validateAnswers(fields, answers)
-    if (err) return res.status(400).json({ success: false, message: err })
+    if (err) {
+      await conn.rollback()
+      return res.status(400).json({ success: false, message: err })
+    }
 
     if (row.is_anonymous) {
       // 匿名：拒绝携带 Authorization，避免学员怀疑身份被绑定
       if (req.headers.authorization) {
+        await conn.rollback()
         return res.status(400).json({
           success: false,
           message: '匿名交卷请勿携带登录凭证。请使用已领取的匿名 token 提交。',
         })
       }
       if (!token) {
+        await conn.rollback()
         return res.status(400).json({ success: false, message: '缺少匿名凭证，请先领取填写资格' })
       }
       const tokenHash = hashToken(token)
-      const [claims] = await pool.query(
-        'SELECT id, submitted_at FROM survey_claims WHERE survey_id = ? AND token_hash = ?',
+      const [claims] = await conn.query(
+        'SELECT id, submitted_at FROM survey_claims WHERE survey_id = ? AND token_hash = ? FOR UPDATE',
         [row.id, tokenHash]
       )
       if (!claims.length) {
+        await conn.rollback()
         return res.status(400).json({ success: false, message: '匿名凭证无效' })
       }
       if (claims[0].submitted_at) {
+        await conn.rollback()
         return res.status(400).json({ success: false, message: '该凭证已交卷' })
       }
 
-      const conn = await pool.getConnection()
-      try {
-        await conn.beginTransaction()
-        await conn.query(
-          `INSERT INTO survey_responses (survey_id, answers_json, member_id, token_hash)
-           VALUES (?, ?, NULL, ?)`,
-          [row.id, JSON.stringify(answers), tokenHash]
-        )
-        await conn.query(
-          'UPDATE survey_claims SET submitted_at = NOW() WHERE id = ?',
-          [claims[0].id]
-        )
-        await conn.commit()
-      } catch (e) {
-        await conn.rollback()
-        throw e
-      } finally {
-        conn.release()
-      }
-
+      await conn.query(
+        `INSERT INTO survey_responses (survey_id, answers_json, member_id, token_hash)
+         VALUES (?, ?, NULL, ?)`,
+        [row.id, JSON.stringify(answers), tokenHash]
+      )
+      await conn.query('UPDATE survey_claims SET submitted_at = NOW() WHERE id = ?', [
+        claims[0].id,
+      ])
+      await closeSurveyIfFull(conn, row.id, capacity.max)
+      await conn.commit()
       return res.json({ success: true, message: '提交成功（匿名）' })
     }
 
     // 实名：必须学员登录
     const auth = req.headers.authorization?.replace('Bearer ', '')
-    if (!auth) return res.status(401).json({ success: false, message: '请先登录' })
+    if (!auth) {
+      await conn.rollback()
+      return res.status(401).json({ success: false, message: '请先登录' })
+    }
     let student
     try {
       student = jwt.verify(auth, process.env.JWT_SECRET || 'your-secret-key')
     } catch {
+      await conn.rollback()
       return res.status(401).json({ success: false, message: '登录已失效' })
     }
     if (student.role !== 'student' && student.userType !== 'student') {
+      await conn.rollback()
       return res.status(403).json({ success: false, message: '需要学员权限' })
     }
 
-    const [[member]] = await pool.query(
-      'SELECT id, stage_role FROM members WHERE id = ?',
-      [student.id]
-    )
-    if (!member) return res.status(404).json({ success: false, message: '成员不存在' })
+    const [[member]] = await conn.query('SELECT id, stage_role FROM members WHERE id = ?', [
+      student.id,
+    ])
+    if (!member) {
+      await conn.rollback()
+      return res.status(404).json({ success: false, message: '成员不存在' })
+    }
     if (!roleAllowed(row, member.stage_role)) {
+      await conn.rollback()
       return res.status(403).json({ success: false, message: '不在投放范围内' })
     }
 
-    const [exist] = await pool.query(
+    const [exist] = await conn.query(
       'SELECT id FROM survey_responses WHERE survey_id = ? AND member_id = ?',
       [row.id, member.id]
     )
     if (exist.length) {
+      await conn.rollback()
       return res.status(400).json({ success: false, message: '您已提交过该问卷' })
     }
 
-    await pool.query(
+    await conn.query(
       `INSERT INTO survey_responses (survey_id, answers_json, member_id, token_hash)
        VALUES (?, ?, ?, NULL)`,
       [row.id, JSON.stringify(answers), member.id]
     )
+    await closeSurveyIfFull(conn, row.id, capacity.max)
+    await conn.commit()
     res.json({ success: true, message: '提交成功' })
   } catch (error) {
+    try {
+      await conn.rollback()
+    } catch {
+      /* ignore */
+    }
     console.error('[surveys] submit', error)
     if (error?.code === 'ER_DUP_ENTRY') {
       return res.status(400).json({ success: false, message: '请勿重复提交' })
     }
     res.status(500).json({ success: false, message: '提交失败' })
+  } finally {
+    conn.release()
   }
 })
 
@@ -507,6 +614,7 @@ router.post('/', requireAdmin, async (req, res) => {
       is_anonymous = true,
       start_at = null,
       end_at = null,
+      max_responses = null,
       audience_roles = [],
       status = 'draft',
     } = req.body || {}
@@ -519,10 +627,11 @@ router.post('/', requireAdmin, async (req, res) => {
     if (Array.isArray(subjects) && subjects.length > 0 && subjects.some((s) => !s?.name)) {
       return res.status(400).json({ success: false, message: '评价对象姓名不能为空' })
     }
+    const maxResp = parseMaxResponses(max_responses)
     const [result] = await pool.query(
       `INSERT INTO surveys
-        (title, description, fields_json, subjects_json, is_anonymous, start_at, end_at, status, audience_roles_json, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (title, description, fields_json, subjects_json, is_anonymous, start_at, end_at, max_responses, status, audience_roles_json, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         title.trim(),
         description || '',
@@ -531,6 +640,7 @@ router.post('/', requireAdmin, async (req, res) => {
         is_anonymous ? 1 : 0,
         start_at || null,
         end_at || null,
+        maxResp,
         ['draft', 'published', 'closed'].includes(status) ? status : 'draft',
         JSON.stringify(audience_roles || []),
         req.admin.username || null,
@@ -559,6 +669,10 @@ router.put('/:id', requireAdmin, async (req, res) => {
       req.body.is_anonymous !== undefined ? !!req.body.is_anonymous : !!row.is_anonymous
     const start_at = req.body.start_at !== undefined ? req.body.start_at : row.start_at
     const end_at = req.body.end_at !== undefined ? req.body.end_at : row.end_at
+    const max_responses =
+      req.body.max_responses !== undefined
+        ? parseMaxResponses(req.body.max_responses)
+        : parseMaxResponses(row.max_responses)
     const status = req.body.status ?? row.status
     const audience_roles =
       req.body.audience_roles !== undefined
@@ -568,7 +682,7 @@ router.put('/:id', requireAdmin, async (req, res) => {
     await pool.query(
       `UPDATE surveys SET
         title = ?, description = ?, fields_json = ?, subjects_json = ?, is_anonymous = ?,
-        start_at = ?, end_at = ?, status = ?, audience_roles_json = ?
+        start_at = ?, end_at = ?, max_responses = ?, status = ?, audience_roles_json = ?
        WHERE id = ?`,
       [
         String(title).trim(),
@@ -578,6 +692,7 @@ router.put('/:id', requireAdmin, async (req, res) => {
         is_anonymous ? 1 : 0,
         start_at || null,
         end_at || null,
+        max_responses,
         status,
         JSON.stringify(audience_roles || []),
         req.params.id,

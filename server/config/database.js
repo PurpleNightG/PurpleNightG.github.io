@@ -110,6 +110,7 @@ async function runMigrations() {
       is_anonymous TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否匿名',
       start_at DATETIME NULL COMMENT '开始时间',
       end_at DATETIME NULL COMMENT '结束时间',
+      max_responses INT NULL COMMENT '填写人数上限，NULL为不限制',
       status ENUM('draft','published','closed') NOT NULL DEFAULT 'draft' COMMENT '状态',
       audience_roles_json JSON NULL COMMENT '可填阶段角色，空=全体',
       created_by VARCHAR(100) NULL,
@@ -156,6 +157,16 @@ async function runMigrations() {
       ADD COLUMN subjects_json JSON NULL COMMENT '满意度评价对象（教官等）' AFTER fields_json
     `)
     console.log('✅ surveys.subjects_json 字段迁移完成')
+  } catch (e) {
+    if (e.code !== 'ER_DUP_FIELDNAME') throw e
+  }
+
+  try {
+    await pool.query(`
+      ALTER TABLE surveys
+      ADD COLUMN max_responses INT NULL COMMENT '填写人数上限，NULL为不限制' AFTER end_at
+    `)
+    console.log('✅ surveys.max_responses 字段迁移完成')
   } catch (e) {
     if (e.code !== 'ER_DUP_FIELDNAME') throw e
   }
