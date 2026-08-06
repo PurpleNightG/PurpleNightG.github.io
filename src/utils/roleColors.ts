@@ -1,4 +1,4 @@
-/** 成员阶段角色徽章：偏紫冷色玻璃底，避免琥珀/橄榄绿发棕 */
+/** 成员阶段角色徽章：新训/尖兵保留彩色，管理与教职用黑金属系列 */
 export function getRoleColor(role: string): string {
   switch (role) {
     case '未新训':
@@ -10,31 +10,31 @@ export function getRoleColor(role: string): string {
     case '新训二期':
       return 'bg-blue-500/25 text-blue-100'
     case '新训三期':
-      return 'bg-violet-500/25 text-violet-100'
+      return 'role-tint-green'
     case '新训准考':
-      return 'bg-fuchsia-500/25 text-fuchsia-100'
+      return 'role-tint-yellow'
 
     case '紫夜':
       return 'bg-purple-500/30 text-purple-100'
     case '紫夜尖兵':
       return 'bg-violet-400/28 text-violet-100'
-    case '紫夜助教':
-      return 'bg-teal-500/28 text-teal-50'
 
+    case '紫夜助教':
+      return 'tag-color-metal tag-color-blackemerald'
     case '会长':
-      return 'bg-fuchsia-400/28 text-fuchsia-50'
+      return 'tag-color-metal tag-color-blackgold'
     case '执行官':
-      return 'bg-pink-500/28 text-pink-100'
+      return 'tag-color-metal tag-color-blackcopper'
     case '人事':
-      return 'bg-cyan-400/25 text-cyan-50'
+      return 'tag-color-metal tag-color-blacksilver'
     case '总教':
-      return 'bg-emerald-400/25 text-emerald-50'
+      return 'tag-color-metal tag-color-blackrose'
     case '尖兵教官':
-      return 'bg-indigo-400/28 text-indigo-50'
+      return 'tag-color-metal tag-color-blackviolet'
     case '教官':
-      return 'bg-purple-400/28 text-purple-50'
+      return 'tag-color-metal tag-color-blackcopper'
     case '工程师':
-      return 'bg-violet-500/28 text-violet-50'
+      return 'tag-color-metal tag-color-blackice'
 
     default:
       break

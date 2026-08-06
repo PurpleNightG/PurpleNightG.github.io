@@ -975,6 +975,43 @@ router.get('/join-requests/mine', async (req, res) => {
   }
 })
 
+/** 主机 / 管理员：当前可审批的进入申请（全站浮窗用） */
+router.get('/join-requests/hosting', async (req, res) => {
+  try {
+    const hostName = String(req.query.hostName || req.query.displayName || '').trim()
+    const userType = String(req.query.userType || '').trim()
+    const roomIds = []
+    for (const [rid, room] of rooms.entries()) {
+      if (!room?.hostName) continue
+      if (!canInviteToRoom(room, { userType, hostName })) continue
+      roomIds.push(String(rid).toUpperCase())
+    }
+    if (!roomIds.length) return res.json({ requests: [] })
+
+    const placeholders = roomIds.map(() => '?').join(',')
+    const [rows] = await pool.execute(
+      `SELECT id, room_id, member_id, display_name, status, UNIX_TIMESTAMP(created_at)*1000 AS createdAt
+       FROM room_join_requests
+       WHERE status = 'pending' AND room_id IN (${placeholders})
+       ORDER BY created_at ASC
+       LIMIT 50`,
+      roomIds
+    )
+    res.json({
+      requests: rows.map((r) => ({
+        id: r.id,
+        roomId: String(r.room_id).toUpperCase(),
+        memberId: Number(r.member_id),
+        displayName: r.display_name,
+        status: r.status,
+        createdAt: Number(r.createdAt) || 0,
+      })),
+    })
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message, requests: [] })
+  }
+})
+
 /** 可邀请观看的成员（未退队、且当前不在该房间观看）
  *  不按 hostName 排除同名学员；仅排除真实观看者 memberId，以及可选的 excludeMemberId（自己）
  */
@@ -1071,12 +1108,31 @@ router.post('/:roomId/join-request', async (req, res) => {
     if (!found) {
       return res.status(404).json({ success: false, error: '房间不存在或已关闭' })
     }
-    const { roomId } = found
+    const { roomId, room } = found
     const mid = inviteMemberKey(req.body?.memberId)
     const displayName = String(req.body?.displayName || '').trim().slice(0, 128)
     if (!mid) return res.status(400).json({ success: false, error: '请先登录学员账号' })
     if (!displayName) return res.status(400).json({ success: false, error: '缺少显示名' })
-    if (getWatchingMemberIds(found.room).has(mid)) {
+
+    // 禁止申请进入自己开的共享
+    const host = String(room.hostName || '').trim().toLowerCase()
+    if (host) {
+      const aliases = new Set([displayName.toLowerCase()])
+      try {
+        const [rows] = await pool.execute(
+          `SELECT nickname, username FROM members WHERE id = ? LIMIT 1`,
+          [mid]
+        )
+        const row = rows[0]
+        if (row?.nickname) aliases.add(String(row.nickname).trim().toLowerCase())
+        if (row?.username) aliases.add(String(row.username).trim().toLowerCase())
+      } catch {}
+      if (aliases.has(host)) {
+        return res.status(400).json({ success: false, error: '不能申请进入自己的共享' })
+      }
+    }
+
+    if (getWatchingMemberIds(room).has(mid)) {
       return res.json({ success: true, status: 'approved', alreadyIn: true })
     }
     await pool.execute(

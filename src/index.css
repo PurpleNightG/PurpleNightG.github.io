@@ -895,6 +895,162 @@ textarea.student-glass-field {
   mix-blend-mode: soft-light;
 }
 
+/* 新训阶段彩色底：强制背景色，避免玻璃叠层把浅绿/浅黄压成黑底 */
+.student-glass-badge.role-tint-green,
+.status-badge.role-tint-green,
+.role-tint-green {
+  color: #dcfce7 !important;
+  background-color: rgba(34, 197, 94, 0.42) !important;
+  border-color: rgba(134, 239, 172, 0.45) !important;
+}
+
+.student-glass-badge.role-tint-yellow,
+.status-badge.role-tint-yellow,
+.role-tint-yellow {
+  color: #fef9c3 !important;
+  background-color: rgba(234, 179, 8, 0.42) !important;
+  border-color: rgba(250, 204, 21, 0.45) !important;
+}
+
+/* 黑金属系列标签：暗底 + 金属色描边/文字 + 高光（具体色相由各修饰类 CSS 变量决定） */
+.status-badge.tag-color-metal,
+.student-glass-badge.tag-color-metal,
+.tag-color-metal {
+  color: var(--metal-text) !important;
+  border-color: var(--metal-border) !important;
+  background-color: var(--metal-bg) !important;
+  background-image:
+    linear-gradient(155deg, var(--metal-sheen-a) 0%, var(--metal-sheen-b) 28%, transparent 55%),
+    linear-gradient(320deg, var(--metal-glow) 0%, transparent 48%),
+    linear-gradient(180deg, var(--metal-top) 0%, #0c0a08 52%, var(--metal-bottom) 100%) !important;
+  background-blend-mode: soft-light, normal, normal;
+  box-shadow:
+    inset 0 1px 0 var(--metal-inset-hi),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.4),
+    0 0 0 1px var(--metal-ring),
+    0 6px 16px -10px rgba(0, 0, 0, 0.7) !important;
+  text-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.65),
+    0 0 14px var(--metal-text-glow);
+}
+
+.status-badge.tag-color-metal::before,
+.student-glass-badge.tag-color-metal::before {
+  background: linear-gradient(
+    105deg,
+    transparent 30%,
+    var(--metal-sweep) 48%,
+    transparent 66%
+  );
+  opacity: 0.75;
+  mix-blend-mode: soft-light;
+}
+
+.tag-color-blackgold {
+  --metal-text: #f3df9a;
+  --metal-border: rgba(212, 175, 55, 0.55);
+  --metal-bg: #100e0b;
+  --metal-sheen-a: rgba(255, 236, 180, 0.5);
+  --metal-sheen-b: rgba(232, 197, 106, 0.18);
+  --metal-glow: rgba(201, 162, 39, 0.4);
+  --metal-top: #2c2416;
+  --metal-bottom: #1a160f;
+  --metal-inset-hi: rgba(255, 240, 190, 0.5);
+  --metal-ring: rgba(201, 162, 39, 0.22);
+  --metal-text-glow: rgba(212, 175, 55, 0.28);
+  --metal-sweep: rgba(255, 236, 180, 0.45);
+}
+
+.tag-color-blacksilver {
+  --metal-text: #e8eef6;
+  --metal-border: rgba(180, 190, 205, 0.55);
+  --metal-bg: #0e1014;
+  --metal-sheen-a: rgba(255, 255, 255, 0.48);
+  --metal-sheen-b: rgba(200, 210, 225, 0.16);
+  --metal-glow: rgba(160, 175, 195, 0.38);
+  --metal-top: #242830;
+  --metal-bottom: #14161a;
+  --metal-inset-hi: rgba(255, 255, 255, 0.45);
+  --metal-ring: rgba(170, 180, 195, 0.22);
+  --metal-text-glow: rgba(200, 210, 230, 0.28);
+  --metal-sweep: rgba(255, 255, 255, 0.42);
+}
+
+.tag-color-blackcopper {
+  --metal-text: #f0c4a0;
+  --metal-border: rgba(205, 120, 70, 0.55);
+  --metal-bg: #120c09;
+  --metal-sheen-a: rgba(255, 210, 170, 0.48);
+  --metal-sheen-b: rgba(205, 120, 70, 0.18);
+  --metal-glow: rgba(180, 90, 45, 0.4);
+  --metal-top: #2c1c14;
+  --metal-bottom: #1a120e;
+  --metal-inset-hi: rgba(255, 220, 185, 0.48);
+  --metal-ring: rgba(180, 90, 45, 0.22);
+  --metal-text-glow: rgba(220, 140, 80, 0.28);
+  --metal-sweep: rgba(255, 210, 170, 0.42);
+}
+
+.tag-color-blackrose {
+  --metal-text: #f5c8d2;
+  --metal-border: rgba(220, 140, 160, 0.55);
+  --metal-bg: #140c10;
+  --metal-sheen-a: rgba(255, 220, 230, 0.48);
+  --metal-sheen-b: rgba(232, 160, 175, 0.18);
+  --metal-glow: rgba(180, 80, 110, 0.38);
+  --metal-top: #2c1820;
+  --metal-bottom: #1a1014;
+  --metal-inset-hi: rgba(255, 230, 236, 0.48);
+  --metal-ring: rgba(180, 90, 120, 0.22);
+  --metal-text-glow: rgba(232, 150, 170, 0.28);
+  --metal-sweep: rgba(255, 220, 230, 0.42);
+}
+
+.tag-color-blackice {
+  --metal-text: #c8eaf8;
+  --metal-border: rgba(120, 180, 220, 0.55);
+  --metal-bg: #0a1016;
+  --metal-sheen-a: rgba(220, 245, 255, 0.48);
+  --metal-sheen-b: rgba(140, 200, 230, 0.16);
+  --metal-glow: rgba(60, 140, 190, 0.4);
+  --metal-top: #182430;
+  --metal-bottom: #0e161c;
+  --metal-inset-hi: rgba(220, 245, 255, 0.48);
+  --metal-ring: rgba(80, 150, 200, 0.22);
+  --metal-text-glow: rgba(140, 200, 230, 0.3);
+  --metal-sweep: rgba(200, 240, 255, 0.42);
+}
+
+.tag-color-blackviolet {
+  --metal-text: #e0ccf8;
+  --metal-border: rgba(170, 130, 220, 0.55);
+  --metal-bg: #100c16;
+  --metal-sheen-a: rgba(235, 220, 255, 0.48);
+  --metal-sheen-b: rgba(180, 140, 230, 0.16);
+  --metal-glow: rgba(120, 80, 190, 0.4);
+  --metal-top: #221830;
+  --metal-bottom: #14101c;
+  --metal-inset-hi: rgba(235, 220, 255, 0.48);
+  --metal-ring: rgba(130, 90, 200, 0.22);
+  --metal-text-glow: rgba(180, 140, 230, 0.3);
+  --metal-sweep: rgba(230, 210, 255, 0.42);
+}
+
+.tag-color-blackemerald {
+  --metal-text: #b8f0d0;
+  --metal-border: rgba(80, 200, 140, 0.55);
+  --metal-bg: #0a1210;
+  --metal-sheen-a: rgba(200, 255, 220, 0.48);
+  --metal-sheen-b: rgba(80, 200, 140, 0.16);
+  --metal-glow: rgba(40, 160, 100, 0.4);
+  --metal-top: #183028;
+  --metal-bottom: #0e1a14;
+  --metal-inset-hi: rgba(200, 255, 220, 0.48);
+  --metal-ring: rgba(50, 170, 110, 0.22);
+  --metal-text-glow: rgba(90, 210, 150, 0.3);
+  --metal-sweep: rgba(180, 255, 210, 0.42);
+}
+
 /*
  * 主区内限宽居中（学员首页 / 管理首页等）
  */
@@ -1545,6 +1701,12 @@ select::-ms-expand {
 
 .markdown-content p {
   @apply mb-4 leading-relaxed;
+  white-space: pre-wrap;
+}
+
+/* 富文本编辑区：保留连续空格 */
+.ProseMirror {
+  white-space: pre-wrap;
 }
 
 .markdown-content strong {
@@ -1576,6 +1738,7 @@ select::-ms-expand {
 .markdown-content li {
   @apply mb-2 ml-2;
   transition: all 0.2s ease;
+  white-space: pre-wrap;
 }
 
 .markdown-content ul li:hover::marker {

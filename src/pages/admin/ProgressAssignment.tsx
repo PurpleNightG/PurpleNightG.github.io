@@ -1,11 +1,16 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { progressAPI, memberAPI } from '../../utils/api'
+import { progressAPI, memberAPI, courseAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
 import { CheckSquare, Square, X, Search, Filter, ChevronUp, ChevronDown, BookOpen } from 'lucide-react'
 import { formatDate } from '../../utils/dateFormat'
 import { getRoleColor } from '../../utils/roleColors'
 import MemberNameCell from '../../components/MemberNameCell'
+import {
+  parseMetaOptions,
+  tagBadgeClass,
+  type MetaOption,
+} from '../../utils/tagColors'
 
 interface Member {
   id: number
@@ -33,11 +38,53 @@ interface Course {
 
 const progressOptions = [0, 10, 20, 50, 75, 100]
 
+/** 默认分类优先，其余按实际课程动态追加（避免新分类/改名后课程在模态框消失） */
+const PREFERRED_CATEGORY_ORDER = [
+  '入门课程',
+  '标准技能一阶课程',
+  '标准技能二阶课程',
+  '团队训练',
+  '进阶课程',
+]
+
+function orderedCategories(courses: { category?: string | null }[]): string[] {
+  const present = [
+    ...new Set(
+      courses.map((c) => (c.category && String(c.category).trim()) || '未分类')
+    ),
+  ]
+  const preferred = PREFERRED_CATEGORY_ORDER.filter((c) => present.includes(c))
+  const rest = present
+    .filter((c) => !PREFERRED_CATEGORY_ORDER.includes(c))
+    .sort((a, b) => a.localeCompare(b, 'zh-CN'))
+  return [...preferred, ...rest]
+}
+
+function coursesInCategory(
+  courses: Course[],
+  category: string
+): Course[] {
+  return courses.filter((c) => {
+    const cat = (c.category && String(c.category).trim()) || '未分类'
+    return cat === category
+  })
+}
+
 export default function ProgressAssignment() {
   const navigate = useNavigate()
   const [members, setMembers] = useState<Member[]>([])
   const [selectedMemberIds, setSelectedMemberIds] = useState<Set<number>>(new Set())
   const [loading, setLoading] = useState(false)
+  const [difficulties, setDifficulties] = useState<MetaOption[]>(
+    parseMetaOptions(
+      [
+        { name: '初级', color: 'green' },
+        { name: '中级', color: 'blue' },
+        { name: '高级', color: 'red' },
+      ],
+      ['初级', '中级', '高级']
+    )
+  )
   
   // 搜索关键词
   const [searchQuery, setSearchQuery] = useState(() => {
@@ -83,7 +130,27 @@ export default function ProgressAssignment() {
 
   useEffect(() => {
     loadMembers()
+    loadDifficulties()
   }, [])
+
+  const loadDifficulties = async () => {
+    try {
+      const res = await courseAPI.getDifficulties()
+      setDifficulties(
+        parseMetaOptions(res.data, ['初级', '中级', '高级'])
+      )
+    } catch (error) {
+      console.error('加载难度配置失败:', error)
+    }
+  }
+
+  const getDifficultyColor = (difficulty: string) => {
+    const found = difficulties.find((d) => d.name === difficulty)
+    return tagBadgeClass(
+      found?.color ||
+        (difficulty === '初级' ? 'green' : difficulty === '高级' ? 'red' : 'blue')
+    )
+  }
 
   const loadMembers = async () => {
     setLoading(true)
@@ -649,8 +716,8 @@ export default function ProgressAssignment() {
                 <div className="text-center text-gray-400 py-12">加载课程中...</div>
               ) : (
                 <div className="space-y-4">
-                  {['入门课程', '标准技能一阶课程', '标准技能二阶课程', '团队训练', '进阶课程'].map(category => {
-                    const categoryCourses = memberCourses.filter(c => c.category === category)
+                  {orderedCategories(memberCourses).map(category => {
+                    const categoryCourses = coursesInCategory(memberCourses, category)
                     if (categoryCourses.length === 0) return null
 
                     return (
@@ -670,11 +737,7 @@ export default function ProgressAssignment() {
                                   <span className="text-white">{course.name}</span>
                                 </div>
                                 <div className="flex items-center gap-3 mt-1 text-sm text-gray-400">
-                                  <span className={`status-badge ${
-                                    course.difficulty === '初级' ? 'bg-green-600/20 text-green-300' :
-                                    course.difficulty === '中级' ? 'bg-yellow-600/20 text-yellow-300' :
-                                    'bg-red-600/20 text-red-300'
-                                  }`}>
+                                  <span className={`status-badge ${getDifficultyColor(course.difficulty)}`}>
                                     {course.difficulty}
                                   </span>
                                   <span>{course.hours} 课时</span>
@@ -702,6 +765,9 @@ export default function ProgressAssignment() {
                       </div>
                     )
                   })}
+                  {!loadingCourses && memberCourses.length === 0 && (
+                    <div className="text-center text-gray-400 py-12">暂无课程</div>
+                  )}
                 </div>
               )}
             </div>
@@ -770,8 +836,8 @@ export default function ProgressAssignment() {
                     </p>
                   </div>
                   
-                  {['入门课程', '标准技能一阶课程', '标准技能二阶课程', '团队训练', '进阶课程'].map(category => {
-                    const categoryCourses = batchCourses.filter(c => c.category === category)
+                  {orderedCategories(batchCourses).map(category => {
+                    const categoryCourses = coursesInCategory(batchCourses, category)
                     if (categoryCourses.length === 0) return null
 
                     return (
@@ -806,11 +872,7 @@ export default function ProgressAssignment() {
                                   )}
                                 </div>
                                 <div className="flex items-center gap-3 mt-1 text-sm text-gray-400">
-                                  <span className={`status-badge ${
-                                    course.difficulty === '初级' ? 'bg-green-600/20 text-green-300' :
-                                    course.difficulty === '中级' ? 'bg-yellow-600/20 text-yellow-300' :
-                                    'bg-red-600/20 text-red-300'
-                                  }`}>
+                                  <span className={`status-badge ${getDifficultyColor(course.difficulty)}`}>
                                     {course.difficulty}
                                   </span>
                                   <span>{course.hours} 课时</span>

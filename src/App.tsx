@@ -9,7 +9,7 @@ import StudentDashboard from './pages/StudentDashboard'
 import AssistantDashboard from './pages/AssistantDashboard'
 import Login from './pages/Login'
 import ToastContainer from './components/ToastContainer'
-import { MeetingInviteFloat, AdminMeetingsFloat, StudentLiveRoomsFloat } from './components/MeetingFloats'
+import { MeetingInviteFloat, AdminMeetingsFloat, StudentLiveRoomsFloat, HostJoinRequestsFloat } from './components/MeetingFloats'
 import { useSessionHeartbeat } from './hooks/useSessionHeartbeat'
 
 function App() {
@@ -25,6 +25,7 @@ function App() {
       >
         <MeetingInviteFloat />
         <StudentLiveRoomsFloat />
+        <HostJoinRequestsFloat />
         <AdminMeetingsFloat />
         <Routes>
         {/* Login Route - No Layout */}

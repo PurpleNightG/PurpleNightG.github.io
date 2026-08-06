@@ -17,13 +17,27 @@ import {
 import { sheetAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
 import { formatDateTime } from '../../utils/dateFormat'
-import SheetGrid, { emptySheetContent, type SheetContent } from '../../components/SheetGrid'
+import SheetGrid, { type SheetContent } from '../../components/SheetGrid'
 import SheetHistoryPanel from '../../components/SheetHistoryPanel'
+import SheetTabBar from '../../components/SheetTabBar'
 import StyledSelect from '../../components/StyledSelect'
 import SheetAssigneePicker, {
   ACCESS_MODE_OPTIONS,
   type AccessMode,
 } from '../../components/SheetAssigneePicker'
+import {
+  addSheet,
+  deleteSheet,
+  duplicateSheet,
+  emptyWorkbook,
+  getActiveSheet,
+  normalizeWorkbook,
+  renameSheet,
+  setActiveSheetId,
+  updateActiveSheetContent,
+  type WorkbookDocument,
+} from '../../utils/workbookModel'
+import { evaluateWorkbook } from '../../utils/sheetFormulaEngine'
 
 export default function SheetEditor() {
   const { id } = useParams()
@@ -40,12 +54,14 @@ export default function SheetEditor() {
   const [accessMode, setAccessMode] = useState<AccessMode>('student_readonly')
   const [assigneeIds, setAssigneeIds] = useState<number[]>([])
   const [status, setStatus] = useState<'draft' | 'published'>('draft')
-  const [content, setContent] = useState<SheetContent>(emptySheetContent())
+  const [workbook, setWorkbook] = useState<WorkbookDocument>(emptyWorkbook())
   const [updatedAt, setUpdatedAt] = useState<string | null>(null)
   const [updatedBy, setUpdatedBy] = useState<string | null>(null)
   const [dirty, setDirty] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const workbookRef = useRef(workbook)
+  workbookRef.current = workbook
 
   // 模态框内草稿，确认后再写回
   const [draftTitle, setDraftTitle] = useState('')
@@ -59,6 +75,30 @@ export default function SheetEditor() {
     return 'student_readonly'
   }
 
+  const scheduleSave = (next: WorkbookDocument) => {
+    setDirty(true)
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => {
+      sheetAPI
+        .update(workbookId, { content: next })
+        .then(() => {
+          setDirty(false)
+        })
+        .catch(() => {})
+    }, 1200)
+  }
+
+  const commitWorkbook = (next: WorkbookDocument) => {
+    const evaluated = evaluateWorkbook(next)
+    scheduleSave(evaluated)
+    return evaluated
+  }
+
+  const patchWorkbook = (updater: (doc: WorkbookDocument) => WorkbookDocument) => {
+    if (isView) return
+    setWorkbook((prev) => commitWorkbook(updater(prev)))
+  }
+
   const load = useCallback(async () => {
     if (!workbookId) return
     try {
@@ -70,7 +110,7 @@ export default function SheetEditor() {
       setAccessMode(normalizeMode(d.access_mode))
       setAssigneeIds(Array.isArray(d.assignee_ids) ? d.assignee_ids.map(Number) : [])
       setStatus(d.status === 'published' ? 'published' : 'draft')
-      setContent(d.content || emptySheetContent())
+      setWorkbook(evaluateWorkbook(normalizeWorkbook(d.content)))
       setUpdatedAt(d.updated_at || null)
       setUpdatedBy(d.updated_by || null)
       setDirty(false)
@@ -150,7 +190,7 @@ export default function SheetEditor() {
         description,
         access_mode: accessMode,
         status,
-        content,
+        content: workbookRef.current,
         ...partial,
       })
       setDirty(false)
@@ -167,17 +207,7 @@ export default function SheetEditor() {
 
   const onContentChange = (next: SheetContent) => {
     if (isView) return
-    setContent(next)
-    setDirty(true)
-    if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => {
-      sheetAPI
-        .update(workbookId, { content: next })
-        .then(() => {
-          setDirty(false)
-        })
-        .catch(() => {})
-    }, 1200)
+    setWorkbook((prev) => commitWorkbook(updateActiveSheetContent(prev, next)))
   }
 
   useEffect(() => {
@@ -193,6 +223,8 @@ export default function SheetEditor() {
       </div>
     )
   }
+
+  const active = getActiveSheet(workbook)
 
   return (
     <div className="flex flex-col h-[calc(100dvh)] max-h-[calc(100dvh)] overflow-hidden p-4 sm:p-6 gap-3">
@@ -306,13 +338,31 @@ export default function SheetEditor() {
         <p className="text-sm text-gray-400 whitespace-pre-wrap px-1 shrink-0">{description}</p>
       )}
 
-      <SheetGrid
-        className="flex-1 min-h-0"
-        value={content}
-        onChange={isView ? undefined : onContentChange}
-        readOnly={isView}
-        allowResizeColumns={!isView}
-      />
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden rounded-xl border border-white/10 bg-black/20">
+        <SheetGrid
+          key={active.id}
+          className="flex-1 min-h-0"
+          value={active.content}
+          onChange={isView ? undefined : onContentChange}
+          readOnly={isView}
+          allowResizeColumns={!isView}
+        />
+        <SheetTabBar
+          doc={workbook}
+          readOnly={isView}
+          onSelect={(sid) => {
+            if (isView) {
+              setWorkbook((prev) => setActiveSheetId(prev, sid))
+              return
+            }
+            patchWorkbook((doc) => setActiveSheetId(doc, sid))
+          }}
+          onRename={(sid, name) => patchWorkbook((doc) => renameSheet(doc, sid, name))}
+          onAdd={() => patchWorkbook((doc) => addSheet(doc))}
+          onDelete={(sid) => patchWorkbook((doc) => deleteSheet(doc, sid))}
+          onDuplicate={(sid) => patchWorkbook((doc) => duplicateSheet(doc, sid))}
+        />
+      </div>
 
       <SheetHistoryPanel
         open={showHistory}
@@ -330,7 +380,7 @@ export default function SheetEditor() {
           if (saveTimer.current) clearTimeout(saveTimer.current)
           try {
             const res = await sheetAPI.restoreRevision(workbookId, revId)
-            if (res.data?.content) setContent(res.data.content)
+            if (res.data?.content) setWorkbook(evaluateWorkbook(normalizeWorkbook(res.data.content)))
             else await load()
             setDirty(false)
             toast.success(res.message || '已回退')

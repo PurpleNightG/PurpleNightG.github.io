@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Edit, Trash2, Search, X, Filter, CheckSquare, Square, Settings, GripVertical, Users, Loader2, BookOpen, ArrowUpToLine, ArrowDownToLine } from 'lucide-react'
+import { Plus, Edit, Trash2, Search, X, Filter, CheckSquare, Square, Settings, GripVertical, Users, Loader2, BookOpen, ArrowUpToLine, ArrowDownToLine, ListOrdered } from 'lucide-react'
 import {
   DndContext,
   closestCenter,
@@ -24,8 +24,9 @@ import { toast } from '../../utils/toast'
 import StyledSelect from '../../components/StyledSelect'
 import {
   TAG_COLOR_KEYS,
-  TAG_COLOR_SWATCH,
+  TAG_COLOR_LABELS,
   tagBadgeClass,
+  tagSwatchStyle,
   parseMetaOptions,
   type MetaOption,
   type TagColorKey,
@@ -147,6 +148,71 @@ function CourseRow({
   )
 }
 
+/** 顺序模态框中的单行（可改序号） */
+function OrderModalRow({
+  course,
+  maxOrder,
+  onOrderChange,
+  getCategoryColor,
+}: {
+  course: Course
+  maxOrder: number
+  onOrderChange: (id: string, newOrder: number) => void
+  getCategoryColor: (category: string) => string
+}) {
+  const [orderDraft, setOrderDraft] = useState(String(course.order))
+
+  useEffect(() => {
+    setOrderDraft(String(course.order))
+  }, [course.order])
+
+  const commitOrder = () => {
+    const parsed = parseInt(orderDraft, 10)
+    if (!Number.isFinite(parsed)) {
+      setOrderDraft(String(course.order))
+      return
+    }
+    const clamped = Math.min(Math.max(parsed, 1), maxOrder)
+    if (clamped !== course.order) {
+      onOrderChange(course.id, clamped)
+    } else {
+      setOrderDraft(String(course.order))
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-white/5 hover:bg-white/8">
+      <input
+        type="number"
+        min={1}
+        max={maxOrder}
+        value={orderDraft}
+        onChange={e => setOrderDraft(e.target.value)}
+        onBlur={commitOrder}
+        onKeyDown={e => {
+          if (e.key === 'Enter') e.currentTarget.blur()
+          else if (e.key === 'Escape') {
+            setOrderDraft(String(course.order))
+            e.currentTarget.blur()
+          }
+        }}
+        className="w-14 shrink-0 bg-gray-800 border border-gray-600 rounded px-1.5 py-1.5 text-center text-sm text-white focus:outline-none focus:border-purple-500"
+        title="修改后回车或失焦生效"
+        aria-label={`「${course.name}」的排序序号`}
+      />
+      <div className="min-w-0 flex-1">
+        <div className="font-medium text-white truncate">
+          <span className="text-purple-300 mr-1.5">{course.code}</span>
+          {course.name}
+        </div>
+      </div>
+      <span className={`status-badge shrink-0 ${getCategoryColor(course.category)}`}>
+        {course.category}
+      </span>
+    </div>
+  )
+}
+
 export default function CourseManagement() {
   const navigate = useNavigate()
   const [courses, setCourses] = useState<Course[]>([])
@@ -185,6 +251,9 @@ export default function CourseManagement() {
   const [editingCourse, setEditingCourse] = useState<Course | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [showBatchModal, setShowBatchModal] = useState(false)
+  const [showOrderModal, setShowOrderModal] = useState(false)
+  const [orderModalCourses, setOrderModalCourses] = useState<Course[]>([])
+  const [savingOrderModal, setSavingOrderModal] = useState(false)
   
   // 从localStorage加载筛选条件
   const [filters, setFilters] = useState(() => {
@@ -411,6 +480,43 @@ export default function CourseManagement() {
         })
       }
       setHasUnsavedChanges(true)
+    }
+  }
+
+  /** 打开调整顺序模态框 */
+  const openOrderModal = () => {
+    setOrderModalCourses(courses.map((c, index) => ({ ...c, order: index + 1 })))
+    setShowOrderModal(true)
+  }
+
+  /** 在模态框内改序号（保留 code） */
+  const handleOrderModalNumberChange = (courseId: string, newOrder: number) => {
+    setOrderModalCourses(prev => {
+      const fromIndex = prev.findIndex(c => c.id === courseId)
+      if (fromIndex < 0) return prev
+      const targetIndex = Math.min(Math.max(newOrder, 1), prev.length) - 1
+      if (fromIndex === targetIndex) return prev
+      return arrayMove(prev, fromIndex, targetIndex).map((item, index) => ({
+        ...item,
+        order: index + 1,
+      }))
+    })
+  }
+
+  const handleSaveOrderModal = async () => {
+    setSavingOrderModal(true)
+    try {
+      const ordered = orderModalCourses.map((item, index) => ({ ...item, order: index + 1 }))
+      await courseAPI.updateOrder(ordered)
+      setCourses(ordered)
+      setHasUnsavedChanges(false)
+      setShowOrderModal(false)
+      toast.success('课程顺序已保存')
+    } catch (error: any) {
+      console.error('保存顺序失败:', error)
+      toast.error('保存顺序失败: ' + error.message)
+    } finally {
+      setSavingOrderModal(false)
     }
   }
 
@@ -989,6 +1095,14 @@ export default function CourseManagement() {
             筛选{activeFilterCount > 0 && ` (${activeFilterCount})`}
           </button>
           <button
+            onClick={openOrderModal}
+            className="px-4 py-2 rounded-lg flex items-center gap-2 bg-sky-700 hover:bg-sky-600 text-white transition-colors"
+            title="通过修改序号调整课程顺序"
+          >
+            <ListOrdered size={20} />
+            调整顺序
+          </button>
+          <button
             onClick={() => openConfigModal('category')}
             className="px-4 py-2 rounded-lg flex items-center gap-2 bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
             title="管理类别和难度"
@@ -1318,6 +1432,67 @@ export default function CourseManagement() {
         </div>
       )}
 
+      {/* 调整顺序模态框 */}
+      {showOrderModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 glass-modal-backdrop" aria-hidden onClick={() => !savingOrderModal && setShowOrderModal(false)} />
+          <div className="relative z-10 glass-modal-frame w-full max-w-2xl max-h-[85vh] flex flex-col">
+            <div className="glass-modal-tilt flex flex-col max-h-[85vh]">
+              <div className="student-glass-panel student-glass-panel--static student-glass-modal flex flex-col max-h-[85vh] overflow-hidden">
+                <div className="px-6 py-4 border-b border-white/10 shrink-0">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h2 className="text-xl font-bold text-white">调整课程顺序</h2>
+                      <p className="text-sm text-gray-400 mt-1">
+                        修改左侧序号后回车或失焦即可重排，不改课程编号。共 {orderModalCourses.length} 门。
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => !savingOrderModal && setShowOrderModal(false)}
+                      className="text-gray-400 hover:text-white transition-colors"
+                      aria-label="关闭"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
+                </div>
+                <div className="px-4 py-3 overflow-y-auto flex-1 space-y-1.5 min-h-0">
+                  {orderModalCourses.map(course => (
+                    <OrderModalRow
+                      key={course.id}
+                      course={course}
+                      maxOrder={orderModalCourses.length}
+                      onOrderChange={handleOrderModalNumberChange}
+                      getCategoryColor={getCategoryColor}
+                    />
+                  ))}
+                </div>
+                <div className="px-6 py-4 border-t border-white/10 flex gap-3 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleSaveOrderModal}
+                    disabled={savingOrderModal}
+                    className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white py-2 rounded-lg transition-colors inline-flex items-center justify-center gap-2"
+                  >
+                    {savingOrderModal && <Loader2 size={16} className="animate-spin" />}
+                    {savingOrderModal ? '保存中...' : '保存顺序'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowOrderModal(false)}
+                    disabled={savingOrderModal}
+                    className="flex-1 bg-gray-600 hover:bg-gray-700 disabled:opacity-50 text-white py-2 rounded-lg transition-colors"
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 批量修改模态框 */}
       {showBatchModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -1433,13 +1608,13 @@ export default function CourseManagement() {
                       <button
                         key={key}
                         type="button"
-                        title={key}
+                        title={TAG_COLOR_LABELS[key]}
                         disabled={submitting}
                         onClick={() => changeOptionColor(item.name, key)}
-                        className={`w-5 h-5 rounded-full border-2 transition-transform ${
+                        className={`w-5 h-5 shrink-0 rounded-full border-2 overflow-hidden transition-transform ${
                           item.color === key ? 'border-white scale-110' : 'border-transparent opacity-80 hover:opacity-100'
                         }`}
-                        style={{ backgroundColor: TAG_COLOR_SWATCH[key] }}
+                        style={tagSwatchStyle(key)}
                       />
                     ))}
                   </div>

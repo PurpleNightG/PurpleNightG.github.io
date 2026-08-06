@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { Video, X, LogIn, GripVertical, PhoneOff, Monitor } from 'lucide-react'
+import { Video, X, LogIn, GripVertical, PhoneOff, Monitor, Users } from 'lucide-react'
 import { isLiveSessionBusy, onLiveSessionBusyChange } from '../utils/liveSessionFlag'
+import { loadGuestSession } from '../utils/guestSession'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
@@ -575,6 +576,58 @@ function getStudentDisplayName(): string {
   return '学员'
 }
 
+/** 当前学员可能作为主机登记的名字（username / nickname 都要认） */
+function getMyShareHostAliases(): string[] {
+  const names = new Set<string>()
+  try {
+    const studentUser = localStorage.getItem('studentUser') || sessionStorage.getItem('studentUser')
+    if (studentUser) {
+      const parsed = JSON.parse(studentUser)
+      for (const v of [parsed.username, parsed.name, parsed.game_id, parsed.nickname]) {
+        if (v && String(v).trim()) names.add(String(v).trim())
+      }
+    }
+  } catch {}
+  try {
+    const guest = loadGuestSession()
+    if (guest?.nickname) names.add(guest.nickname)
+  } catch {}
+  return [...names]
+}
+
+function isMyselfHostName(hostName: string | undefined | null): boolean {
+  if (!hostName) return false
+  const h = String(hostName).trim().toLowerCase()
+  if (!h) return false
+  return getMyShareHostAliases().some((a) => a.toLowerCase() === h)
+}
+
+/** 与 ScreenShare.getCurrentUsername 对齐，用于匹配房间 hostName */
+function getShareHostName(userType: 'admin' | 'student' | 'guest'): string {
+  try {
+    if (userType === 'admin') {
+      const adminUser = localStorage.getItem('user') || sessionStorage.getItem('user')
+      if (adminUser) {
+        const parsed = JSON.parse(adminUser)
+        return parsed.username || parsed.name || '管理员'
+      }
+    }
+    if (userType === 'student') {
+      const studentUser = localStorage.getItem('studentUser') || sessionStorage.getItem('studentUser')
+      if (studentUser) {
+        const parsed = JSON.parse(studentUser)
+        // ScreenShare 开房用的是 username（不是 nickname）
+        return parsed.username || parsed.name || parsed.game_id || parsed.nickname || '学员'
+      }
+    }
+    if (userType === 'guest') {
+      const guest = loadGuestSession()
+      if (guest?.nickname) return guest.nickname
+    }
+  } catch {}
+  return userType === 'admin' ? '管理员' : userType === 'guest' ? '访客' : '学员'
+}
+
 /** 学员端：在线会议 / 屏幕共享列表，申请进入需发起者同意 */
 export function StudentLiveRoomsFloat() {
   const navigate = useNavigate()
@@ -619,20 +672,33 @@ export function StudentLiveRoomsFloat() {
       const mMine = await meetMine.json()
 
       const statusMap: Record<string, MyJoinStatus['status']> = {}
+      const myHostAliases = new Set(getMyShareHostAliases().map((a) => a.toLowerCase()))
+
+      // 自己正在开的共享房间：绝不出现在申请列表，也不自动「进入」
+      const myHostedRoomIds = new Set<string>()
+      for (const room of rd.rooms || []) {
+        const roomId = String(room.roomId || '').toUpperCase()
+        if (roomId && isMyselfHostName(room.hostName)) myHostedRoomIds.add(roomId)
+      }
+
       for (const r of rMine.requests || []) {
-        statusMap[`share:${String(r.roomId).toUpperCase()}`] = r.status
+        const roomId = String(r.roomId).toUpperCase()
+        if (myHostedRoomIds.has(roomId)) continue
+        statusMap[`share:${roomId}`] = r.status
       }
       for (const r of mMine.requests || []) {
-        statusMap[`meeting:${String(r.code).toUpperCase()}`] = r.status
+        const code = String(r.code).toUpperCase()
+        statusMap[`meeting:${code}`] = r.status
       }
       setMyStatuses(statusMap)
 
-      // 批准后自动进入（仅一次）
+      // 批准后自动进入（仅一次）；跳过自己开的房
       for (const [key, status] of Object.entries(statusMap)) {
         if (status !== 'approved' || enteredRef.current.has(key)) continue
         enteredRef.current.add(key)
         if (key.startsWith('share:')) {
           const roomId = key.slice(6)
+          if (myHostedRoomIds.has(roomId)) continue
           if (roomId !== currentRoom) {
             navigate(`/screen-share?room=${encodeURIComponent(roomId)}&fromRequest=1`)
           }
@@ -648,6 +714,8 @@ export function StudentLiveRoomsFloat() {
       for (const room of rd.rooms || []) {
         const roomId = String(room.roomId || '').toUpperCase()
         if (!roomId || roomId === currentRoom) continue
+        // 不展示自己发起的共享
+        if (isMyselfHostName(room.hostName) || myHostedRoomIds.has(roomId)) continue
         list.push({
           kind: 'share',
           roomId,
@@ -659,6 +727,9 @@ export function StudentLiveRoomsFloat() {
       for (const m of md.meetings || []) {
         const code = String(m.code || '').toUpperCase()
         if (!code || code === currentMeeting) continue
+        // 不展示自己发起的会议
+        const createdBy = String(m.createdBy || '').trim()
+        if (createdBy && myHostAliases.has(createdBy.toLowerCase())) continue
         list.push({
           kind: 'meeting',
           code,
@@ -724,6 +795,14 @@ export function StudentLiveRoomsFloat() {
   const applyJoin = async (item: LiveRoomItem) => {
     const memberId = getStudentMemberId()
     if (!memberId || busyKey) return
+    if (item.kind === 'share' && isMyselfHostName(item.hostName)) {
+      setToast('这是你自己的共享，无需申请进入')
+      return
+    }
+    if (item.kind === 'meeting' && isMyselfHostName(item.createdBy)) {
+      setToast('这是你发起的会议，无需申请进入')
+      return
+    }
     const displayName = getStudentDisplayName()
     const key = item.kind === 'share' ? `share:${item.roomId}` : `meeting:${item.code}`
     setBusyKey(key)
@@ -861,6 +940,205 @@ export function StudentLiveRoomsFloat() {
               {toast && (
                 <div className="text-[11px] text-center text-white/55 pt-1">{toast}</div>
               )}
+            </div>
+          )}
+        </div>
+      </div>
+    </aside>,
+    document.body
+  )
+}
+
+type HostJoinReq = {
+  id: number
+  roomId: string
+  memberId: number
+  displayName: string
+  createdAt: number
+}
+
+/**
+ * 共享主机：待批「进入申请」浮窗
+ * - 学员在自己分享时：学员首页 / 屏幕共享大厅 / 共享中均可看到
+ * - 管理员后台：可审批任意进行中共享的进入申请
+ */
+export function HostJoinRequestsFloat() {
+  const location = useLocation()
+  const [requests, setRequests] = useState<HostJoinReq[]>([])
+  const [busyId, setBusyId] = useState<number | null>(null)
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
+  const [collapsed, setCollapsed] = useState(false)
+  const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null)
+
+  useEffect(() => {
+    if (pos) return
+    setPos({
+      x: Math.max(8, window.innerWidth - 300),
+      y: Math.max(8, window.innerHeight - 320),
+    })
+  }, [pos])
+
+  const identity = useCallback(() => {
+    if (isAdminLoggedIn() && (location.pathname.startsWith('/admin') || !isStudentLoggedIn())) {
+      return { hostName: getShareHostName('admin'), userType: 'admin' as const }
+    }
+    if (isStudentLoggedIn()) {
+      return { hostName: getShareHostName('student'), userType: 'student' as const }
+    }
+    if (isAdminLoggedIn()) {
+      return { hostName: getShareHostName('admin'), userType: 'admin' as const }
+    }
+    // 访客主机
+    const guest = loadGuestSession()
+    if (guest?.nickname) {
+      return { hostName: guest.nickname, userType: 'guest' as const }
+    }
+    return null
+  }, [location.pathname])
+
+  const poll = useCallback(async () => {
+    const id = identity()
+    if (!id || location.pathname === '/login') {
+      setRequests([])
+      return
+    }
+    try {
+      const q = new URLSearchParams({
+        hostName: id.hostName,
+        userType: id.userType,
+      })
+      const r = await fetch(`${API_URL}/room/join-requests/hosting?${q}`)
+      const d = await r.json()
+      setRequests(Array.isArray(d.requests) ? d.requests : [])
+    } catch {
+      setRequests([])
+    }
+  }, [identity, location.pathname])
+
+  useEffect(() => {
+    poll()
+    const iv = setInterval(poll, 2000)
+    return () => clearInterval(iv)
+  }, [poll])
+
+  const respond = async (reqItem: HostJoinReq, accept: boolean) => {
+    const id = identity()
+    if (!id || busyId != null) return
+    setBusyId(reqItem.id)
+    try {
+      const r = await fetch(
+        `${API_URL}/room/${reqItem.roomId}/${accept ? 'join-approve' : 'join-reject'}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userType: id.userType,
+            hostName: id.hostName,
+            displayName: id.hostName,
+            memberId: reqItem.memberId,
+            requestId: reqItem.id,
+          }),
+        }
+      )
+      const d = await r.json()
+      if (!r.ok || d.success === false) throw new Error(d.error || '操作失败')
+      setRequests((prev) => prev.filter((x) => x.id !== reqItem.id))
+    } catch (e) {
+      console.warn('[HostJoinRequestsFloat]', e)
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const startDrag = (e: React.MouseEvent, p: { x: number; y: number }) => {
+    if ((e.target as HTMLElement).closest('button')) return
+    e.preventDefault()
+    dragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: p.x,
+      originY: p.y,
+    }
+    const onMove = (ev: MouseEvent) => {
+      const drag = dragRef.current
+      if (!drag) return
+      setPos({
+        x: Math.min(Math.max(8, drag.originX + ev.clientX - drag.startX), Math.max(8, window.innerWidth - 300)),
+        y: Math.min(Math.max(8, drag.originY + ev.clientY - drag.startY), Math.max(8, window.innerHeight - 220)),
+      })
+    }
+    const onUp = () => {
+      dragRef.current = null
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
+  if (!requests.length || !pos) return null
+
+  return createPortal(
+    <aside
+      className="fixed z-[70] w-[17.5rem] pointer-events-none"
+      style={{ left: pos.x, top: pos.y }}
+      aria-label="进入申请"
+    >
+      <div className="pointer-events-auto">
+        <div className="student-float-panel student-float-panel--amber overflow-hidden">
+          <div
+            className="flex items-center gap-3 p-4 cursor-grab active:cursor-grabbing select-none"
+            onMouseDown={(e) => startDrag(e, pos)}
+          >
+            <div className="p-2.5 rounded-2xl ring-1 shrink-0 bg-amber-400/15 ring-amber-300/25">
+              <Users className="text-amber-300" size={18} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[11px] uppercase tracking-[0.14em] text-white/45 mb-0.5 flex items-center gap-1">
+                <GripVertical size={11} className="opacity-60" />
+                Join Requests
+              </div>
+              <h3 className="text-white font-semibold leading-tight flex items-center gap-2">
+                进入申请
+                <span className="text-xs font-normal text-amber-300">{requests.length}</span>
+              </h3>
+            </div>
+            <button
+              type="button"
+              title={collapsed ? '展开' : '收起'}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={() => setCollapsed((v) => !v)}
+              className="px-2 py-1 rounded-lg text-[11px] text-white/45 hover:text-white/80 hover:bg-white/5"
+            >
+              {collapsed ? '展开' : '收起'}
+            </button>
+          </div>
+          {!collapsed && (
+            <div className="px-4 pb-4 space-y-2 max-h-[min(50vh,18rem)] overflow-y-auto sidebar-scrollbar">
+              {requests.map((jr) => (
+                <div key={jr.id} className="rounded-xl bg-black/25 border border-white/10 p-2.5 space-y-2">
+                  <div className="text-sm text-white/85 truncate">{jr.displayName}</div>
+                  <div className="text-[10px] text-white/35 font-mono tracking-wider">{jr.roomId}</div>
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      disabled={busyId === jr.id}
+                      onClick={() => respond(jr, true)}
+                      className="flex-1 py-1.5 rounded-lg text-xs font-medium bg-emerald-600/30 hover:bg-emerald-600/45 border border-emerald-400/35 text-emerald-100 disabled:opacity-50"
+                    >
+                      同意
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busyId === jr.id}
+                      onClick={() => respond(jr, false)}
+                      className="flex-1 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 disabled:opacity-50"
+                    >
+                      拒绝
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>

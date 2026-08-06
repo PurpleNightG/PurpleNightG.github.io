@@ -251,9 +251,7 @@ export default function ScreenShare() {
     stageRole: string | null
   }[]>([])
   const [inviteSelected, setInviteSelected] = useState<Set<number>>(() => new Set())
-  /** 主机：待批进入申请 */
-  const [joinRequests, setJoinRequests] = useState<{ id: number; memberId: number; displayName: string; createdAt: number }[]>([])
-  const [joinReqBusyId, setJoinReqBusyId] = useState<number | null>(null)
+  /** 主机：待批进入申请（全站 HostJoinRequestsFloat 负责） */
   const roomLinkHandledRef = useRef<string | null>(null)
   /** 来自「在线房间申请」批准后的进入，viewer 需带 fromRequest */
   const fromRequestRef = useRef(false)
@@ -700,60 +698,6 @@ export default function ScreenShare() {
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [])
-
-  // 主机：轮询进入申请
-  useEffect(() => {
-    if (mode !== 'host' || status !== 'streaming' || !roomCode) {
-      setJoinRequests([])
-      return
-    }
-    let cancelled = false
-    const poll = async () => {
-      try {
-        const q = new URLSearchParams({
-          hostName: myName.current || '',
-          userType: effectiveUserType || '',
-        })
-        const r = await fetch(`${API_URL}/room/${roomCode}/join-requests?${q}`)
-        const d = await r.json()
-        if (!cancelled) setJoinRequests(d.requests || [])
-      } catch {
-        if (!cancelled) setJoinRequests([])
-      }
-    }
-    poll()
-    const iv = setInterval(poll, 2000)
-    return () => {
-      cancelled = true
-      clearInterval(iv)
-    }
-  }, [mode, status, roomCode, effectiveUserType])
-
-  const respondJoinRequest = async (reqItem: { id: number; memberId: number }, accept: boolean) => {
-    if (!roomCode || joinReqBusyId != null) return
-    setJoinReqBusyId(reqItem.id)
-    try {
-      const r = await fetch(`${API_URL}/room/${roomCode}/${accept ? 'join-approve' : 'join-reject'}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userType: effectiveUserType,
-          hostName: myName.current,
-          displayName: myName.current,
-          memberId: reqItem.memberId,
-          requestId: reqItem.id,
-        }),
-      })
-      const d = await r.json()
-      if (!r.ok || d.success === false) throw new Error(d.error || '操作失败')
-      setJoinRequests((prev) => prev.filter((x) => x.id !== reqItem.id))
-      showMediaToast(accept ? '已同意进入' : '已拒绝申请', 'success')
-    } catch (e: any) {
-      showMediaToast(e?.message || '操作失败', 'success')
-    } finally {
-      setJoinReqBusyId(null)
-    }
-  }
 
   // RTC permission polling
   useEffect(() => {
@@ -4350,45 +4294,7 @@ export default function ScreenShare() {
 
   return (
     <div className={`flex flex-col ${isFullscreen ? 'h-screen bg-black' : 'min-h-[calc(100vh-8rem)] h-[calc(100vh-8rem)] px-3 sm:px-4 py-3 w-full'}`} ref={containerRef}>
-      {/* 主机：进入申请浮窗 */}
-      {mode === 'host' && status === 'streaming' && joinRequests.length > 0 && (
-        <div className="fixed z-[60] bottom-24 right-4 w-[17.5rem] pointer-events-auto">
-          <div className="student-float-panel student-float-panel--amber overflow-hidden">
-            <div className="p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <Users size={16} className="text-amber-300" />
-                <h3 className="text-sm font-semibold text-white">进入申请</h3>
-                <span className="text-xs text-amber-300 ml-auto">{joinRequests.length}</span>
-              </div>
-              <div className="space-y-2 max-h-48 overflow-y-auto sidebar-scrollbar">
-                {joinRequests.map((jr) => (
-                  <div key={jr.id} className="rounded-xl bg-black/25 border border-white/10 p-2.5 space-y-2">
-                    <div className="text-sm text-white/85 truncate">{jr.displayName}</div>
-                    <div className="flex gap-1.5">
-                      <button
-                        type="button"
-                        disabled={joinReqBusyId === jr.id}
-                        onClick={() => respondJoinRequest(jr, true)}
-                        className="flex-1 py-1.5 rounded-lg text-xs font-medium bg-emerald-600/30 hover:bg-emerald-600/45 border border-emerald-400/35 text-emerald-100 disabled:opacity-50"
-                      >
-                        同意
-                      </button>
-                      <button
-                        type="button"
-                        disabled={joinReqBusyId === jr.id}
-                        onClick={() => respondJoinRequest(jr, false)}
-                        className="flex-1 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 disabled:opacity-50"
-                      >
-                        拒绝
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* 进入申请浮窗改由全站 HostJoinRequestsFloat 负责（学员首页/共享大厅/管理后台均可审批） */}
 
       {/* 邀请观看面板 */}
       {inviteOpen && (

@@ -4,8 +4,22 @@ import { ArrowLeft, Loader2, Save, Lock, Share2, RefreshCw, History } from 'luci
 import { sheetAPI } from '../utils/api'
 import { toast } from '../utils/toast'
 import { formatDateTime } from '../utils/dateFormat'
-import SheetGrid, { emptySheetContent, type SheetContent } from '../components/SheetGrid'
+import SheetGrid, { type SheetContent } from '../components/SheetGrid'
 import SheetHistoryPanel from '../components/SheetHistoryPanel'
+import SheetTabBar from '../components/SheetTabBar'
+import {
+  addSheet,
+  deleteSheet,
+  duplicateSheet,
+  emptyWorkbook,
+  getActiveSheet,
+  normalizeWorkbook,
+  renameSheet,
+  setActiveSheetId,
+  updateActiveSheetContent,
+  type WorkbookDocument,
+} from '../utils/workbookModel'
+import { evaluateWorkbook } from '../utils/sheetFormulaEngine'
 
 export default function StudentSheetView() {
   const { id } = useParams()
@@ -16,12 +30,36 @@ export default function StudentSheetView() {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [canEdit, setCanEdit] = useState(false)
-  const [content, setContent] = useState<SheetContent>(emptySheetContent())
+  const [workbook, setWorkbook] = useState<WorkbookDocument>(emptyWorkbook())
   const [updatedAt, setUpdatedAt] = useState<string | null>(null)
   const [updatedBy, setUpdatedBy] = useState<string | null>(null)
   const [dirty, setDirty] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const workbookRef = useRef(workbook)
+  workbookRef.current = workbook
+
+  const scheduleSave = (next: WorkbookDocument) => {
+    setDirty(true)
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => {
+      sheetAPI
+        .studentSave(workbookId, next)
+        .then(() => setDirty(false))
+        .catch(() => {})
+    }, 1200)
+  }
+
+  const commitWorkbook = (next: WorkbookDocument) => {
+    const evaluated = evaluateWorkbook(next)
+    scheduleSave(evaluated)
+    return evaluated
+  }
+
+  const patchWorkbook = (updater: (doc: WorkbookDocument) => WorkbookDocument) => {
+    if (!canEdit) return
+    setWorkbook((prev) => commitWorkbook(updater(prev)))
+  }
 
   const load = useCallback(async (silent = false) => {
     if (!workbookId) return
@@ -32,7 +70,7 @@ export default function StudentSheetView() {
       setTitle(d.title || '')
       setDescription(d.description || '')
       setCanEdit(!!d.can_edit)
-      setContent(d.content || emptySheetContent())
+      setWorkbook(evaluateWorkbook(normalizeWorkbook(d.content)))
       setUpdatedAt(d.updated_at || null)
       setUpdatedBy(d.updated_by || null)
       setDirty(false)
@@ -55,11 +93,11 @@ export default function StudentSheetView() {
     return () => clearInterval(t)
   }, [canEdit, load])
 
-  const save = async (next?: SheetContent) => {
+  const save = async (next?: WorkbookDocument) => {
     if (!canEdit || !workbookId) return
     try {
       setSaving(true)
-      await sheetAPI.studentSave(workbookId, next || content)
+      await sheetAPI.studentSave(workbookId, next || workbookRef.current)
       setDirty(false)
       toast.success('已保存')
       await load(true)
@@ -72,15 +110,7 @@ export default function StudentSheetView() {
 
   const onContentChange = (next: SheetContent) => {
     if (!canEdit) return
-    setContent(next)
-    setDirty(true)
-    if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => {
-      sheetAPI
-        .studentSave(workbookId, next)
-        .then(() => setDirty(false))
-        .catch(() => {})
-    }, 1200)
+    setWorkbook((prev) => commitWorkbook(updateActiveSheetContent(prev, next)))
   }
 
   useEffect(() => {
@@ -96,6 +126,8 @@ export default function StudentSheetView() {
       </div>
     )
   }
+
+  const active = getActiveSheet(workbook)
 
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden p-4 sm:p-6 gap-3">
@@ -163,12 +195,30 @@ export default function StudentSheetView() {
         )}
       </div>
 
-      <SheetGrid
-        className="flex-1 min-h-0"
-        value={content}
-        onChange={canEdit ? onContentChange : undefined}
-        readOnly={!canEdit}
-      />
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden rounded-xl border border-white/10 bg-black/20">
+        <SheetGrid
+          key={active.id}
+          className="flex-1 min-h-0"
+          value={active.content}
+          onChange={canEdit ? onContentChange : undefined}
+          readOnly={!canEdit}
+        />
+        <SheetTabBar
+          doc={workbook}
+          readOnly={!canEdit}
+          onSelect={(sid) => {
+            if (!canEdit) {
+              setWorkbook((prev) => setActiveSheetId(prev, sid))
+              return
+            }
+            patchWorkbook((doc) => setActiveSheetId(doc, sid))
+          }}
+          onRename={(sid, name) => patchWorkbook((doc) => renameSheet(doc, sid, name))}
+          onAdd={() => patchWorkbook((doc) => addSheet(doc))}
+          onDelete={(sid) => patchWorkbook((doc) => deleteSheet(doc, sid))}
+          onDuplicate={(sid) => patchWorkbook((doc) => duplicateSheet(doc, sid))}
+        />
+      </div>
 
       <SheetHistoryPanel
         open={showHistory}

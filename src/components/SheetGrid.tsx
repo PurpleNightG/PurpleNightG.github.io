@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   Bold,
   Italic,
@@ -20,18 +20,32 @@ import {
   ArrowDownAZ,
   ArrowUpZA,
   Check,
+  Square,
+  Grid2X2,
+  PanelBottom,
+  PanelTop,
+  PanelLeft,
+  PanelRight,
+  Ban,
+  ClipboardPaste,
+  ZoomIn,
+  ZoomOut,
+  Sigma,
 } from 'lucide-react'
 import { toast } from '../utils/toast'
 import ThemeCheckbox from './ThemeCheckbox'
+import { HyperFormula } from 'hyperformula'
 
 export type CellAlign = 'left' | 'center' | 'right'
 
 /** 单元格：html 存选中文字级格式；旧字段兼容整格样式 */
 export type CellData = {
-  /** 纯文本兜底 / 旧数据 */
+  /** 纯文本兜底 / 旧数据 / 公式计算结果 */
   v?: string
-  /** 富文本 HTML（选中文字格式） */
+  /** 富文本 HTML（选中文字格式）；公式格一般为纯文本结果 */
   html?: string
+  /** Excel 风格公式，如 =SUM(A1:B2)；有 f 时显示 v 为计算结果 */
+  f?: string
   bold?: boolean
   italic?: boolean
   underline?: boolean
@@ -41,6 +55,16 @@ export type CellData = {
   bg?: string
   fontFamily?: string
   align?: CellAlign
+  /** 单元格边框（相对本格四边） */
+  borders?: {
+    t?: boolean
+    r?: boolean
+    b?: boolean
+    l?: boolean
+    color?: string
+    /** 边框粗细 px */
+    w?: number
+  }
 }
 
 export type MergeRange = { r: number; c: number; rs: number; cs: number }
@@ -52,6 +76,8 @@ export type SheetContent = {
   rowHeights?: number[]
   cells: Record<string, CellData>
   merges?: MergeRange[]
+  /** 整表网格线：普通 / 加粗更清晰 */
+  gridStyle?: 'normal' | 'bold'
 }
 
 const DEFAULT_COL_WIDTH = 120
@@ -61,6 +87,9 @@ const DEFAULT_ROW_HEIGHT = 34
 const MIN_ROW_HEIGHT = 24
 const MAX_ROW_HEIGHT = 240
 const HEADER_ROW_HEIGHT = 32
+const MIN_ZOOM = 0.5
+const MAX_ZOOM = 2
+const ZOOM_STEP = 0.1
 
 const FONT_FAMILIES = [
   { value: 'inherit', label: '默认' },
@@ -105,6 +134,156 @@ function colLabel(i: number) {
   return s
 }
 
+function cellRef(r: number, c: number) {
+  return `${colLabel(c)}${r + 1}`
+}
+
+function rangeRef(r0: number, c0: number, r1: number, c1: number) {
+  const a = cellRef(Math.min(r0, r1), Math.min(c0, c1))
+  const b = cellRef(Math.max(r0, r1), Math.max(c0, c1))
+  return a === b ? a : `${a}:${b}`
+}
+
+/** 公式点选：把引用写进函数括号内，或替换末尾已有引用 */
+function upsertFormulaRef(formula: string, ref: string): string {
+  let t = (formula || '').replace(/\s+$/, '')
+  if (!t.startsWith('=')) t = `=${t}`
+
+  // …A1 / …A1:B2 在末尾 → 替换
+  if (/[A-Za-z]+\d+(?::[A-Za-z]+\d+)?$/i.test(t)) {
+    return t.replace(/[A-Za-z]+\d+(?::[A-Za-z]+\d+)?$/i, ref)
+  }
+
+  // …A1) / …A1:B2) → 替换括号前的引用（=SUM(A1) 点选时变成 =SUM(B2)）
+  if (/[A-Za-z]+\d+(?::[A-Za-z]+\d+)?\)+$/i.test(t)) {
+    return t.replace(/[A-Za-z]+\d+(?::[A-Za-z]+\d+)?(?=\)+$)/i, ref)
+  }
+
+  // =SUM() → =SUM(ref)
+  if (/\(\)$/.test(t)) {
+    return t.replace(/\(\)$/, `(${ref})`)
+  }
+
+  // 运算符 / 开括号 / 逗号后直接追加
+  if (/[=+\-*/^&,(]$/.test(t)) return `${t}${ref}`
+
+  // 落在 ) 前：若括号内已有内容则加逗号
+  if (/\)$/.test(t)) {
+    const before = t.slice(0, -1)
+    if (/[=+\-*/^&,(]$/.test(before)) return `${before}${ref})`
+    if (/[A-Za-z]+\d+(?::[A-Za-z]+\d+)?$/i.test(before)) {
+      return `${before.replace(/[A-Za-z]+\d+(?::[A-Za-z]+\d+)?$/i, ref)})`
+    }
+    return `${before},${ref})`
+  }
+
+  return `${t}${ref}`
+}
+
+/** Excel 风格：不同引用循环配色；函数统一紫色 */
+const FORMULA_REF_COLORS = ['#38bdf8', '#a78bfa', '#f472b6', '#34d399', '#fbbf24', '#fb923c']
+const FORMULA_FN_COLOR = '#d8b4fe'
+const FORMULA_STR_COLOR = '#86efac'
+const FORMULA_NUM_COLOR = '#e2e8f0'
+const FORMULA_OP_COLOR = '#94a3b8'
+
+function highlightFormulaHtml(formula: string): string {
+  if (!formula) return ''
+  if (!formula.trimStart().startsWith('=')) {
+    return `<span style="color:#e5e7eb">${escapeHtml(formula)}</span>`
+  }
+  const refColorMap = new Map<string, string>()
+  let refIdx = 0
+  const refColor = (ref: string) => {
+    const key = ref.toUpperCase()
+    let c = refColorMap.get(key)
+    if (!c) {
+      c = FORMULA_REF_COLORS[refIdx % FORMULA_REF_COLORS.length]
+      refColorMap.set(key, c)
+      refIdx++
+    }
+    return c
+  }
+
+  let i = 0
+  let out = ''
+  while (i < formula.length) {
+    const rest = formula.slice(i)
+    if (rest[0] === '"') {
+      let j = 1
+      while (j < rest.length) {
+        if (rest[j] === '"' && rest[j + 1] === '"') {
+          j += 2
+          continue
+        }
+        if (rest[j] === '"') {
+          j++
+          break
+        }
+        j++
+      }
+      const tok = rest.slice(0, j)
+      out += `<span style="color:${FORMULA_STR_COLOR}">${escapeHtml(tok)}</span>`
+      i += j
+      continue
+    }
+    // 函数名（后接括号）
+    const fn = rest.match(/^([A-Za-z][A-Za-z0-9.]*)(?=\()/)
+    if (fn) {
+      out += `<span style="color:${FORMULA_FN_COLOR};font-weight:600">${escapeHtml(fn[1])}</span>`
+      i += fn[1].length
+      continue
+    }
+    // 工作表!引用 或 A1 / A1:B2
+    const cell = rest.match(
+      /^(?:('[^']+'|[A-Za-z_][\w]*)!)?(\$?[A-Za-z]+\$?\d+(?::\$?[A-Za-z]+\$?\d+)?)/
+    )
+    if (cell) {
+      out += `<span style="color:${refColor(cell[0])}">${escapeHtml(cell[0])}</span>`
+      i += cell[0].length
+      continue
+    }
+    const num = rest.match(/^\d+(\.\d+)?([eE][+-]?\d+)?/)
+    if (num) {
+      out += `<span style="color:${FORMULA_NUM_COLOR}">${escapeHtml(num[0])}</span>`
+      i += num[0].length
+      continue
+    }
+    out += `<span style="color:${FORMULA_OP_COLOR}">${escapeHtml(rest[0])}</span>`
+    i += 1
+  }
+  return out
+}
+
+/** 规范化函数插入：始终生成 NAME()，光标落在括号内 */
+function normalizeFnInsert(snippet: string): string {
+  const name = snippet.replace(/\(\)$/, '').replace(/\($/, '').replace(/\)$/, '').trim()
+  return `${name || 'SUM'}()`
+}
+
+const COMMON_SHEET_FUNCS: { name: string; desc: string; insert: string }[] = [
+  { name: 'SUM', desc: '求和', insert: 'SUM()' },
+  { name: 'AVERAGE', desc: '平均值', insert: 'AVERAGE()' },
+  { name: 'COUNT', desc: '计数（数字）', insert: 'COUNT()' },
+  { name: 'COUNTA', desc: '计数（非空）', insert: 'COUNTA()' },
+  { name: 'IF', desc: '条件判断', insert: 'IF()' },
+  { name: 'IFERROR', desc: '错误时返回备用值', insert: 'IFERROR()' },
+  { name: 'MIN', desc: '最小值', insert: 'MIN()' },
+  { name: 'MAX', desc: '最大值', insert: 'MAX()' },
+  { name: 'ROUND', desc: '四舍五入', insert: 'ROUND()' },
+  { name: 'ABS', desc: '绝对值', insert: 'ABS()' },
+  { name: 'AND', desc: '逻辑与', insert: 'AND()' },
+  { name: 'OR', desc: '逻辑或', insert: 'OR()' },
+  { name: 'LEFT', desc: '左侧文本', insert: 'LEFT()' },
+  { name: 'RIGHT', desc: '右侧文本', insert: 'RIGHT()' },
+  { name: 'LEN', desc: '文本长度', insert: 'LEN()' },
+  { name: 'CONCATENATE', desc: '连接文本', insert: 'CONCATENATE()' },
+  { name: 'VLOOKUP', desc: '垂直查找', insert: 'VLOOKUP()' },
+  { name: 'INDEX', desc: '索引取值', insert: 'INDEX()' },
+  { name: 'MATCH', desc: '匹配位置', insert: 'MATCH()' },
+  { name: 'SUMIF', desc: '条件求和', insert: 'SUMIF()' },
+]
+
 function cellKey(r: number, c: number) {
   return `${r},${c}`
 }
@@ -148,6 +327,11 @@ function normalizeMerges(merges?: MergeRange[]): MergeRange[] {
 
 function cellToHtml(cell?: CellData): string {
   if (!cell) return ''
+  // 公式格：始终显示计算结果（编辑时另取 f）
+  if (cell.f) {
+    const text = cell.v || ''
+    return text ? escapeHtml(text) : ''
+  }
   if (cell.html != null && cell.html !== '') return cell.html
   const text = cell.v || ''
   if (!text) return ''
@@ -161,6 +345,13 @@ function cellToHtml(cell?: CellData): string {
   const escaped = escapeHtml(text)
   if (!styles.length) return escaped
   return `<span style="${styles.join(';')}">${escaped}</span>`
+}
+
+/** 进入编辑时的内容：公式显示公式本身 */
+function cellEditHtml(cell?: CellData): string {
+  if (!cell) return ''
+  if (cell.f) return escapeHtml(cell.f)
+  return cellToHtml(cell)
 }
 
 function htmlToPlain(html: string): string {
@@ -298,21 +489,342 @@ function serializeClipboard(
     for (let c = 0; c < cs; c++) {
       const src = cells[cellKey(sel.r0 + r, sel.c0 + c)]
       if (src) payloadCells[cellKey(r, c)] = { ...src }
-      parts.push(htmlToPlain(cellToHtml(src)).replace(/\t/g, ' ').replace(/\r?\n/g, ' '))
+      const plain = (src?.f || htmlToPlain(cellToHtml(src))).replace(/\t/g, ' ')
+      // TSV：含换行或引号时加引号转义
+      if (/[\t\n\r"]/.test(plain)) {
+        parts.push(`"${plain.replace(/"/g, '""')}"`)
+      } else {
+        parts.push(plain)
+      }
     }
     lines.push(parts.join('\t'))
   }
   return { text: lines.join('\n'), payload: { cells: payloadCells, rows: rs, cols: cs } }
 }
 
+/** 解析 Excel/Sheets 的 TSV（支持引号内换行） */
 function parseTsv(text: string): string[][] {
-  return text
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .split('\n')
-    .map((line) => line.split('\t'))
-    .filter((row, i, arr) => !(i === arr.length - 1 && row.length === 1 && row[0] === ''))
+  const src = String(text || '').replace(/^\uFEFF/, '')
+  if (!src) return []
+  const rows: string[][] = []
+  let row: string[] = []
+  let field = ''
+  let i = 0
+  let inQuotes = false
+
+  const pushField = () => {
+    row.push(field)
+    field = ''
+  }
+  const pushRow = () => {
+    pushField()
+    // 忽略末尾空行
+    if (row.length === 1 && row[0] === '' && rows.length > 0) {
+      row = []
+      return
+    }
+    rows.push(row)
+    row = []
+  }
+
+  while (i < src.length) {
+    const ch = src[i]
+    if (inQuotes) {
+      if (ch === '"') {
+        if (src[i + 1] === '"') {
+          field += '"'
+          i += 2
+          continue
+        }
+        inQuotes = false
+        i++
+        continue
+      }
+      field += ch
+      i++
+      continue
+    }
+    if (ch === '"') {
+      inQuotes = true
+      i++
+      continue
+    }
+    if (ch === '\t') {
+      pushField()
+      i++
+      continue
+    }
+    if (ch === '\r') {
+      if (src[i + 1] === '\n') i++
+      pushRow()
+      i++
+      continue
+    }
+    if (ch === '\n') {
+      pushRow()
+      i++
+      continue
+    }
+    field += ch
+    i++
+  }
+  if (inQuotes || field.length > 0 || row.length > 0) pushRow()
+  return rows.filter((r, idx, arr) => !(idx === arr.length - 1 && r.length === 1 && r[0] === ''))
 }
+
+function parseCssColor(raw?: string | null): string | undefined {
+  if (!raw) return undefined
+  const s = raw.trim().toLowerCase()
+  if (!s || s === 'transparent' || s === 'inherit' || s === 'initial') return undefined
+  if (s.startsWith('#')) {
+    if (/^#[0-9a-f]{3}$/i.test(s)) {
+      return `#${s[1]}${s[1]}${s[2]}${s[2]}${s[3]}${s[3]}`
+    }
+    if (/^#[0-9a-f]{6}$/i.test(s)) return s
+    return undefined
+  }
+  const m = s.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/)
+  if (m) {
+    const a = s.startsWith('rgba') ? Number(s.split(',')[3]) : 1
+    if (a === 0) return undefined
+    const hex = (n: number) => n.toString(16).padStart(2, '0')
+    return `#${hex(+m[1])}${hex(+m[2])}${hex(+m[3])}`
+  }
+  return undefined
+}
+
+function parseFontSizePx(raw?: string | null): number | undefined {
+  if (!raw) return undefined
+  const m = String(raw).trim().match(/^([\d.]+)\s*(px|pt)?$/i)
+  if (!m) return undefined
+  let n = Number(m[1])
+  if (!Number.isFinite(n) || n <= 0) return undefined
+  if ((m[2] || 'px').toLowerCase() === 'pt') n = Math.round(n * (96 / 72))
+  return Math.min(72, Math.max(10, Math.round(n)))
+}
+
+/** 清洗粘贴 HTML，仅保留安全的文字级标签 */
+function sanitizePasteInnerHtml(root: Element): string {
+  const walk = (node: Node): string => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return escapeHtml((node.textContent || '').replace(/\u00a0/g, ' '))
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return ''
+    const el = node as HTMLElement
+    const tag = el.tagName.toLowerCase()
+    if (['script', 'style', 'iframe', 'object', 'embed', 'link', 'meta', 'img'].includes(tag)) {
+      return ''
+    }
+    if (tag === 'br') return '<br>'
+    const inner = Array.from(el.childNodes).map(walk).join('')
+    if (tag === 'b' || tag === 'strong') return `<b>${inner}</b>`
+    if (tag === 'i' || tag === 'em') return `<i>${inner}</i>`
+    if (tag === 'u') return `<u>${inner}</u>`
+    if (tag === 'span' || tag === 'font') {
+      const styles: string[] = []
+      const color = parseCssColor(el.style.color || el.getAttribute('color'))
+      const size = parseFontSizePx(el.style.fontSize || el.getAttribute('size') || undefined)
+      const weight = el.style.fontWeight
+      const fs = el.style.fontStyle
+      const td = el.style.textDecoration
+      const ff = el.style.fontFamily
+      if (color) styles.push(`color:${color}`)
+      if (size) styles.push(`font-size:${size}px`)
+      if (weight === 'bold' || Number(weight) >= 600) styles.push('font-weight:700')
+      if (fs === 'italic') styles.push('font-style:italic')
+      if (td.includes('underline')) styles.push('text-decoration:underline')
+      if (ff) styles.push(`font-family:${ff.split(',')[0].replace(/['"]/g, '').trim()}`)
+      if (styles.length) return `<span style="${styles.join(';')}">${inner}</span>`
+      return inner
+    }
+    if (tag === 'p' || tag === 'div') {
+      return inner ? `${inner}<br>` : ''
+    }
+    return inner
+  }
+  return Array.from(root.childNodes)
+    .map(walk)
+    .join('')
+    .replace(/(<br>)+$/g, '')
+}
+
+function cellDataFromTd(td: Element): CellData {
+  const el = td as HTMLElement
+  const plain = (el.textContent || '').replace(/\u00a0/g, ' ').replace(/\r\n/g, '\n').trimEnd()
+  const style = el.style
+  const bg =
+    parseCssColor(style.backgroundColor) ||
+    parseCssColor(style.background) ||
+    parseCssColor(el.getAttribute('bgcolor'))
+  const color = parseCssColor(style.color)
+  const fontSize = parseFontSizePx(style.fontSize)
+  const weight = style.fontWeight
+  const bold = weight === 'bold' || Number(weight) >= 600 || !!el.querySelector('b,strong')
+  const italic = style.fontStyle === 'italic' || !!el.querySelector('i,em')
+  const underline =
+    (style.textDecoration || '').includes('underline') || !!el.querySelector('u')
+  const alignRaw = (style.textAlign || el.getAttribute('align') || '').toLowerCase()
+  const align: CellAlign | undefined =
+    alignRaw === 'center' || alignRaw === 'right' || alignRaw === 'left'
+      ? (alignRaw as CellAlign)
+      : undefined
+  const ff = style.fontFamily
+    ? style.fontFamily.split(',')[0].replace(/['"]/g, '').trim()
+    : undefined
+
+  const borders: NonNullable<CellData['borders']> = {}
+  const borderColor =
+    parseCssColor(style.borderColor) ||
+    parseCssColor(style.borderTopColor) ||
+    parseCssColor(style.borderRightColor) ||
+    '#e5e7eb'
+  const hasBorder = (side: string) => {
+    const w = style.getPropertyValue(`border-${side}-width`)
+    const st = style.getPropertyValue(`border-${side}-style`)
+    if (st && st !== 'none' && st !== 'hidden') return true
+    if (w && w !== '0px' && w !== '0') return true
+    return false
+  }
+  if (hasBorder('top')) borders.t = true
+  if (hasBorder('right')) borders.r = true
+  if (hasBorder('bottom')) borders.b = true
+  if (hasBorder('left')) borders.l = true
+  if (borders.t || borders.r || borders.b || borders.l) {
+    borders.color = borderColor
+    borders.w = 1
+  }
+
+  const innerHtml = sanitizePasteInnerHtml(el)
+  const cell: CellData = {}
+  if (plain.trim()) {
+    cell.v = plain
+    cell.html = innerHtml || escapeHtml(plain)
+  }
+  if (bg) cell.bg = bg
+  if (color) cell.color = color
+  if (fontSize) cell.fontSize = fontSize
+  if (bold) cell.bold = true
+  if (italic) cell.italic = true
+  if (underline) cell.underline = true
+  if (align) cell.align = align
+  if (ff) cell.fontFamily = ff
+  if (borders.t || borders.r || borders.b || borders.l) cell.borders = borders
+  return cell
+}
+
+function cellToTextOnly(cell?: CellData): CellData | undefined {
+  if (!cell) return undefined
+  const plain = htmlToPlain(cellToHtml(cell)).replace(/\u00a0/g, ' ')
+  if (!plain.trim()) return undefined
+  return { v: plain, html: escapeHtml(plain) }
+}
+
+/** 从剪贴板 HTML 抽表（纯文本，兼容旧逻辑） */
+function parseHtmlTable(html: string): string[][] | null {
+  if (!html || !/<\s*table[\s>]/i.test(html)) return null
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    const table = doc.querySelector('table')
+    if (!table) return null
+    const rows: string[][] = []
+    table.querySelectorAll('tr').forEach((tr) => {
+      const cells = Array.from(tr.querySelectorAll('th,td')).map((td) =>
+        (td.textContent || '').replace(/\u00a0/g, ' ').replace(/\r\n/g, '\n').trimEnd()
+      )
+      if (cells.length) rows.push(cells)
+    })
+    return rows.length ? rows : null
+  } catch {
+    return null
+  }
+}
+
+/** Excel/HTML 表 → 带格式的单元格矩阵 */
+function parseHtmlTableRich(html: string): CellData[][] | null {
+  if (!html || !/<\s*table[\s>]/i.test(html)) return null
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    const table = doc.querySelector('table')
+    if (!table) return null
+    const rows: CellData[][] = []
+    table.querySelectorAll('tr').forEach((tr) => {
+      const cells = Array.from(tr.querySelectorAll('th,td')).map((td) => cellDataFromTd(td))
+      if (cells.length) rows.push(cells)
+    })
+    return rows.length ? rows : null
+  } catch {
+    return null
+  }
+}
+
+function gridLooksMultiCell(grid: unknown[][]): boolean {
+  if (grid.length > 1) return true
+  return (grid[0]?.length || 0) > 1
+}
+
+function cellsHaveFormatDiff(
+  formatted: Record<string, CellData>,
+  textOnly: Record<string, CellData>
+): boolean {
+  const keys = new Set([...Object.keys(formatted), ...Object.keys(textOnly)])
+  for (const k of keys) {
+    const a = formatted[k]
+    const b = textOnly[k]
+    if (!a && !b) continue
+    if (!a || !b) return true
+    if ((a.html || '') !== (b.html || '')) return true
+    if (a.bg || a.color || a.bold || a.italic || a.underline || a.fontSize || a.fontFamily || a.align || a.borders) {
+      return true
+    }
+  }
+  return false
+}
+
+function hasAnyBorder(borders?: CellData['borders']) {
+  return !!(borders && (borders.t || borders.r || borders.b || borders.l))
+}
+
+type OverlayRect = { left: number; top: number; width: number; height: number }
+
+function measureElInRoot(el: HTMLElement, root: HTMLElement): OverlayRect {
+  const rr = root.getBoundingClientRect()
+  const er = el.getBoundingClientRect()
+  return {
+    left: er.left - rr.left,
+    top: er.top - rr.top,
+    width: er.width,
+    height: er.height,
+  }
+}
+
+function querySheetCell(
+  root: HTMLElement,
+  r: number,
+  c: number,
+  merges: MergeRange[]
+): HTMLElement | null {
+  const m = findMergeAt(merges, r, c)
+  const rr = m ? m.r : r
+  const cc = m ? m.c : c
+  return root.querySelector(`[data-cell="${rr},${cc}"]`)
+}
+
+function unionOverlayRects(rects: OverlayRect[]): OverlayRect | null {
+  if (!rects.length) return null
+  let left = Infinity
+  let top = Infinity
+  let right = -Infinity
+  let bottom = -Infinity
+  for (const r of rects) {
+    left = Math.min(left, r.left)
+    top = Math.min(top, r.top)
+    right = Math.max(right, r.left + r.width)
+    bottom = Math.max(bottom, r.top + r.height)
+  }
+  return { left, top, width: right - left, height: bottom - top }
+}
+
+type BorderMode = 'none' | 'all' | 'outer' | 'top' | 'bottom' | 'left' | 'right' | 'thick'
 
 type Props = {
   value: SheetContent
@@ -437,6 +949,159 @@ function ColorMenu({
                 }}
               />
             </label>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function BorderMenu({
+  disabled,
+  onPick,
+  boldGrid,
+  onToggleBoldGrid,
+}: {
+  disabled?: boolean
+  onPick: (mode: BorderMode) => void
+  boldGrid?: boolean
+  onToggleBoldGrid?: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const items: { mode: BorderMode; label: string; icon: React.ReactNode }[] = [
+    { mode: 'all', label: '全部边框', icon: <Square size={14} /> },
+    { mode: 'outer', label: '外侧边框', icon: <Grid2X2 size={14} /> },
+    { mode: 'thick', label: '粗边框（全）', icon: <Square size={14} strokeWidth={2.5} /> },
+    { mode: 'top', label: '上边框', icon: <PanelTop size={14} /> },
+    { mode: 'bottom', label: '下边框', icon: <PanelBottom size={14} /> },
+    { mode: 'left', label: '左边框', icon: <PanelLeft size={14} /> },
+    { mode: 'right', label: '右边框', icon: <PanelRight size={14} /> },
+    { mode: 'none', label: '无边框', icon: <Ban size={14} /> },
+  ]
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        title="单元格边框"
+        disabled={disabled}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => setOpen((v) => !v)}
+        className="h-7 px-1.5 rounded-md text-gray-300 hover:bg-white/10 disabled:opacity-35 disabled:pointer-events-none inline-flex items-center gap-0.5"
+      >
+        <Square size={14} />
+        <ChevronDown size={11} className="opacity-60" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-[55]" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-8 z-[60] w-44 rounded-lg border border-white/10 bg-gray-900 shadow-xl shadow-black/40 overflow-hidden py-1">
+            {items.map((it) => (
+              <button
+                key={it.mode}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  onPick(it.mode)
+                  setOpen(false)
+                }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-gray-200 hover:bg-white/10"
+              >
+                <span className="text-gray-400">{it.icon}</span>
+                {it.label}
+              </button>
+            ))}
+            {onToggleBoldGrid && (
+              <>
+                <div className="my-1 border-t border-white/10" />
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    onToggleBoldGrid()
+                    setOpen(false)
+                  }}
+                  className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-white/10 ${
+                    boldGrid ? 'text-violet-200' : 'text-gray-200'
+                  }`}
+                >
+                  <Grid2X2 size={14} className="text-gray-400" />
+                  {boldGrid ? '关闭加粗网格线' : '整表加粗网格线'}
+                </button>
+              </>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+/** Excel 式「格式 → 单元格大小」 */
+function FormatSizeMenu({
+  disabled,
+  onRowHeight,
+  onAutoRow,
+  onColWidth,
+  onAutoCol,
+  onDefaultCol,
+}: {
+  disabled?: boolean
+  onRowHeight: () => void
+  onAutoRow: () => void
+  onColWidth: () => void
+  onAutoCol: () => void
+  onDefaultCol: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const Item = ({
+    icon,
+    label,
+    onClick,
+  }: {
+    icon?: React.ReactNode
+    label: string
+    onClick: () => void
+  }) => (
+    <button
+      type="button"
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => {
+        onClick()
+        setOpen(false)
+      }}
+      className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-gray-200 hover:bg-white/10"
+    >
+      <span className="w-4 text-gray-400 inline-flex justify-center">{icon}</span>
+      {label}
+    </button>
+  )
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        title="格式（行高 / 列宽）"
+        disabled={disabled}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => setOpen((v) => !v)}
+        className="h-7 px-2 rounded-md text-gray-300 hover:bg-white/10 disabled:opacity-35 disabled:pointer-events-none inline-flex items-center gap-1 text-xs"
+      >
+        <Grid2X2 size={14} />
+        格式
+        <ChevronDown size={11} className="opacity-60" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-[55]" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-8 z-[60] w-52 rounded-lg border border-white/10 bg-gray-900 shadow-xl shadow-black/40 overflow-hidden py-1">
+            <div className="px-3 py-1 text-[10px] font-semibold text-gray-500 tracking-wide">
+              单元格大小
+            </div>
+            <Item icon={<ArrowUpDown size={13} />} label="行高..." onClick={onRowHeight} />
+            <Item label="自动调整行高" onClick={onAutoRow} />
+            <div className="my-1 border-t border-white/10" />
+            <Item icon={<ArrowLeftRight size={13} />} label="列宽..." onClick={onColWidth} />
+            <Item label="自动调整列宽" onClick={onAutoCol} />
+            <Item label="默认列宽..." onClick={onDefaultCol} />
           </div>
         </>
       )}
@@ -650,6 +1315,10 @@ export default function SheetGrid({
   const [anchor, setAnchor] = useState<{ r: number; c: number } | null>(null)
   const [focus, setFocus] = useState<{ r: number; c: number } | null>(null)
   const [editing, setEditing] = useState(false)
+  const [editHost, setEditHost] = useState<{ r: number; c: number } | null>(null)
+  const [editText, setEditText] = useState('')
+  const [fnPickerOpen, setFnPickerOpen] = useState(false)
+  const [fnQuery, setFnQuery] = useState('')
   const [dragging, setDragging] = useState(false)
   const [fontFamily, setFontFamily] = useState('inherit')
   const [fontSize, setFontSize] = useState(14)
@@ -660,9 +1329,27 @@ export default function SheetGrid({
   /** col -> allowed values；无 key 表示该列不筛选 */
   const [colFilters, setColFilters] = useState<Record<number, Set<string>>>({})
   const [filterMenuCol, setFilterMenuCol] = useState<number | null>(null)
+  const [zoom, setZoom] = useState(1)
+  const [colWidthInput, setColWidthInput] = useState(String(DEFAULT_COL_WIDTH))
+  const [rowHeightInput, setRowHeightInput] = useState(String(DEFAULT_ROW_HEIGHT))
+  const [sizeDialog, setSizeDialog] = useState<null | {
+    kind: 'row' | 'col' | 'defaultCol'
+    value: string
+  }>(null)
+  const [pasteOpts, setPasteOpts] = useState<{
+    r0: number
+    c0: number
+    rows: number
+    cols: number
+    mode: 'keep' | 'text'
+    formatted: Record<string, CellData>
+    textOnly: Record<string, CellData>
+    menuOpen: boolean
+  } | null>(null)
   const editRef = useRef<HTMLDivElement>(null)
   const toolbarRef = useRef<HTMLDivElement>(null)
   const gridWrapRef = useRef<HTMLDivElement>(null)
+  const gridContentRef = useRef<HTMLDivElement>(null)
   const resizingRef = useRef<ResizeState | null>(null)
   const savedRange = useRef<Range | null>(null)
   const undoStack = useRef<SheetContent[]>([])
@@ -672,6 +1359,11 @@ export default function SheetGrid({
   const lastCopiedText = useRef('')
   const seedEditRef = useRef<string | null>(null)
   const resizeHistPushed = useRef(false)
+  const formulaBarRef = useRef<HTMLInputElement>(null)
+  const formulaBarRowRef = useRef<HTMLDivElement>(null)
+  const formulaPointingRef = useRef(false)
+  const formulaPointStartRef = useRef<{ r: number; c: number } | null>(null)
+  const skipBlurEndRef = useRef(false)
 
   const rows = value.rows || 40
   const cols = value.cols || 16
@@ -681,6 +1373,12 @@ export default function SheetGrid({
     [rows, value.rowHeights]
   )
   const merges = useMemo(() => normalizeMerges(value.merges), [value.merges])
+  /** 视图缩放：放大行列像素与字号（不取整，避免各缩放比累加误差） */
+  const viewColWidths = useMemo(() => colWidths.map((w) => w * zoom), [colWidths, zoom])
+  const viewRowHeights = useMemo(() => rowHeights.map((h) => h * zoom), [rowHeights, zoom])
+  const viewHeaderH = HEADER_ROW_HEIGHT * zoom
+  const viewFontPx = 14 * zoom
+  const viewGutter = 40 * zoom
   const dataStartRow = headerAsTitle ? 1 : 0
 
   const sel = useMemo(() => {
@@ -688,7 +1386,90 @@ export default function SheetGrid({
     return normalizeSel(anchor, focus)
   }, [anchor, focus])
 
+  useEffect(() => {
+    const c = focus?.c ?? sel?.c0
+    const r = focus?.r ?? sel?.r0
+    if (c != null && c >= 0 && c < colWidths.length) {
+      setColWidthInput(String(colWidths[c]))
+    }
+    if (r != null && r >= 0 && r < rowHeights.length) {
+      setRowHeightInput(String(rowHeights[r]))
+    }
+  }, [focus?.r, focus?.c, sel?.c0, sel?.r0, colWidths, rowHeights])
+
+  useEffect(() => {
+    const el = gridWrapRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return
+      e.preventDefault()
+      const dir = e.deltaY > 0 ? -1 : 1
+      setZoom((z) => {
+        const next = Math.round((z + dir * ZOOM_STEP) * 100) / 100
+        return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next))
+      })
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
+
   const activeCell = focus ? value.cells?.[cellKey(focus.r, focus.c)] : undefined
+  const hostCell = editHost ? value.cells?.[cellKey(editHost.r, editHost.c)] : undefined
+  const isFormulaMode = editing && editText.trimStart().startsWith('=')
+
+  const allFnNames = useMemo(() => {
+    try {
+      return HyperFormula.getRegisteredFunctionNames('enGB').slice().sort()
+    } catch {
+      return COMMON_SHEET_FUNCS.map((f) => f.name)
+    }
+  }, [])
+
+  const filteredFns = useMemo(() => {
+    const q = fnQuery.trim().toUpperCase()
+    if (!q) return allFnNames.slice(0, 60)
+    return allFnNames.filter((n) => n.includes(q)).slice(0, 80)
+  }, [allFnNames, fnQuery])
+
+  const syncEditDomPlain = useCallback((text: string) => {
+    if (editRef.current) {
+      editRef.current.innerHTML = text
+        ? text.trimStart().startsWith('=')
+          ? highlightFormulaHtml(text)
+          : escapeHtml(text)
+        : ''
+    }
+    if (formulaBarRef.current && document.activeElement !== formulaBarRef.current) {
+      formulaBarRef.current.value = text
+    }
+  }, [])
+
+  const focusFormulaBarAt = (text: string, caret: number) => {
+    requestAnimationFrame(() => {
+      const el = formulaBarRef.current
+      if (!el) return
+      el.focus()
+      if (el.value !== text) el.value = text
+      const pos = Math.max(0, Math.min(caret, text.length))
+      try {
+        el.setSelectionRange(pos, pos)
+      } catch {
+        /* ignore */
+      }
+    })
+  }
+
+  const applyFormulaPointRef = useCallback(
+    (r0: number, c0: number, r1: number, c1: number) => {
+      const ref = rangeRef(r0, c0, r1, c1)
+      setEditText((prev) => {
+        const next = upsertFormulaRef(prev.startsWith('=') ? prev : `=${prev}`, ref)
+        syncEditDomPlain(next)
+        return next
+      })
+    },
+    [syncEditDomPlain]
+  )
 
   const rowVisible = useCallback(
     (r: number) => {
@@ -767,19 +1548,45 @@ export default function SheetGrid({
   )
 
   const saveEditHtml = useCallback(() => {
-    if (!focus || !editRef.current || readOnly) return
-    const html = editRef.current.innerHTML
-    const plain = htmlToPlain(html).trim()
-    const key = cellKey(focus.r, focus.c)
+    if (!editHost || readOnly) return
+    const htmlFromDom = editRef.current?.innerHTML ?? ''
+    const plainFromDom = htmlToPlain(htmlFromDom).trim()
+    // 公式模式以 editText / 公式栏为准；富文本仍可读 DOM
+    const plain = (isFormulaMode || editText.trimStart().startsWith('=')
+      ? editText
+      : editText || plainFromDom
+    ).trim()
+    const html =
+      plain.startsWith('=')
+        ? escapeHtml(plain)
+        : editText && !editRef.current
+          ? escapeHtml(editText)
+          : htmlFromDom || escapeHtml(plain)
+    const key = cellKey(editHost.r, editHost.c)
     const nextCells = { ...(value.cells || {}) }
+    const prev = nextCells[key] || {}
     if (!plain && !html.replace(/<br\s*\/?>/gi, '').replace(/&nbsp;/g, '').trim()) {
       delete nextCells[key]
-    } else {
+    } else if (plain.startsWith('=')) {
       nextCells[key] = {
-        ...(nextCells[key] || {}),
-        html,
+        ...prev,
+        f: plain,
         v: plain,
-        // 清除旧整格文字样式，避免与 html 冲突
+        html: escapeHtml(plain),
+        bold: undefined,
+        italic: undefined,
+        underline: undefined,
+        fontSize: undefined,
+        color: undefined,
+        fontFamily: undefined,
+      }
+    } else {
+      const { f: _drop, ...rest } = prev
+      nextCells[key] = {
+        ...rest,
+        html: html || escapeHtml(plain),
+        v: plain,
+        f: undefined,
         bold: undefined,
         italic: undefined,
         underline: undefined,
@@ -789,37 +1596,164 @@ export default function SheetGrid({
       }
     }
     persist({ cells: nextCells })
-  }, [focus, readOnly, value.cells, persist])
+  }, [editHost, readOnly, value.cells, persist, editText, isFormulaMode])
 
   const beginEdit = useCallback(
-    (r: number, c: number) => {
+    (r: number, c: number, seed?: string) => {
       if (readOnly) return
       if (isCovered(merges, r, c)) return
+      setPasteOpts(null)
       setAnchor({ r, c })
       setFocus({ r, c })
+      setEditHost({ r, c })
       setEditing(true)
+      const cell = value.cells?.[cellKey(r, c)]
+      const initial =
+        seed != null
+          ? seed
+          : cell?.f
+            ? cell.f
+            : htmlToPlain(cellToHtml(cell))
+      setEditText(initial)
+      formulaPointingRef.current = false
+      formulaPointStartRef.current = null
     },
-    [readOnly, merges]
+    [readOnly, merges, value.cells]
   )
 
   useEffect(() => {
-    if (!editing || !editRef.current || !focus) return
+    if (!editing || !editHost || !editRef.current) return
     if (seedEditRef.current != null) {
       const ch = seedEditRef.current
       seedEditRef.current = null
-      editRef.current.innerHTML = escapeHtml(ch)
-    } else {
-      const html = cellToHtml(getCell(focus.r, focus.c))
-      editRef.current.innerHTML = html || ''
+      setEditText(ch)
+      editRef.current.innerHTML = ch.trimStart().startsWith('=')
+        ? highlightFormulaHtml(ch)
+        : escapeHtml(ch)
+    } else if (isFormulaMode || editText.trimStart().startsWith('=') || hostCell?.f) {
+      editRef.current.innerHTML = highlightFormulaHtml(editText)
+    } else if (!editRef.current.innerHTML) {
+      editRef.current.innerHTML = cellEditHtml(hostCell) || ''
+      if (!editText) setEditText(htmlToPlain(editRef.current.innerHTML))
     }
-    editRef.current.focus()
-    const range = document.createRange()
-    range.selectNodeContents(editRef.current)
-    range.collapse(false)
-    const sel = window.getSelection()
-    sel?.removeAllRanges()
-    sel?.addRange(range)
-  }, [editing, focus?.r, focus?.c]) // eslint-disable-line react-hooks/exhaustive-deps
+    // 公式点选后保持编辑焦点
+    if (!formulaPointingRef.current) {
+      editRef.current.focus()
+      const range = document.createRange()
+      range.selectNodeContents(editRef.current)
+      range.collapse(false)
+      const s = window.getSelection()
+      s?.removeAllRanges()
+      s?.addRange(range)
+    }
+  }, [editing, editHost?.r, editHost?.c]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const endEdit = () => {
+    if (!editing) return
+    formulaPointingRef.current = false
+    formulaPointStartRef.current = null
+    saveEditHtml()
+    setEditing(false)
+    setEditHost(null)
+    setEditText('')
+  }
+
+  const cancelEdit = () => {
+    if (!editing) return
+    formulaPointingRef.current = false
+    formulaPointStartRef.current = null
+    setEditing(false)
+    setEditHost(null)
+    setEditText('')
+    seedEditRef.current = null
+  }
+
+  const shouldKeepEditing = (node: Node | null) => {
+    if (!node) return false
+    if (node === editRef.current || node === formulaBarRef.current) return true
+    if (toolbarRef.current?.contains(node)) return true
+    if (formulaBarRowRef.current?.contains(node)) return true
+    return false
+  }
+
+  const onEditBlur = (e: React.FocusEvent) => {
+    if (skipBlurEndRef.current || formulaPointingRef.current) return
+    if (shouldKeepEditing(e.relatedTarget as Node | null)) return
+    requestAnimationFrame(() => {
+      if (skipBlurEndRef.current || formulaPointingRef.current) return
+      const ae = document.activeElement
+      if (shouldKeepEditing(ae)) return
+      if (ae === gridWrapRef.current) return
+      endEdit()
+    })
+  }
+
+  const onFormulaBarBlur = (e: React.FocusEvent) => {
+    if (skipBlurEndRef.current || formulaPointingRef.current) return
+    if (shouldKeepEditing(e.relatedTarget as Node | null)) return
+    requestAnimationFrame(() => {
+      if (skipBlurEndRef.current || formulaPointingRef.current) return
+      const ae = document.activeElement
+      if (shouldKeepEditing(ae)) return
+      if (ae === gridWrapRef.current) return
+      endEdit()
+    })
+  }
+
+  const commitEditAndMove = (dr: number, dc: number) => {
+    const host = editHost || focus
+    endEdit()
+    if (!host) return
+    if (dc !== 0 && dr === 0) {
+      const next = stepCell(merges, host.r, host.c, 0, dc, rows, cols)
+      setAnchor({ r: next.r, c: next.c })
+      setFocus({ r: next.r, c: next.c })
+      return
+    }
+    let r = host.r
+    let c = host.c
+    let guard = 0
+    while (guard++ < rows + 2) {
+      const next = stepCell(merges, r, c, dr, dc, rows, cols)
+      if (next.r === r && next.c === c) break
+      r = next.r
+      c = next.c
+      if (rowVisible(r)) {
+        setAnchor({ r, c })
+        setFocus({ r, c })
+        return
+      }
+      if (dr === 0) break
+    }
+    setAnchor({ r, c })
+    setFocus({ r, c })
+  }
+
+  const insertFunctionSnippet = (snippet: string) => {
+    if (readOnly) return
+    const insert = normalizeFnInsert(snippet)
+    if (!editing || !editHost) {
+      if (!focus) {
+        toast.error('请先选中单元格')
+        return
+      }
+      const next = `=${insert}`
+      beginEdit(focus.r, focus.c, next)
+      setFnPickerOpen(false)
+      focusFormulaBarAt(next, next.length - 1)
+      return
+    }
+    const t = editText.trimEnd()
+    let next: string
+    if (!t || !t.startsWith('=')) next = `=${insert}`
+    else if (/[=+\-*/^&,(]$/.test(t)) next = `${t}${insert}`
+    else next = `${t}${insert}`
+    const caret = next.length - 1
+    setEditText(next)
+    syncEditDomPlain(next)
+    setFnPickerOpen(false)
+    focusFormulaBarAt(next, caret)
+  }
 
   const rememberSelection = () => {
     const s = window.getSelection()
@@ -840,7 +1774,7 @@ export default function SheetGrid({
 
   const ensureEditing = () => {
     if (!focus || readOnly) return false
-    if (!editing) {
+    if (!editing || !editHost) {
       beginEdit(focus.r, focus.c)
       return false
     }
@@ -942,30 +1876,6 @@ export default function SheetGrid({
     applyFontSize(px)
   }
 
-  const endEdit = () => {
-    if (!editing) return
-    saveEditHtml()
-    setEditing(false)
-  }
-
-  const cancelEdit = () => {
-    if (!editing) return
-    setEditing(false)
-    seedEditRef.current = null
-  }
-
-  const onEditBlur = (e: React.FocusEvent) => {
-    const next = e.relatedTarget as Node | null
-    if (next && toolbarRef.current?.contains(next)) return
-    requestAnimationFrame(() => {
-      const ae = document.activeElement
-      if (ae === editRef.current) return
-      if (ae && toolbarRef.current?.contains(ae)) return
-      if (ae === gridWrapRef.current) return
-      endEdit()
-    })
-  }
-
   const moveFocusTo = (r: number, c: number, extend: boolean) => {
     const next = clampCell(r, c, rows, cols)
     const hit = findMergeAt(merges, next.r, next.c)
@@ -1059,8 +1969,8 @@ export default function SheetGrid({
         const key = cellKey(r, c)
         const prev = nextCells[key]
         if (!prev) continue
-        if (prev.bg || prev.align) {
-          nextCells[key] = { bg: prev.bg, align: prev.align }
+        if (prev.bg || prev.align || prev.borders) {
+          nextCells[key] = { bg: prev.bg, align: prev.align, borders: prev.borders }
         } else {
           delete nextCells[key]
         }
@@ -1087,53 +1997,254 @@ export default function SheetGrid({
     clearSelectionCells()
   }
 
-  const pasteAtFocus = async () => {
+  const pasteAtFocus = async (clip?: { text?: string; html?: string }) => {
     if (!focus || readOnly) return
-    let text = ''
-    try {
-      text = await navigator.clipboard.readText()
-    } catch {
-      /* ignore */
+    let text = clip?.text ?? ''
+    let html = clip?.html ?? ''
+    if (!text && !html) {
+      try {
+        text = await navigator.clipboard.readText()
+      } catch {
+        /* ignore */
+      }
+      try {
+        const items = await navigator.clipboard.read()
+        for (const item of items) {
+          if (item.types.includes('text/html')) {
+            html = await (await item.getType('text/html')).text()
+            break
+          }
+        }
+      } catch {
+        /* 无权限时仅用 plain text */
+      }
     }
+
     const nextCells = { ...(value.cells || {}) }
     const payload =
-      clipRef.current && text === lastCopiedText.current ? clipRef.current : null
+      clipRef.current && text && text === lastCopiedText.current ? clipRef.current : null
 
-    if (payload) {
-      for (let r = 0; r < payload.rows; r++) {
-        for (let c = 0; c < payload.cols; c++) {
-          const tr = focus.r + r
-          const tc = focus.c + c
-          if (tr >= rows || tc >= cols || isCovered(merges, tr, tc)) continue
-          const src = payload.cells[cellKey(r, c)]
-          const key = cellKey(tr, tc)
-          if (src) nextCells[key] = { ...src }
-          else delete nextCells[key]
-        }
-      }
-      persist({ cells: nextCells })
+    const finishSelection = (rowCount: number, colCount: number, nextRows: number, nextCols: number) => {
       setAnchor({ r: focus.r, c: focus.c })
       setFocus({
-        r: Math.min(rows - 1, focus.r + payload.rows - 1),
-        c: Math.min(cols - 1, focus.c + payload.cols - 1),
+        r: Math.min(nextRows - 1, focus.r + Math.max(0, rowCount - 1)),
+        c: Math.min(nextCols - 1, focus.c + Math.max(0, colCount - 1)),
       })
+    }
+
+    const applyMatrix = (
+      formatted: Record<string, CellData>,
+      textOnly: Record<string, CellData>,
+      rowCount: number,
+      colCount: number
+    ) => {
+      const needRows = Math.max(rows, focus.r + rowCount)
+      const needCols = Math.max(cols, focus.c + colCount)
+      for (let r = 0; r < rowCount; r++) {
+        for (let c = 0; c < colCount; c++) {
+          const tr = focus.r + r
+          const tc = focus.c + c
+          if (isCovered(merges, tr, tc)) continue
+          const src = formatted[cellKey(r, c)]
+          const key = cellKey(tr, tc)
+          if (src && (src.v || src.html || src.bg || src.align || src.borders)) {
+            nextCells[key] = { ...src }
+          } else {
+            delete nextCells[key]
+          }
+        }
+      }
+      persist({
+        cells: nextCells,
+        rows: needRows,
+        cols: needCols,
+        colWidths: normalizeColWidths(needCols, colWidths),
+        rowHeights: normalizeRowHeights(needRows, rowHeights),
+      })
+      finishSelection(rowCount, colCount, needRows, needCols)
+      if (cellsHaveFormatDiff(formatted, textOnly)) {
+        setPasteOpts({
+          r0: focus.r,
+          c0: focus.c,
+          rows: rowCount,
+          cols: colCount,
+          mode: 'keep',
+          formatted,
+          textOnly,
+          menuOpen: false,
+        })
+      } else {
+        setPasteOpts(null)
+      }
+      if (needRows > rows || needCols > cols) {
+        toast.success(`已粘贴并扩展表格至 ${needRows} 行 × ${needCols} 列`)
+      }
+    }
+
+    if (payload) {
+      const formatted: Record<string, CellData> = {}
+      const textOnly: Record<string, CellData> = {}
+      for (let r = 0; r < payload.rows; r++) {
+        for (let c = 0; c < payload.cols; c++) {
+          const k = cellKey(r, c)
+          const src = payload.cells[k]
+          if (src) {
+            formatted[k] = { ...src }
+            const t = cellToTextOnly(src)
+            if (t) textOnly[k] = t
+          }
+        }
+      }
+      applyMatrix(formatted, textOnly, payload.rows, payload.cols)
       return
     }
 
-    const tsv = text ? parseTsv(text) : []
-    if (!tsv.length) return
-    for (let r = 0; r < tsv.length; r++) {
-      for (let c = 0; c < (tsv[r]?.length || 0); c++) {
-        const tr = focus.r + r
-        const tc = focus.c + c
-        if (tr >= rows || tc >= cols || isCovered(merges, tr, tc)) continue
-        const plain = tsv[r][c] ?? ''
+    // 外部粘贴：优先带格式 HTML 表，再纯文本 TSV
+    const rich = html ? parseHtmlTableRich(html) : null
+    const fromHtml = html ? parseHtmlTable(html) : null
+    const fromTsv = text ? parseTsv(text) : []
+
+    const preferRich =
+      !!rich &&
+      rich.length > 0 &&
+      (gridLooksMultiCell(rich) ||
+        (fromHtml && gridLooksMultiCell(fromHtml)) ||
+        !fromTsv.length ||
+        (rich.length === 1 && rich[0].length === 1 && /style\s*=/i.test(html)))
+
+    let formatted: Record<string, CellData> = {}
+    let textOnly: Record<string, CellData> = {}
+    let rowCount = 0
+    let colCount = 0
+
+    if (preferRich && rich) {
+      colCount = rich.reduce((m, row) => Math.max(m, row.length), 0)
+      rowCount = rich.length
+      for (let r = 0; r < rowCount; r++) {
+        for (let c = 0; c < colCount; c++) {
+          const src = rich[r]?.[c]
+          const k = cellKey(r, c)
+          if (src && (src.v || src.html || src.bg || src.align || src.borders || src.color || src.bold)) {
+            formatted[k] = { ...src }
+            const t = cellToTextOnly(src)
+            if (t) textOnly[k] = t
+          }
+        }
+      }
+    } else {
+      const grid =
+        fromHtml && gridLooksMultiCell(fromHtml)
+          ? fromHtml
+          : fromTsv.length
+            ? fromTsv
+            : fromHtml || []
+      if (!grid.length) return
+      colCount = grid.reduce((m, row) => Math.max(m, row.length), 0)
+      rowCount = grid.length
+      for (let r = 0; r < rowCount; r++) {
+        for (let c = 0; c < colCount; c++) {
+          const plain = (grid[r]?.[c] ?? '').replace(/\u00a0/g, ' ')
+          const k = cellKey(r, c)
+          if (plain.trim()) {
+            const cell = { v: plain, html: escapeHtml(plain) }
+            formatted[k] = cell
+            textOnly[k] = { ...cell }
+          }
+        }
+      }
+    }
+
+    if (!rowCount) return
+    applyMatrix(formatted, textOnly, rowCount, colCount)
+  }
+
+  const applyPasteOption = (mode: 'keep' | 'text') => {
+    if (!pasteOpts || readOnly) return
+    const srcMap = mode === 'keep' ? pasteOpts.formatted : pasteOpts.textOnly
+    const nextCells = { ...(value.cells || {}) }
+    for (let r = 0; r < pasteOpts.rows; r++) {
+      for (let c = 0; c < pasteOpts.cols; c++) {
+        const tr = pasteOpts.r0 + r
+        const tc = pasteOpts.c0 + c
+        if (isCovered(merges, tr, tc)) continue
+        const src = srcMap[cellKey(r, c)]
         const key = cellKey(tr, tc)
-        if (!plain) delete nextCells[key]
-        else nextCells[key] = { ...(nextCells[key] || {}), v: plain, html: escapeHtml(plain) }
+        if (src) nextCells[key] = { ...src }
+        else delete nextCells[key]
       }
     }
     persist({ cells: nextCells })
+    setPasteOpts((p) => (p ? { ...p, mode, menuOpen: false } : null))
+  }
+
+  const applyManualColWidth = (raw?: string, opts?: { allColumns?: boolean }) => {
+    if (readOnly || !canResize) return
+    const n = Math.round(Number(raw ?? colWidthInput))
+    if (!Number.isFinite(n)) {
+      toast.error('请输入有效列宽')
+      return
+    }
+    const w = Math.min(MAX_COL_WIDTH, Math.max(MIN_COL_WIDTH, n))
+    let indices: number[]
+    if (opts?.allColumns || (!sel && !focus)) {
+      indices = Array.from({ length: cols }, (_, i) => i)
+    } else if (sel) {
+      indices = Array.from({ length: sel.c1 - sel.c0 + 1 }, (_, i) => sel.c0 + i)
+    } else if (focus) {
+      indices = [focus.c]
+    } else {
+      indices = Array.from({ length: cols }, (_, i) => i)
+    }
+    const next = [...colWidths]
+    for (const c of indices) next[c] = w
+    persist({ colWidths: normalizeColWidths(cols, next) })
+    setColWidthInput(String(w))
+  }
+
+  const applyManualRowHeight = (raw?: string) => {
+    if (readOnly || !canResize) return
+    const n = Math.round(Number(raw ?? rowHeightInput))
+    if (!Number.isFinite(n)) {
+      toast.error('请输入有效行高')
+      return
+    }
+    const h = Math.min(MAX_ROW_HEIGHT, Math.max(MIN_ROW_HEIGHT, n))
+    let indices: number[]
+    if (!sel && !focus) {
+      indices = Array.from({ length: rows }, (_, i) => i)
+    } else if (sel) {
+      indices = Array.from({ length: sel.r1 - sel.r0 + 1 }, (_, i) => sel.r0 + i)
+    } else if (focus) {
+      indices = [focus.r]
+    } else {
+      indices = Array.from({ length: rows }, (_, i) => i)
+    }
+    const next = [...rowHeights]
+    for (const r of indices) next[r] = h
+    persist({ rowHeights: normalizeRowHeights(rows, next) })
+    setRowHeightInput(String(h))
+  }
+
+  const openSizeDialog = (kind: 'row' | 'col' | 'defaultCol') => {
+    if (kind === 'row') {
+      const r = focus?.r ?? sel?.r0 ?? 0
+      setSizeDialog({ kind, value: String(rowHeights[r] || DEFAULT_ROW_HEIGHT) })
+    } else {
+      const c = focus?.c ?? sel?.c0 ?? 0
+      setSizeDialog({
+        kind,
+        value: String(kind === 'defaultCol' ? DEFAULT_COL_WIDTH : colWidths[c] || DEFAULT_COL_WIDTH),
+      })
+    }
+  }
+
+  const confirmSizeDialog = () => {
+    if (!sizeDialog) return
+    if (sizeDialog.kind === 'row') applyManualRowHeight(sizeDialog.value)
+    else if (sizeDialog.kind === 'defaultCol') {
+      applyManualColWidth(sizeDialog.value, { allColumns: true })
+    } else applyManualColWidth(sizeDialog.value)
+    setSizeDialog(null)
   }
 
   const undo = () => {
@@ -1217,7 +2328,7 @@ export default function SheetGrid({
         const prev = nextCells[key] || {}
         if (bg === 'transparent') {
           const { bg: _, ...rest } = prev
-          if (!rest.html && !rest.v && !rest.align) delete nextCells[key]
+          if (!rest.html && !rest.v && !rest.align && !rest.borders) delete nextCells[key]
           else nextCells[key] = rest
         } else {
           nextCells[key] = { ...prev, bg }
@@ -1225,6 +2336,97 @@ export default function SheetGrid({
       }
     }
     persist({ cells: nextCells })
+  }
+
+  const applyBorders = (mode: BorderMode) => {
+    if (!sel || readOnly) return
+    const { r0, r1, c0, c1 } = sel
+    const nextCells = { ...(value.cells || {}) }
+    const color = '#e5e7eb'
+    const w = mode === 'thick' ? 2 : 1
+
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) {
+        const merge = findMergeAt(merges, r, c)
+        if (merge && (merge.r !== r || merge.c !== c)) continue
+        const key = cellKey(r, c)
+        const prev = { ...(nextCells[key] || {}) }
+        if (mode === 'none') {
+          delete prev.borders
+          if (!prev.html && !prev.v && !prev.align && !prev.bg) delete nextCells[key]
+          else nextCells[key] = prev
+          continue
+        }
+        let borders: NonNullable<CellData['borders']>
+        if (mode === 'all' || mode === 'thick') {
+          borders = { t: true, r: true, b: true, l: true, color, w }
+        } else if (mode === 'outer') {
+          borders = {
+            t: r === r0 || undefined,
+            b: r === r1 || undefined,
+            l: c === c0 || undefined,
+            r: c === c1 || undefined,
+            color,
+            w: 2,
+          }
+          if (!borders.t && !borders.b && !borders.l && !borders.r) {
+            delete prev.borders
+            nextCells[key] = prev
+            continue
+          }
+        } else if (mode === 'top') {
+          borders = { ...prev.borders, t: true, color, w: prev.borders?.w || 1 }
+        } else if (mode === 'bottom') {
+          borders = { ...prev.borders, b: true, color, w: prev.borders?.w || 1 }
+        } else if (mode === 'left') {
+          borders = { ...prev.borders, l: true, color, w: prev.borders?.w || 1 }
+        } else {
+          borders = { ...prev.borders, r: true, color, w: prev.borders?.w || 1 }
+        }
+        prev.borders = borders
+        nextCells[key] = prev
+      }
+    }
+    persist({ cells: nextCells })
+  }
+
+  const toggleBoldGrid = () => {
+    if (readOnly) return
+    persist({ gridStyle: value.gridStyle === 'bold' ? 'normal' : 'bold' })
+  }
+
+  const onGridPaste = (e: React.ClipboardEvent) => {
+    if (readOnly) return
+    const text = e.clipboardData.getData('text/plain')
+    const html = e.clipboardData.getData('text/html')
+    const fromHtml = html ? parseHtmlTable(html) : null
+    const fromTsv = text ? parseTsv(text) : []
+    const multi =
+      (fromHtml && gridLooksMultiCell(fromHtml)) ||
+      (fromTsv.length > 0 && gridLooksMultiCell(fromTsv))
+
+    if (editing) {
+      if (multi) {
+        e.preventDefault()
+        e.stopPropagation()
+        setEditing(false)
+        void pasteAtFocus({ text, html })
+        return
+      }
+      // 单格编辑：只插入纯文本，避免 Excel HTML 边框样式灌入
+      e.preventDefault()
+      const plain = text || ''
+      try {
+        document.execCommand('insertText', false, plain)
+      } catch {
+        /* ignore */
+      }
+      return
+    }
+
+    e.preventDefault()
+    e.stopPropagation()
+    void pasteAtFocus({ text, html })
   }
 
   const setCellAlign = (align: CellAlign) => {
@@ -1240,22 +2442,26 @@ export default function SheetGrid({
     persist({ cells: nextCells })
   }
 
+  const zoomRef = useRef(zoom)
+  zoomRef.current = zoom
+
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       const st = resizingRef.current
       if (!st) return
+      const z = zoomRef.current || 1
       if (st.kind === 'col') {
         const next = [...st.sizes]
         next[st.index] = Math.min(
           MAX_COL_WIDTH,
-          Math.max(MIN_COL_WIDTH, Math.round(st.startSize + e.clientX - st.startPos))
+          Math.max(MIN_COL_WIDTH, Math.round(st.startSize + (e.clientX - st.startPos) / z))
         )
         persist({ colWidths: normalizeColWidths(cols, next) }, { recordHistory: false })
       } else {
         const next = [...st.sizes]
         next[st.index] = Math.min(
           MAX_ROW_HEIGHT,
-          Math.max(MIN_ROW_HEIGHT, Math.round(st.startSize + e.clientY - st.startPos))
+          Math.max(MIN_ROW_HEIGHT, Math.round(st.startSize + (e.clientY - st.startPos) / z))
         )
         persist({ rowHeights: normalizeRowHeights(rows, next) }, { recordHistory: false })
       }
@@ -1263,6 +2469,11 @@ export default function SheetGrid({
     const onUp = () => {
       resizingRef.current = null
       resizeHistPushed.current = false
+      if (formulaPointingRef.current) {
+        formulaPointingRef.current = false
+        formulaPointStartRef.current = null
+        requestAnimationFrame(() => formulaBarRef.current?.focus())
+      }
       setDragging(false)
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
@@ -1297,14 +2508,38 @@ export default function SheetGrid({
     const m = findMergeAt(merges, r, c)
     const tr = m ? m.r : r
     const tc = m ? m.c : c
-    const editingThis = editing && focus?.r === tr && focus?.c === tc
-    // 非编辑态拖选时禁止浏览器文本选中（空白/&nbsp; 的蓝色高亮）
+    const editingThis = editing && editHost?.r === tr && editHost?.c === tc
+
+    // 公式编辑中点选其他格 → 插入引用，不结束编辑
+    if (
+      editing &&
+      editHost &&
+      editText.trimStart().startsWith('=') &&
+      (editHost.r !== tr || editHost.c !== tc)
+    ) {
+      e.preventDefault()
+      e.stopPropagation()
+      window.getSelection()?.removeAllRanges()
+      skipBlurEndRef.current = true
+      formulaPointingRef.current = true
+      formulaPointStartRef.current = { r: tr, c: tc }
+      applyFormulaPointRef(tr, tc, tr, tc)
+      setAnchor({ r: tr, c: tc })
+      setFocus({ r: tr, c: tc })
+      setDragging(true)
+      requestAnimationFrame(() => {
+        formulaBarRef.current?.focus()
+        skipBlurEndRef.current = false
+      })
+      return
+    }
+
     if (!editingThis) {
       e.preventDefault()
       window.getSelection()?.removeAllRanges()
       document.body.style.userSelect = 'none'
     }
-    if (editing && focus && (focus.r !== tr || focus.c !== tc)) endEdit()
+    if (editing && editHost && (editHost.r !== tr || editHost.c !== tc)) endEdit()
     setAnchor({ r: tr, c: tc })
     setFocus({ r: tr, c: tc })
     setDragging(true)
@@ -1315,7 +2550,15 @@ export default function SheetGrid({
     if (!dragging || readOnly) return
     window.getSelection()?.removeAllRanges()
     const m = findMergeAt(merges, r, c)
-    setFocus({ r: m ? m.r : r, c: m ? m.c : c })
+    const tr = m ? m.r : r
+    const tc = m ? m.c : c
+    if (formulaPointingRef.current && formulaPointStartRef.current && isFormulaMode) {
+      const s = formulaPointStartRef.current
+      applyFormulaPointRef(s.r, s.c, tr, tc)
+      setFocus({ r: tr, c: tc })
+      return
+    }
+    setFocus({ r: tr, c: tc })
   }
 
   const onCellDoubleClick = (r: number, c: number) => {
@@ -1473,9 +2716,146 @@ export default function SheetGrid({
     persist({ rowHeights: normalizeRowHeights(rows, next) })
   }
 
-  const tableWidth = 40 + colWidths.reduce((a, b) => a + b, 0)
+  const [selOverlayStyle, setSelOverlayStyle] = useState<OverlayRect | null>(null)
+  const [focusOverlayStyle, setFocusOverlayStyle] = useState<OverlayRect | null>(null)
+  const [editHostOverlayStyle, setEditHostOverlayStyle] = useState<OverlayRect | null>(null)
+  const [borderSegments, setBorderSegments] = useState<
+    { key: string; left: number; top: number; width: number; height: number; color: string }[]
+  >([])
+
+  const tableWidth = viewGutter + viewColWidths.reduce((a, b) => a + b, 0)
+  const tableHeight =
+    viewHeaderH + visibleRowList.reduce((a, r) => a + (viewRowHeights[r] || DEFAULT_ROW_HEIGHT), 0)
   const canFormatText = !readOnly && !!focus
   const multiSel = !!(sel && (sel.r0 !== sel.r1 || sel.c0 !== sel.c1))
+
+  const pasteIconPos = useMemo(() => {
+    if (!pasteOpts) return null
+    let x = viewGutter
+    const cEnd = Math.min(cols - 1, pasteOpts.c0 + pasteOpts.cols - 1)
+    for (let c = 0; c <= cEnd; c++) x += viewColWidths[c] || DEFAULT_COL_WIDTH
+    let y = viewHeaderH
+    const rEnd = Math.min(rows - 1, pasteOpts.r0 + pasteOpts.rows - 1)
+    for (let r = 0; r <= rEnd; r++) y += viewRowHeights[r] || DEFAULT_ROW_HEIGHT
+    return { left: Math.max(48, x - 28), top: y + 2 }
+  }, [pasteOpts, viewColWidths, viewRowHeights, cols, rows, viewHeaderH, viewGutter])
+
+  /** 选区/焦点/线框一律按 DOM 实测，保证任意缩放比例都贴齐格子 */
+  useLayoutEffect(() => {
+    const root = gridContentRef.current
+    if (!root) {
+      setSelOverlayStyle(null)
+      setFocusOverlayStyle(null)
+      setEditHostOverlayStyle(null)
+      setBorderSegments([])
+      return
+    }
+
+    const measure = () => {
+      const rootEl = gridContentRef.current
+      if (!rootEl) return
+
+      const showSelWhileEdit = isFormulaMode
+      if (sel && (!editing || showSelWhileEdit)) {
+        const corners: Array<[number, number]> = [
+          [sel.r0, sel.c0],
+          [sel.r0, sel.c1],
+          [sel.r1, sel.c0],
+          [sel.r1, sel.c1],
+        ]
+        const rects: OverlayRect[] = []
+        for (const [r, c] of corners) {
+          const el = querySheetCell(rootEl, r, c, merges)
+          if (el) rects.push(measureElInRoot(el, rootEl))
+        }
+        setSelOverlayStyle(unionOverlayRects(rects))
+      } else {
+        setSelOverlayStyle(null)
+      }
+
+      if (focus && (!editing || showSelWhileEdit)) {
+        const el = querySheetCell(rootEl, focus.r, focus.c, merges)
+        setFocusOverlayStyle(el ? measureElInRoot(el, rootEl) : null)
+      } else {
+        setFocusOverlayStyle(null)
+      }
+
+      if (editing && editHost) {
+        const el = querySheetCell(rootEl, editHost.r, editHost.c, merges)
+        setEditHostOverlayStyle(el ? measureElInRoot(el, rootEl) : null)
+      } else {
+        setEditHostOverlayStyle(null)
+      }
+
+      const segs: {
+        key: string
+        left: number
+        top: number
+        width: number
+        height: number
+        color: string
+      }[] = []
+      rootEl.querySelectorAll<HTMLElement>('[data-cell]').forEach((el) => {
+        const key = el.getAttribute('data-cell') || ''
+        const [rs, cs] = key.split(',')
+        const r = Number(rs)
+        const c = Number(cs)
+        if (!Number.isFinite(r) || !Number.isFinite(c)) return
+        const b = value.cells?.[cellKey(r, c)]?.borders
+        if (!hasAnyBorder(b) || !b) return
+        const rect = measureElInRoot(el, rootEl)
+        const color = b.color || '#e5e7eb'
+        const thick = Math.max(1, (Number(b.w) || 1) * zoom)
+        const above = r > 0 ? value.cells?.[cellKey(r - 1, c)]?.borders : undefined
+        const leftB = c > 0 ? value.cells?.[cellKey(r, c - 1)]?.borders : undefined
+        if (b.t && !above?.b) {
+          segs.push({ key: `t-${key}`, left: rect.left, top: rect.top, width: rect.width, height: thick, color })
+        }
+        if (b.b) {
+          segs.push({
+            key: `b-${key}`,
+            left: rect.left,
+            top: rect.top + rect.height - thick,
+            width: rect.width,
+            height: thick,
+            color,
+          })
+        }
+        if (b.l && !leftB?.r) {
+          segs.push({ key: `l-${key}`, left: rect.left, top: rect.top, width: thick, height: rect.height, color })
+        }
+        if (b.r) {
+          segs.push({
+            key: `r-${key}`,
+            left: rect.left + rect.width - thick,
+            top: rect.top,
+            width: thick,
+            height: rect.height,
+            color,
+          })
+        }
+      })
+      setBorderSegments(segs)
+    }
+
+    measure()
+    const raf = requestAnimationFrame(measure)
+    return () => cancelAnimationFrame(raf)
+  }, [
+    sel,
+    focus,
+    editing,
+    editHost,
+    isFormulaMode,
+    merges,
+    zoom,
+    viewColWidths,
+    viewRowHeights,
+    visibleRowList,
+    value.cells,
+    rows,
+    cols,
+  ])
 
   const onEditKeyDown = (e: React.KeyboardEvent) => {
     const mod = e.ctrlKey || e.metaKey
@@ -1487,8 +2867,7 @@ export default function SheetGrid({
     }
     if (e.key === 'Enter' && !e.altKey) {
       e.preventDefault()
-      endEdit()
-      navigate(e.shiftKey ? -1 : 1, 0, false)
+      commitEditAndMove(e.shiftKey ? -1 : 1, 0)
       gridWrapRef.current?.focus({ preventScroll: true })
       return
     }
@@ -1504,8 +2883,7 @@ export default function SheetGrid({
     }
     if (e.key === 'Tab') {
       e.preventDefault()
-      endEdit()
-      navigate(0, e.shiftKey ? -1 : 1, false)
+      commitEditAndMove(0, e.shiftKey ? -1 : 1)
       gridWrapRef.current?.focus({ preventScroll: true })
       return
     }
@@ -1540,8 +2918,29 @@ export default function SheetGrid({
     const shift = e.shiftKey
     const key = e.key
 
+    if (key === 'Escape' && pasteOpts) {
+      e.preventDefault()
+      setPasteOpts(null)
+      return
+    }
+
     if (mod && !e.altKey) {
       const k = key.toLowerCase()
+      if (k === '0') {
+        e.preventDefault()
+        setZoom(1)
+        return
+      }
+      if (k === '=' || k === '+') {
+        e.preventDefault()
+        setZoom((z) => Math.min(MAX_ZOOM, Math.round((z + ZOOM_STEP) * 100) / 100))
+        return
+      }
+      if (k === '-') {
+        e.preventDefault()
+        setZoom((z) => Math.max(MIN_ZOOM, Math.round((z - ZOOM_STEP) * 100) / 100))
+        return
+      }
       if (k === 'b') {
         e.preventDefault()
         applyFormatCmd('bold')
@@ -1568,8 +2967,7 @@ export default function SheetGrid({
         return
       }
       if (k === 'v') {
-        e.preventDefault()
-        void pasteAtFocus()
+        // 交给 onPaste，才能读到 Excel 的 text/html
         return
       }
       if (k === 'z' && !shift) {
@@ -1673,16 +3071,25 @@ export default function SheetGrid({
     ) {
       e.preventDefault()
       seedEditRef.current = key
-      beginEdit(focus.r, focus.c)
+      beginEdit(focus.r, focus.c, key)
     }
   }
 
+  const formulaBarAddr = editHost
+    ? `${colLabel(editHost.c)}${editHost.r + 1}`
+    : focus
+      ? `${colLabel(focus.c)}${focus.r + 1}`
+      : ''
+  const formulaBarDisplay = editing
+    ? editText
+    : activeCell?.f || cellPlain(activeCell) || ''
+
   return (
-    <div className={`flex flex-col gap-2 min-h-0 ${className}`}>
+    <div className={`flex flex-col gap-0 min-h-0 ${className}`}>
       {!readOnly && (
         <div
           ref={toolbarRef}
-          className="relative z-50 flex flex-wrap items-center gap-0.5 rounded-xl border border-white/10 bg-gradient-to-b from-gray-800/90 to-gray-900/90 px-2 py-1.5 shadow-lg shadow-black/20 backdrop-blur-sm"
+          className="relative z-50 shrink-0 flex flex-wrap items-center gap-0.5 border-b border-white/10 bg-gradient-to-b from-gray-800/90 to-gray-900/90 px-2 py-1.5"
         >
           <SelectMenu
             title="字体（作用于选中文字）"
@@ -1793,6 +3200,12 @@ export default function SheetGrid({
             disabled={!focus}
             onPick={setCellBg}
           />
+          <BorderMenu
+            disabled={!focus}
+            onPick={applyBorders}
+            boldGrid={value.gridStyle === 'bold'}
+            onToggleBoldGrid={toggleBoldGrid}
+          />
 
           <Divider />
 
@@ -1899,39 +3312,189 @@ export default function SheetGrid({
           >
             <Minus size={12} />
           </button>
-          <button
-            type="button"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => autoFitColumns()}
-            title="自动列宽（当前选区；无选区则整表）· 也可双击列分隔线"
-            className="h-7 px-2 rounded-md text-xs text-gray-300 hover:bg-white/10 inline-flex items-center gap-0.5"
-          >
-            <ArrowLeftRight size={12} /> 列宽
-          </button>
-          <button
-            type="button"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => autoFitRows()}
-            title="自动行高（当前选区；无选区则整表）· 也可双击行分隔线"
-            className="h-7 px-2 rounded-md text-xs text-gray-300 hover:bg-white/10 inline-flex items-center gap-0.5"
-          >
-            <ArrowUpDown size={12} /> 行高
-          </button>
 
-          <span className="text-[11px] text-gray-500 ml-1 hidden lg:inline">
-            {editing
-              ? '选中文字后点格式 · Enter确认 · Alt+Enter换行'
-              : multiSel
-                ? `已选 ${(sel!.r1 - sel!.r0 + 1) * (sel!.c1 - sel!.c0 + 1)} 格`
-                : focus
-                  ? `${colLabel(focus.c)}${focus.r + 1} · F2编辑 · 筛选/排序`
-                  : '单击选中 · 拖拽多选 · 双击编辑'}
+          <FormatSizeMenu
+            disabled={!canResize}
+            onRowHeight={() => openSizeDialog('row')}
+            onAutoRow={() => autoFitRows()}
+            onColWidth={() => openSizeDialog('col')}
+            onAutoCol={() => autoFitColumns()}
+            onDefaultCol={() => openSizeDialog('defaultCol')}
+          />
+
+          <Divider />
+
+          <TbBtn
+            title="缩小 (Ctrl+- / Ctrl+滚轮)"
+            onClick={() => setZoom((z) => Math.max(MIN_ZOOM, Math.round((z - ZOOM_STEP) * 100) / 100))}
+          >
+            <ZoomOut size={14} />
+          </TbBtn>
+          <button
+            type="button"
+            title="重置缩放 (Ctrl+0)"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setZoom(1)}
+            className="h-7 min-w-[2.75rem] px-1 rounded-md text-xs text-gray-300 hover:bg-white/10"
+          >
+            {Math.round(zoom * 100)}%
+          </button>
+          <TbBtn
+            title="放大 (Ctrl+= / Ctrl+滚轮)"
+            onClick={() => setZoom((z) => Math.min(MAX_ZOOM, Math.round((z + ZOOM_STEP) * 100) / 100))}
+          >
+            <ZoomIn size={14} />
+          </TbBtn>
+
+          <span className="text-[11px] text-gray-500 ml-1 hidden xl:inline max-w-[20rem] truncate">
+            {isFormulaMode
+              ? '公式编辑中 · 点选单元格插入引用 · Enter确认'
+              : editing
+                ? '编辑中 · Enter确认'
+                : multiSel
+                  ? `已选 ${(sel!.r1 - sel!.r0 + 1) * (sel!.c1 - sel!.c0 + 1)} 格`
+                  : focus
+                    ? `${colLabel(focus.c)}${focus.r + 1}`
+                    : '单击选中 · 双击编辑'}
           </span>
         </div>
       )}
 
+      {!readOnly && (
+        <div
+          ref={formulaBarRowRef}
+          className="relative z-50 shrink-0 flex items-center gap-1.5 px-2 py-1.5 border-b border-white/10 bg-gray-950/70"
+        >
+          <div
+            className="w-14 shrink-0 h-7 rounded-md bg-black/35 border border-white/10 text-[11px] text-gray-300 flex items-center justify-center font-medium"
+            title="当前单元格"
+          >
+            {formulaBarAddr || '—'}
+          </div>
+
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              title="插入函数"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                setFnPickerOpen((v) => !v)
+                setFnQuery('')
+              }}
+              className="h-7 px-2 rounded-md text-xs text-sky-200 hover:bg-sky-500/15 border border-sky-500/20 inline-flex items-center gap-1"
+            >
+              <Sigma size={14} />
+              函数
+              <ChevronDown size={11} className="opacity-60" />
+            </button>
+            {fnPickerOpen && (
+              <>
+                <div className="fixed inset-0 z-[55]" onClick={() => setFnPickerOpen(false)} />
+                <div className="absolute left-0 top-8 z-[60] w-72 max-h-80 rounded-lg border border-white/10 bg-gray-900 shadow-xl overflow-hidden flex flex-col">
+                  <div className="p-2 border-b border-white/10">
+                    <input
+                      autoFocus
+                      value={fnQuery}
+                      onChange={(e) => setFnQuery(e.target.value)}
+                      placeholder="搜索函数…"
+                      className="w-full h-7 rounded-md bg-black/40 border border-white/10 px-2 text-xs text-gray-200 outline-none focus:border-sky-500/50"
+                    />
+                  </div>
+                  {!fnQuery.trim() && (
+                    <div className="px-2 pt-2 pb-1 text-[10px] text-gray-500">常用</div>
+                  )}
+                  <div className="overflow-y-auto sheet-scrollbar flex-1 py-1">
+                    {(!fnQuery.trim() ? COMMON_SHEET_FUNCS.map((f) => f.name) : filteredFns).map(
+                      (name) => {
+                        const common = COMMON_SHEET_FUNCS.find((f) => f.name === name)
+                        return (
+                          <button
+                            key={name}
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => insertFunctionSnippet(common?.insert || `${name}()`)}
+                            className="w-full text-left px-3 py-1.5 text-xs hover:bg-white/10 flex items-baseline gap-2"
+                          >
+                            <span className="text-sky-300 font-medium shrink-0">{name}</span>
+                            {common && (
+                              <span className="text-gray-500 truncate">{common.desc}</span>
+                            )}
+                          </button>
+                        )
+                      }
+                    )}
+                    {fnQuery.trim() && filteredFns.length === 0 && (
+                      <div className="px-3 py-4 text-xs text-gray-500 text-center">无匹配函数</div>
+                    )}
+                  </div>
+                  <div className="px-2 py-1.5 border-t border-white/10 text-[10px] text-gray-600">
+                    共 {allFnNames.length} 个可用函数 · HyperFormula
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="text-[11px] text-sky-400/80 shrink-0 font-medium px-0.5">fx</div>
+          <div className="relative flex-1 min-w-0 h-7 rounded-md bg-black/35 border border-white/10 focus-within:border-sky-500/50">
+            <div
+              aria-hidden
+              className="absolute inset-0 px-2 flex items-center overflow-hidden pointer-events-none text-xs whitespace-pre font-sans leading-7"
+              dangerouslySetInnerHTML={{
+                __html: formulaBarDisplay
+                  ? highlightFormulaHtml(formulaBarDisplay)
+                  : `<span style="color:#4b5563">输入数值，或以 = 开始公式</span>`,
+              }}
+            />
+            <input
+              ref={formulaBarRef}
+              value={formulaBarDisplay}
+              disabled={readOnly}
+              placeholder=""
+              spellCheck={false}
+              autoComplete="off"
+              onFocus={() => {
+                if (readOnly) return
+                if (!editing && focus) beginEdit(focus.r, focus.c)
+              }}
+              onChange={(e) => {
+                const v = e.target.value
+                if (!editing && focus) {
+                  beginEdit(focus.r, focus.c, v)
+                  return
+                }
+                setEditText(v)
+                if (v.trimStart().startsWith('=') || !editRef.current?.querySelector('b,i,u')) {
+                  syncEditDomPlain(v)
+                } else if (editRef.current) {
+                  editRef.current.innerHTML = escapeHtml(v)
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  commitEditAndMove(e.shiftKey ? -1 : 1, 0)
+                  gridWrapRef.current?.focus({ preventScroll: true })
+                } else if (e.key === 'Escape') {
+                  e.preventDefault()
+                  cancelEdit()
+                  gridWrapRef.current?.focus({ preventScroll: true })
+                } else if (e.key === 'Tab') {
+                  e.preventDefault()
+                  commitEditAndMove(0, e.shiftKey ? -1 : 1)
+                  gridWrapRef.current?.focus({ preventScroll: true })
+                }
+              }}
+              onBlur={onFormulaBarBlur}
+              className="absolute inset-0 w-full h-full bg-transparent text-transparent caret-sky-300 px-2 text-xs outline-none font-sans leading-7"
+              style={{ WebkitTextFillColor: 'transparent', caretColor: '#7dd3fc' }}
+            />
+          </div>
+        </div>
+      )}
+
       {readOnly && (
-        <div className="relative z-50 flex flex-wrap items-center gap-1 rounded-xl border border-white/10 bg-gray-900/80 px-2 py-1.5">
+        <div className="relative z-50 shrink-0 flex flex-wrap items-center gap-1 border-b border-white/10 bg-gray-900/80 px-2 py-1.5">
           <TbBtn
             title={filterOn ? '关闭筛选' : '开启筛选（仅本地查看，不保存）'}
             active={filterOn}
@@ -1956,13 +3519,34 @@ export default function SheetGrid({
               清除筛选
             </button>
           )}
+          <Divider />
+          <TbBtn
+            title="缩小 (Ctrl+滚轮)"
+            onClick={() => setZoom((z) => Math.max(MIN_ZOOM, Math.round((z - ZOOM_STEP) * 100) / 100))}
+          >
+            <ZoomOut size={14} />
+          </TbBtn>
+          <button
+            type="button"
+            title="重置缩放"
+            onClick={() => setZoom(1)}
+            className="h-7 min-w-[2.75rem] px-1 rounded-md text-xs text-gray-300 hover:bg-white/10"
+          >
+            {Math.round(zoom * 100)}%
+          </button>
+          <TbBtn
+            title="放大 (Ctrl+滚轮)"
+            onClick={() => setZoom((z) => Math.min(MAX_ZOOM, Math.round((z + ZOOM_STEP) * 100) / 100))}
+          >
+            <ZoomIn size={14} />
+          </TbBtn>
           <span className="text-[11px] text-gray-500 ml-1">只读 · 可筛选查看（不保存）</span>
         </div>
       )}
 
       {canResize && (
-        <div className="text-[11px] text-gray-500">
-          拖表头右缘调列宽 · 拖行号下缘调行高 · 双击分隔线自动调整
+        <div className="shrink-0 text-[11px] text-gray-500 px-2 py-1 border-b border-white/5 bg-gray-950/40">
+          「格式」调行高列宽 · 拖表头/行号调整 · 双击分隔线自适应 · Ctrl+滚轮缩放
         </div>
       )}
 
@@ -1970,23 +3554,35 @@ export default function SheetGrid({
         ref={gridWrapRef}
         tabIndex={0}
         onKeyDown={onGridKeyDown}
-        className="relative z-0 flex-1 min-h-0 overflow-auto sheet-scrollbar rounded-lg border border-gray-700/70 bg-gray-900 outline-none focus:ring-1 focus:ring-violet-500/40 select-none"
+        onPaste={onGridPaste}
+        className="relative z-0 flex-1 min-h-0 overflow-auto sheet-scrollbar bg-gray-900 outline-none focus:ring-1 focus:ring-inset focus:ring-violet-500/40 select-none"
       >
-        <table
-          className="border-separate border-spacing-0 text-sm table-fixed select-none"
-          style={{ width: tableWidth, minWidth: tableWidth }}
+        <div
+          ref={gridContentRef}
+          style={{
+            width: tableWidth,
+            minHeight: tableHeight,
+            position: 'relative',
+            fontSize: viewFontPx,
+          }}
         >
+            <table
+              className={`border-separate border-spacing-0 table-fixed select-none ${
+                value.gridStyle === 'bold' ? 'sheet-grid-bold' : ''
+              }`}
+              style={{ width: tableWidth, minWidth: tableWidth, fontSize: viewFontPx }}
+            >
           <colgroup>
-            <col style={{ width: 40 }} />
-            {colWidths.map((w, i) => (
+            <col style={{ width: viewGutter }} />
+            {viewColWidths.map((w, i) => (
               <col key={i} style={{ width: w }} />
             ))}
           </colgroup>
           <thead>
-            <tr style={{ height: HEADER_ROW_HEIGHT }}>
+            <tr style={{ height: viewHeaderH }}>
               <th
                 className="sticky left-0 top-0 z-30 border-b border-r border-gray-700/70 bg-gray-800 text-gray-500 font-normal"
-                style={{ boxShadow: '0 -4px 0 0 #1f2937' }}
+                style={{ boxShadow: '0 -4px 0 0 #1f2937', width: viewGutter }}
               />
               {Array.from({ length: cols }, (_, c) => {
                 const filtered = !!colFilters[c]
@@ -1995,8 +3591,8 @@ export default function SheetGrid({
                   key={c}
                   className="sticky top-0 z-20 border-b border-r border-gray-700/70 bg-gray-800 px-2 py-1 text-center text-gray-400 font-medium relative select-none"
                   style={{
-                    width: colWidths[c],
-                    height: HEADER_ROW_HEIGHT,
+                    width: viewColWidths[c],
+                    height: viewHeaderH,
                     // 盖住 sticky 表头与滚动容器顶边之间的透缝
                     boxShadow: '0 -4px 0 0 #1f2937',
                   }}
@@ -2076,12 +3672,12 @@ export default function SheetGrid({
           </thead>
           <tbody>
             {visibleRowList.map((r) => {
-              const rh = rowHeights[r] || DEFAULT_ROW_HEIGHT
+              const rh = viewRowHeights[r] || DEFAULT_ROW_HEIGHT
               return (
                 <tr key={r} style={{ height: rh }}>
                   <td
                     className="sticky left-0 z-10 bg-gray-800 border-b border-r border-gray-700/70 px-1 text-center text-gray-500 text-xs relative select-none align-middle"
-                    style={{ height: rh, boxShadow: '-2px 0 0 0 #1f2937' }}
+                    style={{ height: rh, width: viewGutter, boxShadow: '-2px 0 0 0 #1f2937' }}
                   >
                     {r + 1}
                     {canResize && (
@@ -2093,7 +3689,7 @@ export default function SheetGrid({
                             kind: 'row',
                             index: r,
                             startPos: e.clientY,
-                            startSize: rh,
+                            startSize: rowHeights[r] || DEFAULT_ROW_HEIGHT,
                             sizes: [...rowHeights],
                           })
                           document.body.style.cursor = 'row-resize'
@@ -2119,17 +3715,16 @@ export default function SheetGrid({
                     const rowspan = isOrigin ? merge!.rs : 1
                     const colspan = isOrigin ? merge!.cs : 1
                     const cell = getCell(r, c)
-                    const isFocused = focus?.r === r && focus?.c === c
                     const selected = inSel(r, c, sel)
-                    const isEditingHere = editing && isFocused
-                    let width = colWidths[c]
+                    const isEditingHere = !!(editHost && editHost.r === r && editHost.c === c)
+                    let width = viewColWidths[c]
                     let height = rh
                     if (isOrigin && merge) {
                       width = 0
                       height = 0
-                      for (let i = 0; i < merge.cs; i++) width += colWidths[c + i] || DEFAULT_COL_WIDTH
+                      for (let i = 0; i < merge.cs; i++) width += viewColWidths[c + i] || DEFAULT_COL_WIDTH
                       for (let i = 0; i < merge.rs; i++)
-                        height += rowHeights[r + i] || DEFAULT_ROW_HEIGHT
+                        height += viewRowHeights[r + i] || DEFAULT_ROW_HEIGHT
                     }
 
                     return (
@@ -2137,8 +3732,19 @@ export default function SheetGrid({
                         key={c}
                         rowSpan={rowspan}
                         colSpan={colspan}
-                        className={`border-b border-r border-gray-700/80 p-0 align-top overflow-hidden relative select-none ${
-                          selected ? 'ring-2 ring-inset ring-violet-500/80' : ''
+                        data-cell={`${r},${c}`}
+                        className={`border-b border-r p-0 align-top overflow-hidden relative select-none ${
+                          value.gridStyle === 'bold'
+                            ? 'border-gray-500/70'
+                            : 'border-gray-700/80'
+                        } ${
+                          selected &&
+                          (!editing || isFormulaMode) &&
+                          !(cell?.bg && cell.bg !== 'transparent')
+                            ? isFormulaMode
+                              ? 'bg-sky-500/[0.10]'
+                              : 'bg-violet-500/[0.08]'
+                            : ''
                         } ${readOnly ? '' : 'cursor-cell'}`}
                         style={{
                           width,
@@ -2164,19 +3770,28 @@ export default function SheetGrid({
                               maxHeight: height,
                               textAlign: cell?.align || 'left',
                             }}
+                            onInput={() => {
+                              if (!editRef.current) return
+                              const plain = htmlToPlain(editRef.current.innerHTML)
+                              setEditText(plain)
+                            }}
                             onMouseUp={rememberSelection}
                             onKeyUp={rememberSelection}
                             onBlur={onEditBlur}
                             onKeyDown={onEditKeyDown}
+                            onPaste={onGridPaste}
                           />
                         ) : (
                           <div
-                            className="px-2 py-1 text-gray-100 overflow-hidden break-words select-none [&_a]:text-blue-300"
+                            className={`px-2 py-1 overflow-hidden break-words select-none [&_a]:text-blue-300 ${
+                              cell?.f ? 'text-sky-200' : 'text-gray-100'
+                            }`}
                             style={{
                               height,
                               maxHeight: height,
                               textAlign: cell?.align || 'left',
                             }}
+                            title={cell?.f || undefined}
                             dangerouslySetInnerHTML={{ __html: cellToHtml(cell) || '&nbsp;' }}
                           />
                         )}
@@ -2188,7 +3803,180 @@ export default function SheetGrid({
             })}
           </tbody>
         </table>
+
+            {selOverlayStyle && (!editing || isFormulaMode) && multiSel && (
+              <div
+                className="absolute pointer-events-none z-[5]"
+                style={{
+                  left: selOverlayStyle.left,
+                  top: selOverlayStyle.top,
+                  width: selOverlayStyle.width,
+                  height: selOverlayStyle.height,
+                  backgroundColor: isFormulaMode ? 'rgba(14,165,233,0.06)' : 'rgba(139,92,246,0.04)',
+                  boxShadow: isFormulaMode
+                    ? 'inset 0 0 0 2px rgb(56 189 248)'
+                    : 'inset 0 0 0 2px rgb(167 139 250)',
+                }}
+              />
+            )}
+            {focusOverlayStyle && !(editing && editHost && focus && editHost.r === focus.r && editHost.c === focus.c) && (
+              <div
+                className="absolute pointer-events-none z-[6]"
+                style={{
+                  left: focusOverlayStyle.left,
+                  top: focusOverlayStyle.top,
+                  width: focusOverlayStyle.width,
+                  height: focusOverlayStyle.height,
+                  boxShadow: isFormulaMode
+                    ? 'inset 0 0 0 2px rgb(56 189 248)'
+                    : 'inset 0 0 0 2px rgb(196 181 253)',
+                }}
+              />
+            )}
+            {editing && editHost && editHostOverlayStyle && (
+              <div
+                className="absolute pointer-events-none z-[7]"
+                style={{
+                  left: editHostOverlayStyle.left,
+                  top: editHostOverlayStyle.top,
+                  width: editHostOverlayStyle.width,
+                  height: editHostOverlayStyle.height,
+                  boxShadow: 'inset 0 0 0 2px rgb(125 211 252)',
+                }}
+              />
+            )}
+            {borderSegments.map((s) => (
+              <div
+                key={s.key}
+                className="absolute pointer-events-none z-[25]"
+                style={{
+                  left: s.left,
+                  top: s.top,
+                  width: s.width,
+                  height: s.height,
+                  backgroundColor: s.color,
+                }}
+              />
+            ))}
+
+            {pasteOpts && pasteIconPos && !readOnly && (
+              <div
+                className="absolute z-40"
+                style={{ left: pasteIconPos.left, top: pasteIconPos.top }}
+                onMouseDown={(e) => e.preventDefault()}
+              >
+                <button
+                  type="button"
+                  title="粘贴选项"
+                  onClick={() =>
+                    setPasteOpts((p) => (p ? { ...p, menuOpen: !p.menuOpen } : null))
+                  }
+                  className={`h-7 w-7 rounded border shadow-lg inline-flex items-center justify-center ${
+                    pasteOpts.mode === 'keep'
+                      ? 'bg-violet-600/90 border-violet-400/50 text-white'
+                      : 'bg-gray-800 border-white/20 text-gray-200'
+                  }`}
+                >
+                  <ClipboardPaste size={14} />
+                </button>
+                {pasteOpts.menuOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-[45]"
+                      onClick={() => setPasteOpts((p) => (p ? { ...p, menuOpen: false } : null))}
+                    />
+                    <div className="absolute left-0 bottom-8 z-50 w-40 rounded-lg border border-white/15 bg-gray-900 shadow-xl py-1">
+                      <button
+                        type="button"
+                        className={`w-full text-left px-3 py-1.5 text-xs hover:bg-white/10 flex items-center gap-2 ${
+                          pasteOpts.mode === 'keep' ? 'text-violet-200' : 'text-gray-200'
+                        }`}
+                        onClick={() => applyPasteOption('keep')}
+                      >
+                        {pasteOpts.mode === 'keep' ? <Check size={12} /> : <span className="w-3" />}
+                        保留源格式
+                      </button>
+                      <button
+                        type="button"
+                        className={`w-full text-left px-3 py-1.5 text-xs hover:bg-white/10 flex items-center gap-2 ${
+                          pasteOpts.mode === 'text' ? 'text-violet-200' : 'text-gray-200'
+                        }`}
+                        onClick={() => applyPasteOption('text')}
+                      >
+                        {pasteOpts.mode === 'text' ? <Check size={12} /> : <span className="w-3" />}
+                        仅粘贴文本
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+        </div>
       </div>
+
+      {sizeDialog && (
+        <div
+          className="fixed inset-0 z-[10050] flex items-center justify-center p-4"
+          onClick={() => setSizeDialog(null)}
+        >
+          <div className="absolute inset-0 bg-black/50" aria-hidden />
+          <div
+            className="relative z-10 w-full max-w-xs rounded-xl border border-white/10 bg-gray-900 shadow-2xl p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-sm font-medium text-white mb-3">
+              {sizeDialog.kind === 'row'
+                ? '行高'
+                : sizeDialog.kind === 'defaultCol'
+                  ? '默认列宽'
+                  : '列宽'}
+            </div>
+            <p className="text-[11px] text-gray-500 mb-2">
+              {sizeDialog.kind === 'row'
+                ? !sel && !focus
+                  ? `作用于全部 ${rows} 行`
+                  : `作用于选中行（像素 ${MIN_ROW_HEIGHT}–${MAX_ROW_HEIGHT}）`
+                : sizeDialog.kind === 'defaultCol'
+                  ? `将全部 ${cols} 列设为同一宽度`
+                  : !sel && !focus
+                    ? `作用于全部 ${cols} 列`
+                    : `作用于选中列（像素 ${MIN_COL_WIDTH}–${MAX_COL_WIDTH}）`}
+            </p>
+            <input
+              type="number"
+              autoFocus
+              min={sizeDialog.kind === 'row' ? MIN_ROW_HEIGHT : MIN_COL_WIDTH}
+              max={sizeDialog.kind === 'row' ? MAX_ROW_HEIGHT : MAX_COL_WIDTH}
+              value={sizeDialog.value}
+              onChange={(e) => setSizeDialog({ ...sizeDialog, value: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  confirmSizeDialog()
+                }
+                if (e.key === 'Escape') setSizeDialog(null)
+              }}
+              className="w-full h-9 rounded-lg border border-white/15 bg-black/40 px-3 text-sm text-white outline-none focus:border-violet-400/60"
+            />
+            <div className="flex gap-2 mt-4">
+              <button
+                type="button"
+                onClick={() => setSizeDialog(null)}
+                className="flex-1 h-9 rounded-lg bg-white/10 hover:bg-white/15 text-sm text-gray-200"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={confirmSizeDialog}
+                className="flex-1 h-9 rounded-lg bg-violet-600 hover:bg-violet-500 text-sm text-white"
+              >
+                确定
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

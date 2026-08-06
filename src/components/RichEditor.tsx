@@ -40,14 +40,43 @@ const MarkdownCjkFriendly = Extension.create({
   },
 })
 
-/** 空段落序列化为 <br>，富文本多敲空行能写回 MD */
+/** 空段落用 NBSP 占位，避免写成 <br> 再被 wrapHtmlBlocks 包成「HTML 块」 */
+const BLANK_PARA_MARK = '\u00a0'
+
+/**
+ * tiptap-markdown 会把 NBSP 序列化成 `&nbsp;` 字符串；
+ * 再 setContent 时若当纯文本解析，编辑区就会看到字面量 &nbsp;
+ * 统一解码成真正的 Unicode NBSP（\u00a0）。
+ */
+function decodeNbspEntities(md: string): string {
+  if (!md) return md
+  return md
+    .replace(/&nbsp;/gi, '\u00a0')
+    .replace(/&#160;/g, '\u00a0')
+    .replace(/&#x0*a0;/gi, '\u00a0')
+}
+
 const ParagraphWithBlankLines = Paragraph.extend({
   addStorage() {
     return {
       markdown: {
         serialize(state: any, node: any) {
           if (node.content.size === 0) {
-            state.write('<br>')
+            state.write(BLANK_PARA_MARK)
+            state.closeBlock(node)
+            return
+          }
+          // 仅含空白/NBSP 的段落仍按空行写回，避免变成可见空格噪音
+          let onlyBlank = true
+          node.forEach((child: any) => {
+            if (child.isText) {
+              if (/[^\s\u00a0\u200b]/.test(child.text || '')) onlyBlank = false
+            } else {
+              onlyBlank = false
+            }
+          })
+          if (onlyBlank) {
+            state.write(BLANK_PARA_MARK)
             state.closeBlock(node)
             return
           }
@@ -181,9 +210,16 @@ function countTagDepth(line: string): number {
 /**
  * 把原始 HTML（含列表行内的 <a>、独立 <img width=...>）包成 htmlBlock，
  * 避免往返时被序列化成 [text](url) / ![alt](src) 并与 --- 粘连。
+ * 独立空行占位（历史 <br>）不包成可视化 HTML 块。
  */
+const BARE_BLANK_HTML = /^<(?:br|p)\s*\/?\s*>(?:\s*<\/p>)?\s*$/i
+
+function normalizeBlankLineHtml(md: string): string {
+  return md.replace(/^[ \t]*<(?:br|p)\s*\/?\s*>(?:\s*<\/p>)?[ \t]*$/gim, BLANK_PARA_MARK)
+}
+
 function wrapHtmlBlocks(md: string): string {
-  const lines = md.split('\n')
+  const lines = normalizeBlankLineHtml(md).split('\n')
   const result: string[] = []
   let i = 0
   while (i < lines.length) {
@@ -191,8 +227,13 @@ function wrapHtmlBlocks(md: string): string {
     const listMatch = line.match(LIST_PREFIX)
     const payload = listMatch ? line.slice(listMatch[0].length) : line.trimStart()
 
-    // 独立 void 行：整行保护（保留 width 等属性）
+    // 独立 void 行：整行保护（保留 width 等属性）；裸 <br> 已在上方规范化，不再进 HTML 块
     if (!listMatch && VOID_LINE.test(line.trim())) {
+      if (BARE_BLANK_HTML.test(line.trim())) {
+        result.push(BLANK_PARA_MARK)
+        i++
+        continue
+      }
       pushHtmlBlock(result, line.trim(), lines, i + 1)
       i++
       continue
@@ -200,6 +241,11 @@ function wrapHtmlBlocks(md: string): string {
 
     // 列表项整行就是一段 HTML：整行保护（含 "- <a>...</a>"）
     if (listMatch && isBalancedSingleLineHtml(payload)) {
+      if (BARE_BLANK_HTML.test(payload.trim())) {
+        result.push(`${listMatch[0]}${BLANK_PARA_MARK}`)
+        i++
+        continue
+      }
       pushHtmlBlock(result, line, lines, i + 1)
       i++
       continue
@@ -218,7 +264,14 @@ function wrapHtmlBlocks(md: string): string {
         if (depth <= 0 && htmlLines.length > 0) break
         if (htmlLines.length === 1 && VOID_LINE.test(payload.trim())) break
       }
-      pushHtmlBlock(result, htmlLines.join('\n'), lines, i)
+      const joined = htmlLines.join('\n')
+      // 整块其实只是空行占位（连续 <br>）时，展开为多个空段落，而不是一个 HTML 块
+      if (/^(?:\s*<br\s*\/?\s*>\s*)+$/i.test(joined)) {
+        const n = (joined.match(/<br\b/gi) || []).length || 1
+        for (let k = 0; k < n; k++) result.push(BLANK_PARA_MARK)
+        continue
+      }
+      pushHtmlBlock(result, joined, lines, i)
       continue
     }
 
@@ -287,7 +340,11 @@ export default function RichEditor({ value, onChange }: RichEditorProps) {
 
   const applyEditorContent = (ed: any, md: string) => {
     hydrating.current = true
-    ed.commands.setContent(wrapHtmlBlocks(md), { emitUpdate: false })
+    // 先解码 &nbsp; 实体，避免编辑区出现字面量 &nbsp;
+    ed.commands.setContent(wrapHtmlBlocks(decodeNbspEntities(md)), {
+      emitUpdate: false,
+      parseOptions: { preserveWhitespace: 'full' },
+    })
     hydrating.current = false
   }
 
@@ -315,13 +372,21 @@ export default function RichEditor({ value, onChange }: RichEditorProps) {
       Markdown.configure({ html: true, tightLists: true }),
     ],
     content: '',
+    parseOptions: {
+      preserveWhitespace: 'full',
+    },
     editorProps: {
-      attributes: { class: 'markdown-content focus:outline-none min-h-full px-12 py-8' },
+      attributes: {
+        class: 'markdown-content focus:outline-none min-h-full px-12 py-8',
+        style: 'white-space: pre-wrap;',
+      },
     },
     onUpdate({ editor: ed }) {
       if (!serializerPatched.current || hydrating.current) return
       let md = (ed.storage as any).markdown.getMarkdown()
       md = unwrapHtmlBlocks(md)
+      // 序列化结果里的 &nbsp; 一律还原为 Unicode，防止下次加载变成可见文本
+      md = decodeNbspEntities(md)
       // 兜底：图片/HTML 与 --- 粘连时拆开
       md = md.replace(/(!\[[^\]]*\]\([^)]+\)|<img\b[^>]*>)\s*(---)/gi, '$1\n\n$2')
       lastEmittedMd.current = md

@@ -4,6 +4,7 @@ import dotenv from 'dotenv'
 dotenv.config()
 
 // 创建数据库连接池
+// sqlpub 共享库连接数紧：单进程少占、空闲尽快释放；多开本地版/线上多实例会成倍叠加
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
   port: process.env.DB_PORT,
@@ -11,12 +12,13 @@ const pool = mysql.createPool({
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
   waitForConnections: true,
-  connectionLimit: 5,  // 减少连接池大小，避免超过服务器限制
-  maxIdle: 3,  // 最大空闲连接数
-  idleTimeout: 60000,  // 空闲连接60秒后释放
-  queueLimit: 0,
+  connectionLimit: Number(process.env.DB_POOL_LIMIT) || 3,
+  // 必须小于 connectionLimit，否则部分 mysql2 版本不会启动空闲清理
+  maxIdle: Number(process.env.DB_POOL_MAX_IDLE) || 1,
+  idleTimeout: Number(process.env.DB_POOL_IDLE_MS) || 15000,
+  queueLimit: 50,
   enableKeepAlive: true,
-  keepAliveInitialDelay: 0,
+  keepAliveInitialDelay: 10000,
   timezone: '+08:00',  // 设置时区为中国标准时间（东八区），确保所有环境时间一致
   dateStrings: true,   // DATE/DATETIME 以字符串返回，避免 JSON 序列化时区偏移
 })
@@ -722,3 +724,12 @@ async function testConnection() {
 }
 
 export { pool, testConnection }
+
+/** 进程退出时释放连接池，避免 sqlpub 上残留 Sleep */
+export async function closePool() {
+  try {
+    await pool.end()
+  } catch (e) {
+    console.warn('[db] pool.end:', e?.message || e)
+  }
+}

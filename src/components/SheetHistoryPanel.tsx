@@ -3,7 +3,14 @@ import { createPortal } from 'react-dom'
 import { Eye, History, Loader2, RotateCcw, Users, X } from 'lucide-react'
 import { formatDateTime } from '../utils/dateFormat'
 import ConfirmDialog from './ConfirmDialog'
-import SheetGrid, { emptySheetContent, type SheetContent } from './SheetGrid'
+import SheetGrid from './SheetGrid'
+import SheetTabBar from './SheetTabBar'
+import {
+  getActiveSheet,
+  normalizeWorkbook,
+  setActiveSheetId,
+  type WorkbookDocument,
+} from '../utils/workbookModel'
 
 export type SheetRevision = {
   id: number
@@ -25,7 +32,7 @@ type Props = {
   /** 管理员可回退；学员仅预览 */
   canRestore: boolean
   loadHistory: () => Promise<{ revisions: SheetRevision[]; editors: SheetEditorSummary[] }>
-  loadRevisionContent: (revId: number) => Promise<{ content: SheetContent; edited_by: string; created_at: string }>
+  loadRevisionContent: (revId: number) => Promise<{ content: unknown; edited_by: string; created_at: string }>
   onRestore: (revId: number) => Promise<void>
 }
 
@@ -44,7 +51,7 @@ export default function SheetHistoryPanel({
   const [editors, setEditors] = useState<SheetEditorSummary[]>([])
   const [preview, setPreview] = useState<{
     rev: SheetRevision
-    content: SheetContent
+    workbook: WorkbookDocument
   } | null>(null)
   const [confirmRev, setConfirmRev] = useState<SheetRevision | null>(null)
 
@@ -72,7 +79,7 @@ export default function SheetHistoryPanel({
       const data = await loadRevisionContent(r.id)
       setPreview({
         rev: r,
-        content: data.content || emptySheetContent(),
+        workbook: normalizeWorkbook(data.content),
       })
     } catch {
       setPreview(null)
@@ -95,6 +102,8 @@ export default function SheetHistoryPanel({
   }
 
   if (!open) return null
+
+  const previewActive = preview ? getActiveSheet(preview.workbook) : null
 
   return createPortal(
     <>
@@ -203,7 +212,7 @@ export default function SheetHistoryPanel({
         </aside>
       </div>
 
-      {preview && (
+      {preview && previewActive && (
         <div
           className="fixed inset-0 z-[10010] flex items-center justify-center p-3 sm:p-6"
           onClick={() => setPreview(null)}
@@ -241,12 +250,25 @@ export default function SheetHistoryPanel({
                 </button>
               </div>
             </div>
-            <div className="flex-1 min-h-0 p-3">
+            <div className="flex-1 min-h-0 p-3 flex flex-col overflow-hidden">
               <SheetGrid
-                className="h-full min-h-0"
-                value={preview.content}
+                key={previewActive.id}
+                className="flex-1 min-h-0"
+                value={previewActive.content}
                 readOnly
                 allowResizeColumns={false}
+              />
+              <SheetTabBar
+                doc={preview.workbook}
+                readOnly
+                onSelect={(sid) =>
+                  setPreview((p) =>
+                    p ? { ...p, workbook: setActiveSheetId(p.workbook, sid) } : p
+                  )
+                }
+                onRename={() => {}}
+                onAdd={() => {}}
+                onDelete={() => {}}
               />
             </div>
           </div>

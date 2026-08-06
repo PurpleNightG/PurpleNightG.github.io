@@ -6,7 +6,7 @@ const router = express.Router()
 
 let tablesReady = false
 
-const DEFAULT_CONTENT = () => ({
+const DEFAULT_SHEET = () => ({
   rows: 40,
   cols: 16,
   colWidths: Array.from({ length: 16 }, () => 120),
@@ -14,6 +14,74 @@ const DEFAULT_CONTENT = () => ({
   cells: {},
   merges: [],
 })
+
+const newSheetId = () =>
+  `s_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+
+const DEFAULT_CONTENT = () => {
+  const id = newSheetId()
+  return {
+    version: 2,
+    activeSheetId: id,
+    sheets: [{ id, name: '工作表1', content: DEFAULT_SHEET() }],
+  }
+}
+
+function parseSheetGrid(raw) {
+  const base = DEFAULT_SHEET()
+  if (!raw || typeof raw !== 'object') return base
+  const cols = Math.min(52, Math.max(5, Number(raw.cols) || 16))
+  const rows = Math.min(200, Math.max(10, Number(raw.rows) || 40))
+  const colWidths = Array.from({ length: cols }, (_, i) => {
+    const w = Number(raw.colWidths?.[i])
+    return Number.isFinite(w) ? Math.min(480, Math.max(48, Math.round(w))) : 120
+  })
+  const rowHeights = Array.from({ length: rows }, (_, i) => {
+    const h = Number(raw.rowHeights?.[i])
+    return Number.isFinite(h) ? Math.min(240, Math.max(24, Math.round(h))) : 34
+  })
+  return {
+    rows,
+    cols,
+    colWidths,
+    rowHeights,
+    cells: raw.cells && typeof raw.cells === 'object' ? raw.cells : {},
+    merges: Array.isArray(raw.merges) ? raw.merges : [],
+    gridStyle: raw.gridStyle === 'bold' ? 'bold' : 'normal',
+  }
+}
+
+function parseContent(raw) {
+  if (!raw) return DEFAULT_CONTENT()
+  try {
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+    if (parsed?.version === 2 && Array.isArray(parsed.sheets) && parsed.sheets.length > 0) {
+      const sheets = parsed.sheets
+        .slice(0, 30)
+        .map((s, i) => ({
+          id: String(s?.id || newSheetId()),
+          name: String(s?.name || `工作表${i + 1}`).trim().slice(0, 32) || `工作表${i + 1}`,
+          content: parseSheetGrid(s?.content),
+        }))
+      if (!sheets.length) return DEFAULT_CONTENT()
+      const activeSheetId =
+        sheets.find((s) => s.id === parsed.activeSheetId)?.id || sheets[0].id
+      return { version: 2, activeSheetId, sheets }
+    }
+    // 旧版：单 sheet 网格 JSON（固定 id，避免每次解析都变导致误记历史）
+    if (parsed && (parsed.cells != null || parsed.rows != null || parsed.cols != null)) {
+      const id = 's_legacy_main'
+      return {
+        version: 2,
+        activeSheetId: id,
+        sheets: [{ id, name: '工作表1', content: parseSheetGrid(parsed) }],
+      }
+    }
+    return DEFAULT_CONTENT()
+  } catch {
+    return DEFAULT_CONTENT()
+  }
+}
 
 async function ensureSheetTables() {
   if (tablesReady) return
@@ -104,33 +172,6 @@ function requireStudent(req, res, next) {
     next()
   } catch {
     return res.status(401).json({ success: false, message: '认证令牌无效或已过期' })
-  }
-}
-
-function parseContent(raw) {
-  if (!raw) return DEFAULT_CONTENT()
-  try {
-    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
-    const cols = Math.min(52, Math.max(5, Number(parsed.cols) || 16))
-    const rows = Math.min(200, Math.max(10, Number(parsed.rows) || 40))
-    const colWidths = Array.from({ length: cols }, (_, i) => {
-      const w = Number(parsed.colWidths?.[i])
-      return Number.isFinite(w) ? Math.min(480, Math.max(48, Math.round(w))) : 120
-    })
-    const rowHeights = Array.from({ length: rows }, (_, i) => {
-      const h = Number(parsed.rowHeights?.[i])
-      return Number.isFinite(h) ? Math.min(240, Math.max(24, Math.round(h))) : 34
-    })
-    return {
-      rows,
-      cols,
-      colWidths,
-      rowHeights,
-      cells: parsed.cells && typeof parsed.cells === 'object' ? parsed.cells : {},
-      merges: Array.isArray(parsed.merges) ? parsed.merges : [],
-    }
-  } catch {
-    return DEFAULT_CONTENT()
   }
 }
 

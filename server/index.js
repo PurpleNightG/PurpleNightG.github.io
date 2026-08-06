@@ -1,7 +1,7 @@
 import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
-import { testConnection } from './config/database.js'
+import { testConnection, closePool } from './config/database.js'
 import authRoutes from './routes/auth.js'
 import studentAuthRoutes from './routes/student-auth.js'
 import membersRoutes from './routes/members.js'
@@ -145,6 +145,17 @@ const isVercel = process.env.VERCEL === '1' || process.env.VERCEL === 'true'
 // 仅在非Vercel环境（本地开发）下启动服务器
 if (!isVercel) {
   startServer()
+
+  const shutdown = async (signal) => {
+    console.log(`\n${signal} 收到，正在关闭数据库连接池…`)
+    try {
+      await closePool()
+    } finally {
+      process.exit(0)
+    }
+  }
+  process.once('SIGINT', () => shutdown('SIGINT'))
+  process.once('SIGTERM', () => shutdown('SIGTERM'))
 }
 
 // 导出app供Vercel使用

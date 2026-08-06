@@ -1,7 +1,12 @@
 import { useState, useEffect } from 'react'
-import { progressAPI } from '../utils/api'
+import { progressAPI, courseAPI } from '../utils/api'
 import { toast } from '../utils/toast'
 import { BookOpen, Award, Clock, TrendingUp, ChevronDown } from 'lucide-react'
+import {
+  parseMetaOptions,
+  tagBadgeClass,
+  type MetaOption,
+} from '../utils/tagColors'
 
 interface Course {
   id: number
@@ -13,11 +18,41 @@ interface Course {
   progress: number
 }
 
-const CATEGORIES = ['入门课程', '标准技能一阶课程', '标准技能二阶课程', '团队训练', '进阶课程']
+const PREFERRED_CATEGORY_ORDER = [
+  '入门课程',
+  '标准技能一阶课程',
+  '标准技能二阶课程',
+  '团队训练',
+  '进阶课程',
+]
+
+function orderedCategories(courses: { category?: string | null }[]): string[] {
+  const present = [
+    ...new Set(
+      courses.map((c) => (c.category && String(c.category).trim()) || '未分类')
+    ),
+  ]
+  return [
+    ...PREFERRED_CATEGORY_ORDER.filter((c) => present.includes(c)),
+    ...present
+      .filter((c) => !PREFERRED_CATEGORY_ORDER.includes(c))
+      .sort((a, b) => a.localeCompare(b, 'zh-CN')),
+  ]
+}
 
 export default function StudentProgress() {
   const [courses, setCourses] = useState<Course[]>([])
   const [loading, setLoading] = useState(true)
+  const [difficulties, setDifficulties] = useState<MetaOption[]>(
+    parseMetaOptions(
+      [
+        { name: '初级', color: 'green' },
+        { name: '中级', color: 'blue' },
+        { name: '高级', color: 'red' },
+      ],
+      ['初级', '中级', '高级']
+    )
+  )
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [stats, setStats] = useState({
     totalCourses: 0,
@@ -29,7 +64,17 @@ export default function StudentProgress() {
 
   useEffect(() => {
     loadProgress()
+    loadDifficulties()
   }, [])
+
+  const loadDifficulties = async () => {
+    try {
+      const res = await courseAPI.getDifficulties()
+      setDifficulties(parseMetaOptions(res.data, ['初级', '中级', '高级']))
+    } catch (e) {
+      console.error('加载难度配置失败:', e)
+    }
+  }
 
   const loadProgress = async () => {
     setLoading(true)
@@ -63,8 +108,10 @@ export default function StudentProgress() {
 
       // 已全部完成的分类默认收起，其余展开
       const nextCollapsed: Record<string, boolean> = {}
-      for (const category of CATEGORIES) {
-        const list = coursesData.filter((c) => c.category === category)
+      for (const category of orderedCategories(coursesData)) {
+        const list = coursesData.filter(
+          (c) => ((c.category && String(c.category).trim()) || '未分类') === category
+        )
         if (list.length > 0 && list.every((c) => c.progress === 100)) {
           nextCollapsed[category] = true
         }
@@ -90,17 +137,17 @@ export default function StudentProgress() {
   }
 
   const getDifficultyColor = (difficulty: string) => {
-    switch (difficulty) {
-      case '初级': return 'bg-green-600/20 text-green-300 border-green-600/30'
-      case '中级': return 'bg-blue-600/20 text-blue-300 border-blue-600/30'
-      case '高级': return 'bg-red-600/20 text-red-300 border-red-600/30'
-      default: return 'bg-gray-600/20 text-gray-300 border-gray-600/30'
-    }
+    const found = difficulties.find((d) => d.name === difficulty)
+    return tagBadgeClass(
+      found?.color ||
+        (difficulty === '初级' ? 'green' : difficulty === '高级' ? 'red' : 'blue')
+    )
   }
 
   const groupedCourses = courses.reduce((acc, course) => {
-    if (!acc[course.category]) acc[course.category] = []
-    acc[course.category].push(course)
+    const cat = (course.category && String(course.category).trim()) || '未分类'
+    if (!acc[cat]) acc[cat] = []
+    acc[cat].push(course)
     return acc
   }, {} as Record<string, Course[]>)
 
@@ -168,7 +215,7 @@ export default function StudentProgress() {
       </div>
 
       <div className="space-y-4">
-        {CATEGORIES.map((category) => {
+        {orderedCategories(courses).map((category) => {
           const categoryCourses = groupedCourses[category] || []
           if (categoryCourses.length === 0) return null
 
@@ -207,7 +254,7 @@ export default function StudentProgress() {
                               <span className="text-purple-400 font-mono text-sm font-semibold">
                                 {course.code}
                               </span>
-                              <span className={`px-2 py-0.5 rounded text-xs font-medium border ${getDifficultyColor(course.difficulty)}`}>
+                              <span className={`px-2 py-0.5 rounded text-xs font-medium ${getDifficultyColor(course.difficulty)}`}>
                                 {course.difficulty}
                               </span>
                               <span className="text-gray-500 text-xs">{course.hours} 课时</span>

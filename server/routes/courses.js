@@ -196,6 +196,13 @@ const ALLOWED_COLORS = new Set([
   'red',
   'pink',
   'gray',
+  'blackgold',
+  'blacksilver',
+  'blackcopper',
+  'blackrose',
+  'blackice',
+  'blackviolet',
+  'blackemerald',
 ])
 
 function normalizeColor(raw, fallback = 'purple') {
