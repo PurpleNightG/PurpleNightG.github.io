@@ -734,39 +734,47 @@ export default function AdminSecurityCenter() {
         />
       )}
 
-      {emailEdit && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60" onClick={() => !busy && setEmailEdit(null)} />
-          <div className="relative z-10 w-full max-w-md rounded-xl border border-white/10 bg-gray-900 p-5 space-y-4">
-            <h3 className="text-white font-semibold">绑定 / 修改安全邮箱</h3>
-            <p className="text-sm text-gray-400">仅超级管理员可操作。未绑定邮箱的管理员无法登录。</p>
-            <input
-              type="email"
-              value={emailEdit.email}
-              onChange={(e) => setEmailEdit({ ...emailEdit, email: e.target.value })}
-              placeholder="name@example.com"
-              className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/15 text-white text-sm"
-            />
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                className="px-3 py-1.5 rounded-lg text-sm text-gray-300 border border-white/10"
-                onClick={() => setEmailEdit(null)}
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                className="px-3 py-1.5 rounded-lg text-sm bg-purple-600/60 text-white"
-                onClick={() => void saveEmail()}
-              >
-                保存
-              </button>
+      {emailEdit &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[10000] flex items-center justify-center p-4"
+            onClick={() => !busy && setEmailEdit(null)}
+          >
+            <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
+            <div
+              className="relative z-10 w-full max-w-md rounded-xl border border-white/10 bg-gray-900 p-5 space-y-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-white font-semibold">绑定 / 修改安全邮箱</h3>
+              <p className="text-sm text-gray-400">仅超级管理员可操作。未绑定邮箱的管理员无法登录。</p>
+              <input
+                type="email"
+                value={emailEdit.email}
+                onChange={(e) => setEmailEdit({ ...emailEdit, email: e.target.value })}
+                placeholder="name@example.com"
+                className="w-full px-3 py-2 rounded-lg bg-black/40 border border-white/15 text-white text-sm"
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  className="px-3 py-1.5 rounded-lg text-sm text-gray-300 border border-white/10"
+                  onClick={() => setEmailEdit(null)}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  className="px-3 py-1.5 rounded-lg text-sm bg-purple-600/60 text-white"
+                  onClick={() => void saveEmail()}
+                >
+                  保存
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
     </div>
   )
 }

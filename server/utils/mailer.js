@@ -42,9 +42,18 @@ export function maskEmail(email) {
 /**
  * 发送登录验证码
  */
+function resolveFromName() {
+  const raw = String(process.env.SMTP_FROM_NAME || '').trim()
+  // .env 若用错误编码保存，会变成 � / 问号串；此时忽略环境变量
+  if (!raw || raw.includes('\uFFFD') || /\?{3,}/.test(raw)) {
+    return '紫夜安全中心'
+  }
+  return raw
+}
+
 export async function sendLoginOtpMail(to, code) {
   const fromUser = process.env.SMTP_USER
-  const fromName = process.env.SMTP_FROM_NAME || '紫夜安全中心'
+  const fromName = resolveFromName()
   const info = await getTransporter().sendMail({
     // 用对象形式，由 nodemailer 按 RFC2047 编码中文显示名，避免 QQ/Foxmail 乱码
     from: {

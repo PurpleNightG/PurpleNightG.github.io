@@ -1,5 +1,5 @@
 import { pool } from '../config/database.js'
-import { getClientIp } from './loginSessions.js'
+import { resolveEffectiveClientIpAsync } from './clientIp.js'
 import { describeAdminAction } from './auditDescribe.js'
 
 let tableReady = false
@@ -40,13 +40,18 @@ export async function writeAdminAudit({
   resourceId = null,
   summary = null,
   detail = null,
+  /** 已解析的公网 IP（如登录流程），优先于自动探测 */
+  ipOverride = null,
 }) {
   try {
     await ensureAuditLogTable()
     const auth = req.auth || req.admin || req.authUser || {}
     const adminId = auth.userId || auth.id || auth.decoded?.id || null
     const username = auth.username || auth.decoded?.username || null
-    const ip = getClientIp(req)
+    // 与登录态一致：本地环回时用客户端公网 IP / 服务端出口 IP，避免审计列全是 ::1
+    const ip =
+      (ipOverride && String(ipOverride).slice(0, 45)) ||
+      (await resolveEffectiveClientIpAsync(req, req.body?.clientPublicIp))
     const ua = String(req.headers['user-agent'] || '').slice(0, 512)
     let detailJson = null
     if (detail != null) {

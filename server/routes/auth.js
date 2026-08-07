@@ -74,6 +74,7 @@ async function completeAdminLogin(req, res, user, { rememberMe, clientIp, device
       resourceType: 'admin',
       resourceId: user.id,
       summary: `管理员登录成功 IP=${clientIp || '?'}（单点，已踢其它会话）`,
+      ipOverride: clientIp,
     })
   } catch { /* ignore */ }
   return res.json({ success: true, message: '登录成功', data: payload })
