@@ -859,7 +859,7 @@ function applyIndexOrder(listItems: TreeItem[], indexItems: any[]): TreeItem[] {
             <div className="flex items-center justify-center h-full"><Loader2 size={32} className="animate-spin text-purple-400" /></div>
           ) : editorMode === 'preview' ? (
             <div className="h-full overflow-y-auto px-12 py-8">
-              <article className="markdown-content max-w-4xl">
+              <article className="markdown-content w-full max-w-none">
                 <ReactMarkdown remarkPlugins={docRemarkPlugins} rehypePlugins={docRehypePlugins}>{content}</ReactMarkdown>
               </article>
             </div>

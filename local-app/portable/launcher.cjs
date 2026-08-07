@@ -1,6 +1,7 @@
 'use strict'
 
 const { spawn, spawnSync } = require('node:child_process')
+const crypto = require('node:crypto')
 const fs = require('node:fs')
 const http = require('node:http')
 const net = require('node:net')
@@ -10,6 +11,9 @@ const ROOT = __dirname
 const NODE = path.join(ROOT, 'runtime', 'node.exe')
 const SERVER_DIR = path.join(ROOT, 'app', 'server')
 const SERVER_ENV = path.join(SERVER_DIR, '.env')
+const SERVER_SEALED = path.join(SERVER_DIR, 'credentials.sealed')
+// 打包时由 build-portable 替换为 64 位 hex；勿手改模板占位符
+const EMBEDDED_SEAL_KEY = '__ZIYE_SEAL_KEY__'
 const BACKEND_PORT = 3000
 const FRONTEND_PORT = 3001
 const FRONTEND_URL = `http://127.0.0.1:${FRONTEND_PORT}`
@@ -47,13 +51,9 @@ function log(message) {
   appendLog(line)
 }
 
-function readEnvFile(filePath) {
-  if (!fs.existsSync(filePath)) {
-    return {}
-  }
-
+function parseEnvText(text) {
   const values = {}
-  for (const line of fs.readFileSync(filePath, 'utf8').split(/\r?\n/)) {
+  for (const line of String(text || '').split(/\r?\n/)) {
     const trimmed = line.trim()
     if (!trimmed || trimmed.startsWith('#')) {
       continue
@@ -76,6 +76,63 @@ function readEnvFile(filePath) {
   }
 
   return values
+}
+
+function readEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return {}
+  }
+  return parseEnvText(fs.readFileSync(filePath, 'utf8'))
+}
+
+function unsealCredentials(sealedPath, keyHex) {
+  if (!keyHex || keyHex.includes('__ZIYE') || !/^[0-9a-f]{64}$/i.test(keyHex)) {
+    throw new Error('启动器未注入凭据密钥，请重新打包本地版')
+  }
+  const raw = fs.readFileSync(sealedPath, 'utf8').trim()
+  const buf = Buffer.from(raw, 'base64')
+  if (buf.length < 28) {
+    throw new Error('credentials.sealed 内容无效')
+  }
+  const iv = buf.subarray(0, 12)
+  const tag = buf.subarray(12, 28)
+  const data = buf.subarray(28)
+  const key = Buffer.from(keyHex, 'hex')
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv)
+  decipher.setAuthTag(tag)
+  return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8')
+}
+
+/** 仅内存加载 DB 等配置；删除历史明文 .env，避免安装目录泄露 */
+function loadRuntimeEnv() {
+  if (fs.existsSync(SERVER_SEALED)) {
+    try {
+      const env = parseEnvText(unsealCredentials(SERVER_SEALED, EMBEDDED_SEAL_KEY))
+      scrubPlainEnvFile()
+      return env
+    } catch (error) {
+      fail('解密数据库配置失败', error.message || String(error))
+    }
+  }
+
+  // 兼容极旧包：仍有明文 .env 时读完即删
+  if (fs.existsSync(SERVER_ENV)) {
+    const env = readEnvFile(SERVER_ENV)
+    scrubPlainEnvFile()
+    return env
+  }
+
+  fail('缺少数据库配置 credentials.sealed，请联系管理员获取完整安装包。')
+}
+
+function scrubPlainEnvFile() {
+  try {
+    if (fs.existsSync(SERVER_ENV)) {
+      fs.unlinkSync(SERVER_ENV)
+    }
+  } catch {
+    // 忽略只读等异常，启动仍可继续（凭据已在内存）
+  }
 }
 
 function isPortAvailable(port) {
@@ -148,9 +205,8 @@ function testMysqlModule() {
   return { ok: true, message: 'ok' }
 }
 
-async function runPreflightChecks() {
+async function runPreflightChecks(env) {
   const issues = []
-  const env = readEnvFile(SERVER_ENV)
 
   const nodeCheck = testNodeRuntime()
   if (!nodeCheck.ok) {
@@ -189,7 +245,7 @@ async function runPreflightChecks() {
       )
     }
   } else {
-    issues.push('数据库配置不完整，请检查 app/server/.env 中的 DB_HOST / DB_PORT')
+    issues.push('数据库配置不完整（缺少 DB_HOST / DB_PORT），请重新下载完整安装包')
   }
 
   return issues
@@ -338,9 +394,7 @@ async function main() {
     fail('缺少内置 Node 运行时，请重新下载完整安装包。')
   }
 
-  if (!fs.existsSync(SERVER_ENV)) {
-    fail('缺少数据库配置 app/server/.env，请联系管理员获取完整安装包。')
-  }
+  const runtimeEnv = loadRuntimeEnv()
 
   log('========================================')
   log('  紫夜公会官网 - 本地版')
@@ -350,13 +404,15 @@ async function main() {
   log('========================================\n')
 
   log('正在执行启动前检查...')
-  const preflightIssues = await runPreflightChecks()
+  const preflightIssues = await runPreflightChecks(runtimeEnv)
   if (preflightIssues.length > 0) {
     fail('启动前检查未通过', preflightIssues.map((item) => `- ${item}`).join('\n'))
   }
   log('启动前检查通过\n')
 
+  // 凭据只通过子进程环境变量注入，不写回磁盘 .env
   spawnService('后端', ['--use-system-ca', 'server.cjs'], SERVER_DIR, {
+    ...runtimeEnv,
     PORT: String(BACKEND_PORT),
     NODE_ENV: 'production',
   })

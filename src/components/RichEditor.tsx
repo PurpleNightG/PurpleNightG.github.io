@@ -15,13 +15,15 @@ import { TableCell } from '@tiptap/extension-table-cell'
 import { TableHeader } from '@tiptap/extension-table-header'
 import { Markdown } from 'tiptap-markdown'
 import { Extension } from '@tiptap/core'
+import { NodeSelection } from '@tiptap/pm/state'
 import markdownItCjkFriendly from 'markdown-it-cjk-friendly'
 import { useEffect, useState, useRef } from 'react'
 import {
   Bold, Italic, UnderlineIcon, Strikethrough, Code, Heading1, Heading2, Heading3,
   List, ListOrdered, Quote, Minus, Undo, Redo, AlignLeft, AlignCenter,
   AlignRight, Highlighter, Link as LinkIcon, Image as ImageIcon, RemoveFormatting, X,
-  LayoutGrid, AlignJustify, SeparatorVertical, Trash2
+  LayoutGrid, AlignJustify, SeparatorVertical, Trash2,
+  LayoutTemplate, Info, AlertTriangle, CheckCircle2, Ban, Puzzle,
 } from 'lucide-react'
 
 /** 让 markdown-it（富文本导入）支持中文两侧无空格的 **粗体** */
@@ -120,28 +122,229 @@ function rgbToHex(color: string): string {
 }
 
 // ---- HTML Block NodeView ----
+/** 去掉 contentEditable 产生的尾部空行 / br，避免卡片被撑得很高 */
+function sanitizeHtmlBlockHtml(raw: string): string {
+  const wrap = document.createElement('div')
+  wrap.innerHTML = raw || ''
+  wrap.querySelectorAll('[contenteditable]').forEach((el) => {
+    el.removeAttribute('contenteditable')
+    el.removeAttribute('spellcheck')
+    el.removeAttribute('data-html-text-edit')
+    ;(el as HTMLElement).style.outline = ''
+  })
+  wrap.querySelectorAll('[data-html-text-edit]').forEach((el) => {
+    el.removeAttribute('data-html-text-edit')
+  })
+
+  const isIgnorableNode = (n: ChildNode | null) => {
+    if (!n) return false
+    if (n.nodeType === Node.TEXT_NODE) return !/[^\s\u00a0]/.test(n.textContent || '')
+    if (n.nodeType === Node.ELEMENT_NODE) {
+      const el = n as HTMLElement
+      if (el.tagName === 'BR') return true
+      if ((el.tagName === 'DIV' || el.tagName === 'P' || el.tagName === 'SPAN') && !el.attributes.length) {
+        return !el.textContent?.replace(/[\s\u00a0]/g, '') &&
+          ![...el.childNodes].some((c) => c.nodeType === Node.ELEMENT_NODE && (c as HTMLElement).tagName !== 'BR')
+      }
+    }
+    return false
+  }
+
+  const pruneEdges = (root: HTMLElement) => {
+    while (root.firstChild && isIgnorableNode(root.firstChild)) root.removeChild(root.firstChild)
+    while (root.lastChild && isIgnorableNode(root.lastChild)) root.removeChild(root.lastChild)
+  }
+
+  const trimTextEdges = (el: HTMLElement) => {
+    const first = el.firstChild
+    if (first?.nodeType === Node.TEXT_NODE) {
+      first.textContent = (first.textContent || '').replace(/^[\s\u00a0\r\n]+/, '')
+      if (!first.textContent) el.removeChild(first)
+    }
+    const last = el.lastChild
+    if (last?.nodeType === Node.TEXT_NODE) {
+      last.textContent = (last.textContent || '').replace(/[\s\u00a0\r\n]+$/, '')
+      if (!last.textContent) el.removeChild(last)
+    }
+  }
+
+  pruneEdges(wrap)
+  wrap.querySelectorAll('a, div, p, span').forEach((el) => {
+    pruneEdges(el as HTMLElement)
+    trimTextEdges(el as HTMLElement)
+  })
+
+  // note / 描述：源码开标签后的换行、contentEditable 插入的 <br> 一律压成纯文本
+  wrap.querySelectorAll('.note, .doc-card-desc, .doc-card-title').forEach((el) => {
+    const node = el as HTMLElement
+    const text = (node.textContent || '').replace(/^[\s\u00a0\r\n]+|[\s\u00a0\r\n]+$/g, '')
+    node.textContent = text
+  })
+
+  return wrap.innerHTML.trim()
+}
+
+const HTML_TEXT_EDIT_SELECTOR = [
+  '.doc-card-title',
+  '.doc-card-desc',
+  '.note',
+  '.staff-card h3',
+  '.staff-card p',
+  '.staff-note',
+  '.staff-role',
+  '.btn',
+].join(',')
+
+function enableHtmlTextEditing(root: HTMLElement) {
+  const targets = root.querySelectorAll(HTML_TEXT_EDIT_SELECTOR)
+  if (targets.length > 0) {
+    targets.forEach((el) => {
+      const node = el as HTMLElement
+      node.contentEditable = 'true'
+      node.spellcheck = false
+      node.dataset.htmlTextEdit = '1'
+    })
+    return
+  }
+  // 无已知结构时：叶子文本容器可编辑，避免整块 contentEditable 撑高
+  root.querySelectorAll('div, p, span, li, h1, h2, h3, h4, td, th').forEach((el) => {
+    const node = el as HTMLElement
+    if (node.children.length > 0) return
+    if (!(node.textContent || '').trim()) return
+    node.contentEditable = 'true'
+    node.spellcheck = false
+    node.dataset.htmlTextEdit = '1'
+  })
+}
+
 function HtmlBlockView({ node, updateAttributes }: any) {
-  const [editing, setEditing] = useState(false)
+  const [codeOpen, setCodeOpen] = useState(false)
   const [html, setHtml] = useState(node.attrs.content)
+  const [draft, setDraft] = useState(node.attrs.content)
+  const previewRef = useRef<HTMLDivElement>(null)
+  const selfUpdate = useRef(false)
+
+  const mountPreviewHtml = (source: string) => {
+    const el = previewRef.current
+    if (!el) return
+    const cleaned = sanitizeHtmlBlockHtml(source)
+    el.innerHTML = cleaned
+    enableHtmlTextEditing(el)
+  }
+
+  useEffect(() => {
+    const next = node.attrs.content || ''
+    setHtml(next)
+    if (!codeOpen) setDraft(next)
+    if (selfUpdate.current) {
+      selfUpdate.current = false
+      return
+    }
+    if (!codeOpen) mountPreviewHtml(next)
+  }, [node.attrs.content, codeOpen])
+
+  useEffect(() => {
+    if (!codeOpen) mountPreviewHtml(html)
+  }, [codeOpen]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const commitFromPreview = () => {
+    const el = previewRef.current
+    if (!el) return
+    const next = sanitizeHtmlBlockHtml(el.innerHTML)
+    el.innerHTML = next
+    enableHtmlTextEditing(el)
+    if (next === html) return
+    selfUpdate.current = true
+    setHtml(next)
+    setDraft(next)
+    updateAttributes({ content: next })
+  }
+
+  const openCode = () => {
+    commitFromPreview()
+    setDraft(html)
+    setCodeOpen(true)
+  }
+
+  const applyCode = () => {
+    const next = sanitizeHtmlBlockHtml(draft)
+    selfUpdate.current = true
+    setHtml(next)
+    setDraft(next)
+    updateAttributes({ content: next })
+    setCodeOpen(false)
+  }
+
   return (
-    <NodeViewWrapper contentEditable={false}>
-      <div className="my-2 rounded border border-purple-600/30 bg-gray-800/20 overflow-hidden select-none">
-        <div className="flex items-center gap-2 px-3 py-1 bg-gray-800/60 border-b border-gray-700/50 text-xs">
-          <span className="text-gray-500 font-mono">{'<HTML 块>'}</span>
-          <button onMouseDown={e => { e.preventDefault(); setEditing(v => !v) }}
-            className="text-purple-400 hover:text-purple-300">{editing ? '预览' : '编辑代码'}</button>
-        </div>
-        {editing ? (
+    <NodeViewWrapper contentEditable={false} className="html-block-node group relative">
+      {/* 直接展示渲染结果，无代码框 */}
+      <div
+        ref={previewRef}
+        className="markdown-content html-block-preview"
+        onClick={e => {
+          const a = (e.target as HTMLElement).closest('a')
+          if (a) e.preventDefault()
+        }}
+        onBlur={(e) => {
+          if (e.currentTarget.contains(e.relatedTarget as Node)) return
+          if (codeOpen) return
+          commitFromPreview()
+        }}
+        onKeyDown={e => {
+          e.stopPropagation()
+          if (e.key === 'Enter') {
+            const t = e.target as HTMLElement
+            if (t.dataset.htmlTextEdit === '1' && !t.classList.contains('note')) {
+              e.preventDefault()
+            }
+          }
+        }}
+      />
+
+      {/* 悬停出现：查看/编辑源码 */}
+      {!codeOpen && (
+        <button
+          type="button"
+          title="查看 HTML 源码"
+          onMouseDown={e => { e.preventDefault(); openCode() }}
+          className="absolute top-1 right-1 z-10 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity px-2 py-0.5 rounded text-[11px] bg-gray-900/90 border border-purple-500/40 text-purple-300 hover:bg-purple-600/30"
+        >
+          &lt;/&gt; 源码
+        </button>
+      )}
+
+      {/* 源码面板：覆盖在内容上，而不是换成矮代码框 */}
+      {codeOpen && (
+        <div className="mt-2 rounded-lg border border-purple-500/40 bg-gray-950/95 shadow-xl overflow-hidden">
+          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-gray-700/80 text-xs">
+            <span className="text-gray-400 font-mono">HTML 源码</span>
+            <span className="text-gray-600">改完点应用；点标题/描述仍可直接改字</span>
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                type="button"
+                onMouseDown={e => { e.preventDefault(); setCodeOpen(false); setDraft(html) }}
+                className="text-gray-400 hover:text-white px-2 py-0.5"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onMouseDown={e => { e.preventDefault(); applyCode() }}
+                className="text-white bg-purple-600 hover:bg-purple-500 rounded px-2.5 py-0.5"
+              >
+                应用
+              </button>
+            </div>
+          </div>
           <textarea
-            value={html}
-            onChange={e => { setHtml(e.target.value); updateAttributes({ content: e.target.value }) }}
-            className="w-full font-mono text-xs text-gray-300 bg-gray-900/80 p-3 min-h-[80px] outline-none resize-y"
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            className="w-full font-mono text-xs text-gray-200 bg-transparent p-3 min-h-[140px] outline-none resize-y"
             spellCheck={false}
+            autoFocus
           />
-        ) : (
-          <div className="p-3 markdown-content" dangerouslySetInnerHTML={{ __html: html }} />
-        )}
-      </div>
+        </div>
+      )}
     </NodeViewWrapper>
   )
 }
@@ -152,7 +355,17 @@ const HtmlBlock = Node.create({
   atom: true,
   addAttributes() { return { content: { default: '' } } },
   parseHTML() {
-    return [{ tag: 'div[data-html-block]', getAttrs: dom => ({ content: decodeURIComponent((dom as HTMLElement).getAttribute('data-html-block') || '') }) }]
+    return [{
+      tag: 'div[data-html-block]',
+      getAttrs: (dom) => {
+        const raw = (dom as HTMLElement).getAttribute('data-html-block') || ''
+        try {
+          return { content: decodeURIComponent(raw) }
+        } catch {
+          return { content: raw }
+        }
+      },
+    }]
   },
   renderHTML({ node }) {
     return ['div', { 'data-html-block': encodeURIComponent(node.attrs.content) }]
@@ -183,7 +396,15 @@ function toHtmlBlock(html: string) {
 }
 
 /** CommonMark：div 类 HTML 块会一直吞行直到空行，必须在块后补空行，否则后续列表会变成纯文本 */
+function isBlankMdLine(s: string): boolean {
+  return !s || /^[\s\u00a0]*$/.test(s)
+}
+
 function pushHtmlBlock(result: string[], html: string, remainingLines: string[], nextIndex: number) {
+  // MD 里 HTML 前的空行会变成富文本空段落，看起来像多一截空白 —— 导入时去掉
+  while (result.length > 0 && isBlankMdLine(result[result.length - 1])) {
+    result.pop()
+  }
   result.push(toHtmlBlock(html))
   if (nextIndex < remainingLines.length && remainingLines[nextIndex].trim() !== '') {
     result.push('')
@@ -216,6 +437,47 @@ const BARE_BLANK_HTML = /^<(?:br|p)\s*\/?\s*>(?:\s*<\/p>)?\s*$/i
 
 function normalizeBlankLineHtml(md: string): string {
   return md.replace(/^[ \t]*<(?:br|p)\s*\/?\s*>(?:\s*<\/p>)?[ \t]*$/gim, BLANK_PARA_MARK)
+}
+
+/** 从 Markdown 抽出 HTML 注释：预览本就不显示，且会破坏 TipTap DOM 解析导致后续正文丢失 */
+type PreservedHtmlComment = { beforeLine: string; comment: string }
+
+function extractHtmlComments(md: string): { text: string; comments: PreservedHtmlComment[] } {
+  const comments: PreservedHtmlComment[] = []
+  const text = md.replace(/<!--[\s\S]*?-->/g, (comment, offset, full: string) => {
+    const head = full.slice(0, offset)
+    const lines = head.split('\n')
+    let beforeLine = ''
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (lines[i].trim()) {
+        beforeLine = lines[i]
+        break
+      }
+    }
+    comments.push({ beforeLine, comment })
+    return '\n'
+  })
+  return { text, comments }
+}
+
+function restoreHtmlComments(md: string, comments: PreservedHtmlComment[]): string {
+  if (!comments.length) return md
+  let out = md
+  for (let i = comments.length - 1; i >= 0; i--) {
+    const { beforeLine, comment } = comments[i]
+    if (!beforeLine) {
+      out = `${comment}\n${out}`
+      continue
+    }
+    const idx = out.indexOf(beforeLine)
+    if (idx === -1) {
+      out = `${out.replace(/\s+$/, '')}\n\n${comment}\n`
+      continue
+    }
+    const insertAt = idx + beforeLine.length
+    out = `${out.slice(0, insertAt)}\n\n${comment}${out.slice(insertAt)}`
+  }
+  return out
 }
 
 function wrapHtmlBlocks(md: string): string {
@@ -288,6 +550,33 @@ function unwrapHtmlBlocks(md: string): string {
   )
 }
 
+/** 删除紧挨 HTML 块的空段落（MD 空行残留，删不掉的那种空白） */
+function removeEmptyParagraphsAroundHtmlBlocks(ed: any) {
+  const { state } = ed
+  const ranges: { from: number; to: number }[] = []
+  const isEmptyPara = (node: any) => {
+    if (node.type.name !== 'paragraph') return false
+    return !String(node.textContent || '').replace(/[\s\u00a0\u200b]/g, '')
+  }
+  state.doc.descendants((node: any, pos: number) => {
+    if (!isEmptyPara(node)) return
+    const $pos = state.doc.resolve(pos)
+    const index = $pos.index()
+    const parent = $pos.parent
+    const prev = index > 0 ? parent.child(index - 1) : null
+    const next = index < parent.childCount - 1 ? parent.child(index + 1) : null
+    if (prev?.type.name === 'htmlBlock' || next?.type.name === 'htmlBlock') {
+      ranges.push({ from: pos, to: pos + node.nodeSize })
+    }
+  })
+  if (!ranges.length) return
+  let tr = state.tr
+  for (let i = ranges.length - 1; i >= 0; i--) {
+    tr = tr.delete(ranges[i].from, ranges[i].to)
+  }
+  ed.view.dispatch(tr)
+}
+
 interface RichEditorProps {
   value: string
   onChange: (markdown: string) => void
@@ -323,28 +612,71 @@ function Divider() {
   return <div className="w-px h-5 bg-gray-600 mx-0.5 flex-shrink-0" />
 }
 
-type ModalType = 'link' | 'image' | null
+type ModalType = 'link' | 'image' | 'docCard' | 'note' | null
+type NoteTone = 'info' | 'warning' | 'success' | 'danger'
+
+function escapeHtmlAttr(s: string): string {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+function escapeHtmlText(s: string): string {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+function buildDocCardHtml(url: string, title: string, desc: string): string {
+  return (
+    `<a href="${escapeHtmlAttr(url.trim())}" target="_blank" rel="noopener noreferrer" class="doc-card">\n` +
+    `  <div class="doc-card-title">${escapeHtmlText(title.trim() || '标题')}</div>\n` +
+    `  <div class="doc-card-desc">${escapeHtmlText(desc.trim() || '描述')}</div>\n` +
+    `</a>`
+  )
+}
+
+function buildNoteHtml(tone: NoteTone, text: string): string {
+  return `<div class="note ${tone}">\n${escapeHtmlText(text.trim() || '在此输入提示内容')}\n</div>`
+}
+
+const NOTE_OPTIONS: { tone: NoteTone; label: string; hint: string; Icon: typeof Info }[] = [
+  { tone: 'info', label: '信息提示', hint: '蓝色说明框', Icon: Info },
+  { tone: 'warning', label: '警告提示', hint: '黄色注意框', Icon: AlertTriangle },
+  { tone: 'success', label: '成功提示', hint: '绿色成功框', Icon: CheckCircle2 },
+  { tone: 'danger', label: '危险提示', hint: '红色警告框', Icon: Ban },
+]
 
 export default function RichEditor({ value, onChange }: RichEditorProps) {
   const [modal, setModal] = useState<ModalType>(null)
   const [inputUrl, setInputUrl] = useState('')
   const [inputText, setInputText] = useState('')
+  const [inputDesc, setInputDesc] = useState('')
+  const [noteTone, setNoteTone] = useState<NoteTone>('info')
+  const [snippetMenu, setSnippetMenu] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const serializerPatched = useRef(false)
   const savedSel = useRef<{ from: number; to: number } | null>(null)  // saved selection for color pickers
   const applyingColor = useRef(false)  // lock: prevent onSelectionUpdate from overwriting savedSel mid-apply
   const lastEmittedMd = useRef('')     // last markdown emitted by onUpdate; skip setContent re-import for self-changes
   const hydrating = useRef(false)      // setContent 期间禁止 onUpdate 写回
+  const preservedComments = useRef<PreservedHtmlComment[]>([])
   const [tableGrid, setTableGrid] = useState<{ rows: number; cols: number } | null>(null)
   const [tableHover, setTableHover] = useState({ r: 0, c: 0 })
 
   const applyEditorContent = (ed: any, md: string) => {
     hydrating.current = true
-    // 先解码 &nbsp; 实体，避免编辑区出现字面量 &nbsp;
-    ed.commands.setContent(wrapHtmlBlocks(decodeNbspEntities(md)), {
+    const { text, comments } = extractHtmlComments(decodeNbspEntities(md))
+    preservedComments.current = comments
+    // 去掉 HTML 注释后再导入，避免注释内标签破坏解析、吞掉后续 UU 等内容
+    ed.commands.setContent(wrapHtmlBlocks(text), {
       emitUpdate: false,
       parseOptions: { preserveWhitespace: 'full' },
     })
+    removeEmptyParagraphsAroundHtmlBlocks(ed)
     hydrating.current = false
   }
 
@@ -389,6 +721,8 @@ export default function RichEditor({ value, onChange }: RichEditorProps) {
       md = decodeNbspEntities(md)
       // 兜底：图片/HTML 与 --- 粘连时拆开
       md = md.replace(/(!\[[^\]]*\]\([^)]+\)|<img\b[^>]*>)\s*(---)/gi, '$1\n\n$2')
+      // 写回原先抽出的 HTML 注释，避免误删
+      md = restoreHtmlComments(md, preservedComments.current)
       lastEmittedMd.current = md
       onChange(md)
     },
@@ -418,17 +752,54 @@ export default function RichEditor({ value, onChange }: RichEditorProps) {
 
   if (!editor) return null
 
+  const insertHtmlBlock = (html: string) => {
+    const content = sanitizeHtmlBlockHtml(html)
+    const { selection } = editor.state
+    // atom 块插入后会被整块选中；再用 insertContent 会替换而非追加
+    if (selection instanceof NodeSelection) {
+      editor
+        .chain()
+        .focus()
+        .setTextSelection(selection.to)
+        .insertContent({ type: 'htmlBlock', attrs: { content } })
+        .run()
+      return
+    }
+    editor
+      .chain()
+      .focus()
+      .insertContent({ type: 'htmlBlock', attrs: { content } })
+      .run()
+  }
+
   const openLinkModal = () => {
     const existing = editor.getAttributes('link').href || ''
     setInputUrl(existing)
     setInputText('')
+    setInputDesc('')
     setModal('link')
   }
 
   const openImageModal = () => {
     setInputUrl('')
     setInputText('')
+    setInputDesc('')
     setModal('image')
+  }
+
+  const openDocCardModal = () => {
+    setSnippetMenu(false)
+    setInputUrl('https://')
+    setInputText('')
+    setInputDesc('')
+    setModal('docCard')
+  }
+
+  const openNoteModal = (tone: NoteTone = 'info') => {
+    setSnippetMenu(false)
+    setNoteTone(tone)
+    setInputText('')
+    setModal('note')
   }
 
   const confirmLink = () => {
@@ -443,7 +814,27 @@ export default function RichEditor({ value, onChange }: RichEditorProps) {
     setModal(null)
   }
 
-  const closeModal = () => { setModal(null); setInputUrl(''); setInputText('') }
+  const confirmDocCard = () => {
+    if (!inputUrl.trim() || inputUrl.trim() === 'https://') return
+    insertHtmlBlock(buildDocCardHtml(inputUrl, inputText, inputDesc))
+    setModal(null)
+    setInputUrl('')
+    setInputText('')
+    setInputDesc('')
+  }
+
+  const confirmNote = () => {
+    insertHtmlBlock(buildNoteHtml(noteTone, inputText))
+    setModal(null)
+    setInputText('')
+  }
+
+  const closeModal = () => {
+    setModal(null)
+    setInputUrl('')
+    setInputText('')
+    setInputDesc('')
+  }
 
   return (
     <div className="flex flex-col h-full bg-gray-900 relative">
@@ -557,12 +948,58 @@ export default function RichEditor({ value, onChange }: RichEditorProps) {
         <ToolbarButton onClick={openImageModal} title="插入图片">
           <ImageIcon size={15} />
         </ToolbarButton>
+
+        {/* 文档专用组件：链接卡片 / 提示框 */}
+        <div className="relative">
+          <ToolbarButton
+            onClick={() => { setTableGrid(null); setSnippetMenu(v => !v) }}
+            active={snippetMenu || modal === 'docCard' || modal === 'note'}
+            title="插入文档组件（链接卡片 / 提示框）"
+          >
+            <Puzzle size={15} />
+          </ToolbarButton>
+          {snippetMenu && (
+            <div className="absolute top-full left-0 mt-1 w-56 p-1.5 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50">
+              <button
+                type="button"
+                onMouseDown={e => { e.preventDefault(); openDocCardModal() }}
+                className="w-full flex items-start gap-2 px-2.5 py-2 rounded text-left hover:bg-gray-700/80 transition-colors"
+              >
+                <LayoutTemplate size={16} className="text-purple-300 mt-0.5 flex-shrink-0" />
+                <span>
+                  <span className="block text-sm text-white">链接卡片</span>
+                  <span className="block text-[11px] text-gray-500">doc-card 下载/外链卡片</span>
+                </span>
+              </button>
+              <div className="my-1 border-t border-gray-700" />
+              {NOTE_OPTIONS.map(({ tone, label, hint, Icon }) => (
+                <button
+                  key={tone}
+                  type="button"
+                  onMouseDown={e => { e.preventDefault(); openNoteModal(tone) }}
+                  className="w-full flex items-start gap-2 px-2.5 py-2 rounded text-left hover:bg-gray-700/80 transition-colors"
+                >
+                  <Icon size={16} className={`mt-0.5 flex-shrink-0 ${
+                    tone === 'info' ? 'text-blue-400'
+                      : tone === 'warning' ? 'text-amber-400'
+                        : tone === 'success' ? 'text-emerald-400'
+                          : 'text-red-400'
+                  }`} />
+                  <span>
+                    <span className="block text-sm text-white">{label}</span>
+                    <span className="block text-[11px] text-gray-500">{hint}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <Divider />
 
         {/* Table insert — Word-like grid picker */}
         <div className="relative">
           <ToolbarButton
-            onClick={() => setTableGrid(g => g ? null : { rows: 0, cols: 0 })}
+            onClick={() => { setSnippetMenu(false); setTableGrid(g => g ? null : { rows: 0, cols: 0 }) }}
             active={editor.isActive('table') || tableGrid !== null} title="插入表格">
             <LayoutGrid size={15} />
           </ToolbarButton>
@@ -696,6 +1133,133 @@ export default function RichEditor({ value, onChange }: RichEditorProps) {
             <div className="flex justify-end gap-2">
               <button onClick={closeModal} className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors">取消</button>
               <button onClick={confirmImage} disabled={!inputUrl.trim()} className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg transition-colors">插入</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Doc card modal */}
+      {modal === 'docCard' && (
+        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-white font-bold">插入链接卡片</h3>
+              <button onClick={closeModal} className="text-gray-500 hover:text-white transition-colors"><X size={18} /></button>
+            </div>
+            <div className="space-y-3 mb-4">
+              <div>
+                <label className="text-gray-400 text-xs mb-1 block">链接地址</label>
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={inputUrl}
+                  onChange={e => setInputUrl(e.target.value)}
+                  placeholder="#/docs/紫夜新训须知"
+                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-gray-400 text-xs mb-1 block">标题</label>
+                <input
+                  type="text"
+                  value={inputText}
+                  onChange={e => setInputText(e.target.value)}
+                  placeholder="紫夜新训须知"
+                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-gray-400 text-xs mb-1 block">描述</label>
+                <input
+                  type="text"
+                  value={inputDesc}
+                  onChange={e => setInputDesc(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && confirmDocCard()}
+                  placeholder="查看新人入队准备与必装模组教程"
+                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm"
+                />
+              </div>
+              {(inputText || inputDesc) && (
+                <div className="pt-1">
+                  <div className="text-[11px] text-gray-500 mb-1.5">预览</div>
+                  <div className="markdown-content pointer-events-none scale-[0.92] origin-top-left">
+                    <div
+                      dangerouslySetInnerHTML={{
+                        __html: buildDocCardHtml(inputUrl || '#', inputText || '标题', inputDesc || '描述'),
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={closeModal} className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors">取消</button>
+              <button
+                onClick={confirmDocCard}
+                disabled={!inputUrl.trim() || inputUrl.trim() === 'https://'}
+                className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg transition-colors"
+              >
+                插入
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Note modal */}
+      {modal === 'note' && (
+        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-xl p-6 w-full max-w-md border border-gray-700 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-white font-bold">插入提示框</h3>
+              <button onClick={closeModal} className="text-gray-500 hover:text-white transition-colors"><X size={18} /></button>
+            </div>
+            <div className="space-y-3 mb-4">
+              <div>
+                <label className="text-gray-400 text-xs mb-1.5 block">类型</label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {NOTE_OPTIONS.map(({ tone, label, Icon }) => (
+                    <button
+                      key={tone}
+                      type="button"
+                      onClick={() => setNoteTone(tone)}
+                      className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-sm border transition-colors ${
+                        noteTone === tone
+                          ? 'border-purple-500 bg-purple-600/20 text-white'
+                          : 'border-gray-600 text-gray-400 hover:border-gray-500'
+                      }`}
+                    >
+                      <Icon size={14} />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-gray-400 text-xs mb-1 block">内容</label>
+                <textarea
+                  ref={inputRef as any}
+                  value={inputText}
+                  onChange={e => setInputText(e.target.value)}
+                  rows={4}
+                  placeholder="移动/广电宽带因国际出口限制严格……"
+                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 text-sm resize-y"
+                />
+              </div>
+              {inputText.trim() && (
+                <div className="pt-1">
+                  <div className="text-[11px] text-gray-500 mb-1.5">预览</div>
+                  <div className="markdown-content pointer-events-none">
+                    <div dangerouslySetInnerHTML={{ __html: buildNoteHtml(noteTone, inputText) }} />
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={closeModal} className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors">取消</button>
+              <button onClick={confirmNote} className="px-4 py-2 text-sm bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors">
+                插入
+              </button>
             </div>
           </div>
         </div>

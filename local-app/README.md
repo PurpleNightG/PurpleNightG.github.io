@@ -113,7 +113,7 @@ https://gitee.com/你的用户名/仓库名/raw/master/latest.json
 - 有更新时自动下载（显示进度）并重启
 - 托盘右键也可「检查更新」
 - 无网/检查失败时仍会正常启动旧版本
-- 本机已修改的 `app/server/.env` 会在更新时保留
+- 更新时会使用安装包内最新的加密凭据（`credentials.sealed`），不再保留旧明文 `.env`
 
 ### 文档自动同步
 
@@ -145,8 +145,8 @@ https://gitee.com/你的用户名/仓库名/raw/master/latest.json
 
 ## 安全说明
 
-- **`server/.env` 会被打包进安装包**，数据库凭据会随 EXE/ZIP 分发给成员
-- 仅分发给**可信公会成员**，不要将安装包公开上传到 GitHub
+- 打包时把 `server/.env` **加密**为 `app/server/credentials.sealed`，密钥写入启动器；**不会**在安装目录留下明文 `.env`
+- 仍可通过逆向启动器还原凭据，安装包只分发给**可信公会成员**，不要公开上传到 GitHub
 - `release/` 和 `.cache/` 已在 `local-app/.gitignore` 中，不会误提交
 
 ### 分发包不含源码
@@ -176,6 +176,6 @@ https://gitee.com/你的用户名/仓库名/raw/master/latest.json
 | **他人电脑失败、自己电脑正常** | **最常见：SQLPub 未放行该成员 IP**。登录 [SQLPub 控制台](https://www.sqlpub.com) → 数据库 → 访问控制 → 设为「允许所有 IP」或添加成员 IP |
 | 缺少 VC++ 运行库 | 安装 [VC++ Redistributable x64](https://aka.ms/vs/17/release/vc_redist.x64.exe) |
 | 端口被占用 | 关闭占用 3000/3001 端口的程序 |
-| 提示缺少 `.env` | 重新打包，确保 `server/.env` 存在 |
+| 提示缺少凭据 / 解密失败 | 重新打包分发；本机开发目录需有 `server/.env`，安装包应含 `credentials.sealed` |
 | 杀毒软件拦截 | 添加白名单（内置 Node 运行本地服务） |
 | 解压路径 | 建议解压到 `D:\紫夜官网` 等简单路径，避免过深目录或 OneDrive 同步文件夹 |

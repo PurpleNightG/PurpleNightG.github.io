@@ -27,6 +27,7 @@ import {
   installNativeDependencies,
   prepareServerRuntime,
 } from './build-server-bundle.mjs'
+import { injectSealKeyIntoLauncher } from './env-seal.mjs'
 import { ROOT_DIR, SERVER_ENV } from './paths.mjs'
 import {
   copyUpdateConfig,
@@ -45,7 +46,7 @@ function ensureServerEnv() {
   if (!fs.existsSync(SERVER_ENV)) {
     fail(
       '打包前请先配置 server/.env（SQLPub 数据库凭据）。\n' +
-        '该文件会在打包时内置到安装包中，仅分发给可信成员。'
+        '打包时会加密为 credentials.sealed，不会以明文 .env 分发。'
     )
   }
 }
@@ -186,13 +187,20 @@ async function main() {
   copyDirectory(path.join(ROOT_DIR, 'public', 'docs'), path.join(PORTABLE_DIR, 'app', 'docs'))
 
   await bundleServer(SERVER_BUNDLE)
-  prepareServerRuntime(SERVER_TARGET, SERVER_ENV)
+  const sealKeyHex = prepareServerRuntime(SERVER_TARGET, SERVER_ENV)
+  injectSealKeyIntoLauncher(path.join(PORTABLE_DIR, 'launcher.cjs'), sealKeyHex)
+  log('🔐 数据库凭据已加密为 credentials.sealed（密钥已注入启动器，无明文 .env）')
 
   const bundledNode = path.join(PORTABLE_DIR, 'runtime', 'node.exe')
   installNativeDependencies(bundledNode, SERVER_TARGET, NODE_CACHE_DIR)
 
   const hasExe = compileLauncherExe(iconPath)
   cleanupBuildArtifacts()
+  // 二次确认：便携目录不得残留明文 .env
+  const leakedEnv = path.join(SERVER_TARGET, '.env')
+  if (fs.existsSync(leakedEnv)) {
+    fs.unlinkSync(leakedEnv)
+  }
   const zipPath = createZipArchive()
   writeLatestManifest(bundleVersion, zipPath)
 
@@ -201,7 +209,7 @@ async function main() {
   log('========================================')
   log(`  便携目录: ${PORTABLE_DIR}`)
   log(`  版本: ${bundleVersion}`)
-  log('  安全: 未包含前端/后端源码、SQL 迁移脚本')
+  log('  安全: 无明文 .env；未包含前端/后端源码、SQL 迁移脚本')
   if (hasExe) {
     log(`  双击运行: ${path.join(PORTABLE_DIR, '紫夜官网.exe')}`)
   } else {

@@ -1389,67 +1389,124 @@ select::-ms-expand {
 
 /* Document Link Card */
 .markdown-content .doc-card {
+  --doc-card-accent: #a78bfa;
   display: block;
-  padding: 1.5rem;
-  background: linear-gradient(135deg, rgba(124, 58, 237, 0.1) 0%, rgba(168, 85, 247, 0.05) 100%);
-  border: 2px solid rgba(139, 92, 246, 0.3);
-  border-radius: 0.75rem;
+  max-width: 28rem;
+  padding: 0.95rem 2.75rem 0.95rem 4.35rem;
+  background:
+    linear-gradient(135deg, rgba(124, 58, 237, 0.14) 0%, rgba(15, 23, 42, 0.55) 48%, rgba(168, 85, 247, 0.08) 100%);
+  border: 1px solid rgba(167, 139, 250, 0.28);
+  border-radius: 0.9rem;
   text-decoration: none;
-  margin: 1rem 0;
-  transition: all 0.3s ease;
+  margin: 0.85rem 0;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease, background 0.25s ease;
   position: relative;
   overflow: hidden;
+  height: auto;
+  min-height: 0;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 8px 24px rgba(0, 0, 0, 0.18);
 }
 
 .markdown-content .doc-card::before {
   content: '';
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 4px;
-  height: 100%;
-  background: linear-gradient(180deg, #7c3aed 0%, #a855f7 100%);
-  transition: width 0.3s ease;
+  left: 0.9rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2.55rem;
+  height: 2.55rem;
+  border-radius: 0.7rem;
+  background-color: rgba(124, 58, 237, 0.22);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 24 24' fill='none' stroke='%23c4b5fd' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'/%3E%3Cpolyline points='15 3 21 3 21 9'/%3E%3Cline x1='10' y1='14' x2='21' y2='3'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 1.2rem;
+  border: 1px solid rgba(196, 181, 253, 0.28);
+  box-shadow: 0 0 0 1px rgba(124, 58, 237, 0.12), 0 6px 16px rgba(124, 58, 237, 0.18);
+  transition: transform 0.25s ease, background-color 0.25s ease, border-color 0.25s ease;
+}
+
+.markdown-content .doc-card::after {
+  content: '';
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-right: 2px solid rgba(196, 181, 253, 0.55);
+  border-bottom: 2px solid rgba(196, 181, 253, 0.55);
+  transform: translateY(-60%) rotate(-45deg);
+  transition: transform 0.25s ease, border-color 0.25s ease, opacity 0.25s ease;
+  opacity: 0.7;
 }
 
 .markdown-content .doc-card:hover {
-  transform: translateX(4px);
-  border-color: rgba(168, 85, 247, 0.6);
-  background: linear-gradient(135deg, rgba(124, 58, 237, 0.15) 0%, rgba(168, 85, 247, 0.08) 100%);
-  box-shadow: 0 4px 16px rgba(124, 58, 237, 0.2);
+  transform: translateY(-2px);
+  border-color: rgba(196, 181, 253, 0.55);
+  background:
+    linear-gradient(135deg, rgba(124, 58, 237, 0.22) 0%, rgba(30, 27, 75, 0.65) 50%, rgba(168, 85, 247, 0.14) 100%);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 12px 28px rgba(91, 33, 182, 0.28);
 }
 
 .markdown-content .doc-card:hover::before {
-  width: 6px;
+  width: 2.55rem;
+  background-color: rgba(139, 92, 246, 0.35);
+  border-color: rgba(216, 180, 254, 0.45);
+  transform: translateY(-50%) scale(1.04);
+}
+
+.markdown-content .doc-card:hover::after {
+  opacity: 1;
+  border-color: #e9d5ff;
+  transform: translate(2px, -60%) rotate(-45deg);
 }
 
 .markdown-content .doc-card-title {
-  color: #e879f9;
-  font-size: 1.125rem;
+  color: #f5f3ff;
+  font-size: 1rem;
   font-weight: 600;
+  letter-spacing: 0.01em;
   margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  display: block;
+  line-height: 1.35;
 }
 
 .markdown-content .doc-card-title::before {
-  content: '';
-  display: inline-block;
-  width: 1.5rem;
-  height: 1.5rem;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23e879f9' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z'/%3E%3Cpolyline points='14 2 14 8 20 8'/%3E%3Cline x1='16' y1='13' x2='8' y2='13'/%3E%3Cline x1='16' y1='17' x2='8' y2='17'/%3E%3Cline x1='10' y1='9' x2='8' y2='9'/%3E%3C/svg%3E");
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: center;
-  flex-shrink: 0;
+  display: none;
 }
 
 .markdown-content .doc-card-desc {
-  color: #9ca3af;
-  font-size: 0.875rem;
-  margin: 0.5rem 0 0 0;
-  line-height: 1.5;
+  color: #a5b4c3;
+  font-size: 0.8125rem;
+  margin: 0.28rem 0 0 0;
+  line-height: 1.45;
+}
+
+/* 富文本 HTML 块：直接渲染，无代码框包裹 */
+.html-block-preview [data-html-text-edit='1'] {
+  cursor: text;
+  border-radius: 0.25rem;
+  outline: none;
+}
+.html-block-preview .note[data-html-text-edit='1'] {
+  white-space: normal;
+}
+.html-block-preview [data-html-text-edit='1']:focus {
+  box-shadow: 0 0 0 1px rgba(168, 85, 247, 0.45);
+}
+.ProseMirror .html-block-node,
+.ProseMirror [data-node-view-wrapper].html-block-node,
+.ProseMirror .react-renderer.node-htmlBlock {
+  margin-top: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+.ProseMirror .html-block-node:hover {
+  outline: 1px dashed rgba(168, 85, 247, 0.25);
+  outline-offset: 4px;
+  border-radius: 0.5rem;
+}
+.ProseMirror img {
+  margin-bottom: 0.5rem !important;
 }
 
 /* Staff Cards */
@@ -1738,7 +1795,16 @@ select::-ms-expand {
 .markdown-content li {
   @apply mb-2 ml-2;
   transition: all 0.2s ease;
+  /* 勿用 pre-wrap：松散列表会变成 <li>\n<p>…</p>，换行会被保留，导致「2.」与正文上下拆开 */
+}
+
+.markdown-content li > p {
+  @apply mb-2 leading-relaxed;
   white-space: pre-wrap;
+}
+
+.markdown-content li > p:last-child {
+  margin-bottom: 0;
 }
 
 .markdown-content ul li:hover::marker {

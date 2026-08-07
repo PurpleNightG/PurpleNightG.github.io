@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process'
 import esbuild from 'esbuild'
 import { SERVER_DIR } from './paths.mjs'
 import { copyDirectory, ensureDir, fail, log } from './build-utils.mjs'
+import { writeSealedEnv } from './env-seal.mjs'
 
 const SERVER_EXTERNALS = ['mysql2']
 
@@ -142,7 +143,18 @@ export function installNativeDependencies(nodeExe, serverTarget, nodeCacheDir) {
   }
 }
 
+/**
+ * 将 server/.env 加密为 credentials.sealed（不落盘明文）。
+ * @returns {string} 32 字节密钥的 hex，供注入 launcher.cjs
+ */
 export function prepareServerRuntime(serverTarget, envFile) {
   ensureDir(path.join(serverTarget, '..', 'uploads'))
-  fs.copyFileSync(envFile, path.join(serverTarget, '.env'))
+
+  const sealedPath = path.join(serverTarget, 'credentials.sealed')
+  const plainPath = path.join(serverTarget, '.env')
+  if (fs.existsSync(plainPath)) {
+    fs.unlinkSync(plainPath)
+  }
+
+  return writeSealedEnv(envFile, sealedPath)
 }

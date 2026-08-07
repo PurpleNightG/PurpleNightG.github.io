@@ -38,7 +38,7 @@ router.post('/login', async (req, res) => {
     if (member.status === '已退队') {
       return res.status(403).json({
         success: false,
-        message: '您已退队，无法登录'
+        message: '账号异常，无法登录'
       })
     }
     

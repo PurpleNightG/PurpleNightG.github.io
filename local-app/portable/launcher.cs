@@ -719,11 +719,10 @@ namespace ZiyeGuildLocal
                     Encoding.UTF8
                 );
 
-                // 保留现有数据库凭据，避免更新覆盖成员本机已改的 .env
-                PreserveServerEnv(installDir, stagingDir);
+                // 使用更新包内的 credentials.sealed / 启动器密钥（最新数据库凭据），不保留旧明文 .env
 
                 var scriptPath = Path.Combine(workRoot, "apply-update.cmd");
-                WriteApplyScript(scriptPath, currentPid, stagingDir, installDir, remoteVersion.Trim());
+                WriteApplyScript(scriptPath, currentPid, workRoot, stagingDir, installDir, remoteVersion.Trim());
 
                 var startInfo = new ProcessStartInfo
                 {
@@ -748,24 +747,18 @@ namespace ZiyeGuildLocal
             }
         }
 
-        static void PreserveServerEnv(string installDir, string stagingDir)
-        {
-            var currentEnv = Path.Combine(installDir, "app", "server", ".env");
-            var stagingEnv = Path.Combine(stagingDir, "app", "server", ".env");
-            if (File.Exists(currentEnv) && Directory.Exists(Path.GetDirectoryName(stagingEnv)))
-            {
-                File.Copy(currentEnv, stagingEnv, true);
-            }
-        }
-
         static void WriteApplyScript(
             string scriptPath,
             int pid,
+            string workRoot,
             string stagingDir,
             string installDir,
             string version
         )
         {
+            // PowerShell -LiteralPath 单引号转义
+            var workRootForPs = workRoot.Replace("'", "''");
+
             var sb = new StringBuilder();
             sb.AppendLine("@echo off");
             sb.AppendLine("setlocal EnableDelayedExpansion");
@@ -791,8 +784,14 @@ namespace ZiyeGuildLocal
             sb.AppendLine("robocopy \"%STAGING%\" \"%INSTALL%\" /E /IS /IT /R:5 /W:1 /NFL /NDL /NJH /NJS /nc /ns /np >NUL");
             sb.AppendLine("echo %VERSION%> \"%INSTALL%\\.bundle-version\"");
             sb.AppendLine("start \"\" \"%INSTALL%\\紫夜官网.exe\"");
-            sb.AppendLine("rd /s /q \"%STAGING%\" >NUL 2>&1");
-            sb.AppendLine("del \"%~f0\" >NUL 2>&1");
+            // 延时删除整个临时目录（portable.zip / staging / 本脚本），避免占用中无法删除
+            sb.AppendLine(
+                "start \"\" /min powershell -NoProfile -WindowStyle Hidden -Command " +
+                "\"Start-Sleep -Seconds 2; Remove-Item -LiteralPath '" +
+                workRootForPs +
+                "' -Recurse -Force -ErrorAction SilentlyContinue\""
+            );
+            sb.AppendLine("exit /b 0");
             File.WriteAllText(scriptPath, sb.ToString(), Encoding.Default);
         }
 
