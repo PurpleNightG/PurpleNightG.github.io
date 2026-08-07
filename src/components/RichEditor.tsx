@@ -122,6 +122,10 @@ function rgbToHex(color: string): string {
 }
 
 // ---- HTML Block NodeView ----
+/** DOM 节点类型（避免与 @tiptap/core 的 Node 冲突） */
+const DOM_TEXT = 3
+const DOM_ELEMENT = 1
+
 /** 去掉 contentEditable 产生的尾部空行 / br，避免卡片被撑得很高 */
 function sanitizeHtmlBlockHtml(raw: string): string {
   const wrap = document.createElement('div')
@@ -138,13 +142,13 @@ function sanitizeHtmlBlockHtml(raw: string): string {
 
   const isIgnorableNode = (n: ChildNode | null) => {
     if (!n) return false
-    if (n.nodeType === Node.TEXT_NODE) return !/[^\s\u00a0]/.test(n.textContent || '')
-    if (n.nodeType === Node.ELEMENT_NODE) {
+    if (n.nodeType === DOM_TEXT) return !/[^\s\u00a0]/.test(n.textContent || '')
+    if (n.nodeType === DOM_ELEMENT) {
       const el = n as HTMLElement
       if (el.tagName === 'BR') return true
       if ((el.tagName === 'DIV' || el.tagName === 'P' || el.tagName === 'SPAN') && !el.attributes.length) {
         return !el.textContent?.replace(/[\s\u00a0]/g, '') &&
-          ![...el.childNodes].some((c) => c.nodeType === Node.ELEMENT_NODE && (c as HTMLElement).tagName !== 'BR')
+          ![...el.childNodes].some((c) => c.nodeType === DOM_ELEMENT && (c as HTMLElement).tagName !== 'BR')
       }
     }
     return false
@@ -157,12 +161,12 @@ function sanitizeHtmlBlockHtml(raw: string): string {
 
   const trimTextEdges = (el: HTMLElement) => {
     const first = el.firstChild
-    if (first?.nodeType === Node.TEXT_NODE) {
+    if (first && first.nodeType === DOM_TEXT) {
       first.textContent = (first.textContent || '').replace(/^[\s\u00a0\r\n]+/, '')
       if (!first.textContent) el.removeChild(first)
     }
     const last = el.lastChild
-    if (last?.nodeType === Node.TEXT_NODE) {
+    if (last && last.nodeType === DOM_TEXT) {
       last.textContent = (last.textContent || '').replace(/[\s\u00a0\r\n]+$/, '')
       if (!last.textContent) el.removeChild(last)
     }
@@ -286,7 +290,8 @@ function HtmlBlockView({ node, updateAttributes }: any) {
           if (a) e.preventDefault()
         }}
         onBlur={(e) => {
-          if (e.currentTarget.contains(e.relatedTarget as Node)) return
+          const next = e.relatedTarget
+          if (next && e.currentTarget.contains(next as globalThis.Node)) return
           if (codeOpen) return
           commitFromPreview()
         }}
