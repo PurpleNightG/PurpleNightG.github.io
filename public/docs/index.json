@@ -45,5 +45,10 @@
         "type": "file"
       }
     ]
+  },
+  {
+    "name": "123",
+    "path": "123.md",
+    "type": "file"
   }
 ]
