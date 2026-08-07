@@ -86,8 +86,8 @@ export default function StudentProgress() {
         return
       }
 
-      const user = JSON.parse(userStr)
-      const response = await progressAPI.getMemberProgress(String(user.id))
+      JSON.parse(userStr) // 确认已登录
+      const response = await progressAPI.getMy()
       const coursesData = response.data as Course[]
 
       setCourses(coursesData)

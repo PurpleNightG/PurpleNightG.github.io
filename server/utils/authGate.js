@@ -173,7 +173,7 @@ export function requireAdmin(req, res, next) {
               if (!(await assertAdminEmailBound(decoded.id))) {
                 return res.status(401).json({
                   success: false,
-                  message: '未登录、账号已失效或未绑定安全邮箱，请重新登录',
+                  message: '该管理员未绑定安全邮箱，请联系超级管理员绑定后再登录',
                   code: 'EMAIL_REQUIRED',
                 })
               }
@@ -195,8 +195,8 @@ export function requireAdmin(req, res, next) {
         }
         return res.status(401).json({
           success: false,
-          message: '未登录、账号已失效或未绑定安全邮箱，请重新登录',
-          code: 'EMAIL_REQUIRED',
+          message: '未登录或无权访问，请重新登录',
+          code: 'UNAUTHORIZED',
         })
       }
       req.auth = auth

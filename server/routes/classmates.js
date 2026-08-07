@@ -1,5 +1,6 @@
 import express from 'express'
 import { pool } from '../config/database.js'
+import { authenticateRequest } from '../utils/authGate.js'
 
 const router = express.Router()
 
@@ -19,6 +20,13 @@ const STAGE_FLOW = [
 router.get('/my-classmates/:memberId', async (req, res) => {
   try {
     const { memberId } = req.params
+    const auth = await authenticateRequest(req, { requireType: 'student' })
+    if (!auth) {
+      return res.status(401).json({ success: false, message: '未登录或会话已失效，请重新登录' })
+    }
+    if (Number(auth.userId) !== Number(memberId)) {
+      return res.status(403).json({ success: false, message: '只能查看自己的同期学员' })
+    }
     
     // 获取当前学员信息
     const [currentMember] = await pool.query(

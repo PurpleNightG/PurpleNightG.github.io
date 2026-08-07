@@ -54,7 +54,11 @@ export default function StudentClassmates() {
       }
       
       const user = JSON.parse(userStr)
-      const response = await fetch(`${API_URL}/classmates/my-classmates/${user.id}`)
+      const token =
+        localStorage.getItem('studentToken') || sessionStorage.getItem('studentToken') || ''
+      const response = await fetch(`${API_URL}/classmates/my-classmates/${user.id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
       const result = await response.json()
       
       if (result.success) {

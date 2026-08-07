@@ -13,8 +13,18 @@ export const SESSION_TTL_DAYS = 7
  */
 export const EPHEMERAL_IDLE_MINUTES = 15
 
+let loginSessionsTableReady = false
+let loginSessionsTablePromise = null
+
+/** 进程内只跑一次建表/补列，避免每个鉴权请求都打 information_schema */
 export async function ensureLoginSessionsTable() {
-  await pool.query(`
+  if (loginSessionsTableReady) return
+  if (loginSessionsTablePromise) {
+    await loginSessionsTablePromise
+    return
+  }
+  loginSessionsTablePromise = (async () => {
+    await pool.query(`
     CREATE TABLE IF NOT EXISTS login_sessions (
       id BIGINT AUTO_INCREMENT PRIMARY KEY,
       user_type ENUM('admin','student') NOT NULL,
@@ -34,36 +44,71 @@ export async function ensureLoginSessionsTable() {
       COMMENT='登录设备会话'
   `)
 
-  const [cols] = await pool.query(`
+    const [cols] = await pool.query(`
     SELECT COLUMN_NAME FROM information_schema.COLUMNS
     WHERE TABLE_SCHEMA = DATABASE()
       AND TABLE_NAME = 'login_sessions'
       AND COLUMN_NAME = 'remember_me'
   `)
-  if (cols.length === 0) {
-    await pool.query(`
+    if (cols.length === 0) {
+      await pool.query(`
       ALTER TABLE login_sessions
         ADD COLUMN remember_me TINYINT(1) NOT NULL DEFAULT 1
           COMMENT '1=记住登录7天 0=临时会话'
           AFTER ip
     `)
-  }
+    }
 
-  const [fpCols] = await pool.query(`
+    const [fpCols] = await pool.query(`
     SELECT COLUMN_NAME FROM information_schema.COLUMNS
     WHERE TABLE_SCHEMA = DATABASE()
       AND TABLE_NAME = 'login_sessions'
       AND COLUMN_NAME = 'device_fingerprint'
   `)
-  if (fpCols.length === 0) {
-    await pool.query(`
+    if (fpCols.length === 0) {
+      await pool.query(`
       ALTER TABLE login_sessions
         ADD COLUMN device_fingerprint VARCHAR(128) NULL
           COMMENT 'FingerprintJS visitorId'
           AFTER user_agent
     `)
+    }
+    loginSessionsTableReady = true
+  })()
+  try {
+    await loginSessionsTablePromise
+  } finally {
+    loginSessionsTablePromise = null
   }
 }
+
+/** 同一 session 短时间内复用校验结果，显著减少 identityGate 打库 */
+const SESSION_OK_TTL_MS = 45_000
+const sessionOkCache = new Map()
+
+function cacheSessionOk(jti) {
+  if (!jti) return
+  sessionOkCache.set(jti, Date.now() + SESSION_OK_TTL_MS)
+  if (sessionOkCache.size > 5000) {
+    const now = Date.now()
+    for (const [k, exp] of sessionOkCache) {
+      if (exp <= now) sessionOkCache.delete(k)
+    }
+  }
+}
+
+export function invalidateSessionCache(jti) {
+  if (jti) sessionOkCache.delete(jti)
+}
+
+export function invalidateUserSessionCache(_userType, _userId) {
+  // jti 未知时清空（踢全员 / 删号），量级可控
+  sessionOkCache.clear()
+}
+
+/** 同一会话活跃写入节流（空闲阈值 15 分钟，90s 写一次足够） */
+const TOUCH_MIN_INTERVAL_MS = 90_000
+const lastTouchAt = new Map()
 
 export function getClientIp(req) {
   // 仅在显式信任反向代理时读取 X-Forwarded-For，避免客户端伪造 IP 绕过限流/异地校验
@@ -199,6 +244,15 @@ export async function createLoginSession(req, { userType, userId, deviceName, re
 
 export async function touchSession(sessionId) {
   if (!sessionId) return
+  const now = Date.now()
+  const prev = lastTouchAt.get(sessionId) || 0
+  if (now - prev < TOUCH_MIN_INTERVAL_MS) return
+  lastTouchAt.set(sessionId, now)
+  if (lastTouchAt.size > 5000) {
+    for (const [k, t] of lastTouchAt) {
+      if (now - t > TOUCH_MIN_INTERVAL_MS * 2) lastTouchAt.delete(k)
+    }
+  }
   try {
     const days = ttlDays()
     const idle = idleMinutes()
@@ -225,6 +279,10 @@ export async function assertSessionActive(decoded) {
     if (decoded?.userType === 'admin') return false
     return true
   }
+  const cachedUntil = sessionOkCache.get(decoded.jti)
+  if (cachedUntil && cachedUntil > Date.now()) {
+    return true
+  }
   await ensureLoginSessionsTable()
   const [rows] = await pool.query(
     `SELECT id, created_at, revoked_at, remember_me, last_active_at
@@ -234,28 +292,10 @@ export async function assertSessionActive(decoded) {
   if (!rows.length) return false
   const row = rows[0]
   if (row.revoked_at) return false
+  if (isCreatedExpired(row.created_at)) return false
+  if (isEphemeralIdle(row.remember_me, row.last_active_at, row.created_at)) return false
 
-  if (isCreatedExpired(row.created_at)) {
-    const days = ttlDays()
-    await pool.query(
-      `UPDATE login_sessions
-       SET revoked_at = DATE_ADD(created_at, INTERVAL ${days} DAY)
-       WHERE id = ? AND revoked_at IS NULL`,
-      [row.id]
-    )
-    return false
-  }
-
-  if (isEphemeralIdle(row.remember_me, row.last_active_at, row.created_at)) {
-    await pool.query(
-      `UPDATE login_sessions
-       SET revoked_at = COALESCE(last_active_at, created_at)
-       WHERE id = ? AND revoked_at IS NULL`,
-      [row.id]
-    )
-    return false
-  }
-
+  cacheSessionOk(decoded.jti)
   return true
 }
 
@@ -313,6 +353,7 @@ export async function revokeSession(userType, userId, sessionRowId, currentJti) 
      WHERE id = ? AND user_type = ? AND user_id = ? AND revoked_at IS NULL`,
     [sessionRowId, userType, userId]
   )
+  invalidateSessionCache(rows[0].session_id)
   return { ok: true }
 }
 
@@ -336,6 +377,7 @@ export async function revokeCurrentSession(userType, userId, jti) {
     if (rows[0].revoked_at) return { ok: true, reason: 'already' }
     return { ok: false, reason: 'not_found' }
   }
+  invalidateSessionCache(jti)
   return { ok: true }
 }
 
@@ -375,7 +417,10 @@ export async function deleteSession(userType, userId, sessionRowId, currentJti) 
 export async function revokeOtherSessions(userType, userId, currentJti) {
   await ensureLoginSessionsTable()
   await expireStaleSessions(userType, userId)
+  invalidateUserSessionCache(userType, userId)
   if (currentJti) {
+    // 当前会话仍有效，重新写入短缓存
+    cacheSessionOk(currentJti)
     const [result] = await pool.query(
       `UPDATE login_sessions
        SET revoked_at = NOW()
@@ -395,6 +440,7 @@ export async function revokeOtherSessions(userType, userId, currentJti) {
 
 export async function revokeAllSessions(userType, userId) {
   await ensureLoginSessionsTable()
+  invalidateUserSessionCache(userType, userId)
   const [result] = await pool.query(
     `UPDATE login_sessions
      SET revoked_at = NOW()

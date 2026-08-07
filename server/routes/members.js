@@ -4,8 +4,37 @@ import { ensurePhase3ReachedAt } from '../utils/attendanceReminder.js'
 import { purgeArchivedMember } from '../utils/purgeMember.js'
 import bcrypt from 'bcryptjs'
 import { toMySQLDate } from '../utils/date.js'
+import { authenticateRequest } from '../utils/authGate.js'
 
 const router = express.Router()
+
+// 学员端：自己的成员资料（不含密码）
+router.get('/me', async (req, res) => {
+  try {
+    const auth = await authenticateRequest(req, { requireType: 'student' })
+    if (!auth) {
+      return res.status(401).json({ success: false, message: '未登录或会话已失效，请重新登录' })
+    }
+
+    const [rows] = await pool.query(
+      `SELECT
+        id, nickname, qq, game_id, join_date, stage_role, status,
+        last_training_date, phase3_reached_at, remarks, avatar,
+        is_ziye_assistant, created_at
+      FROM members WHERE id = ? LIMIT 1`,
+      [auth.userId]
+    )
+
+    if (!rows.length) {
+      return res.status(404).json({ success: false, message: '成员不存在' })
+    }
+
+    res.json({ success: true, data: rows[0] })
+  } catch (error) {
+    console.error('获取个人资料失败:', error)
+    res.status(500).json({ success: false, message: '获取成员信息失败' })
+  }
+})
 
 // 获取所有成员列表（不含已退队归档；恢复仅走 lookup-qq）
 router.get('/', async (req, res) => {

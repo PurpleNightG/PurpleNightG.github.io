@@ -67,7 +67,7 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     fetchBadges()
-    const id = setInterval(fetchBadges, 15_000)
+    const id = setInterval(fetchBadges, 60_000)
     const onFocus = () => { void fetchBadges() }
     const onVisibility = () => {
       if (document.visibilityState === 'visible') void fetchBadges()

@@ -3,8 +3,22 @@ import { pool } from '../config/database.js'
 import { TRAINING_STAGES, TRAINING_WARN_DAYS } from '../utils/reminderQuery.js'
 import { computeAttendanceForMember, ATTENDANCE_WARN_DAYS } from '../utils/attendanceReminder.js'
 import { loadReminderConfig, queryTrainingReminders } from '../utils/trainingReminderList.js'
+import { authenticateRequest } from '../utils/authGate.js'
 
 const router = express.Router()
+
+async function requireStudentSelf(req, res, memberId) {
+  const auth = await authenticateRequest(req, { requireType: 'student' })
+  if (!auth) {
+    res.status(401).json({ success: false, message: '未登录或会话已失效，请重新登录' })
+    return null
+  }
+  if (Number(auth.userId) !== Number(memberId)) {
+    res.status(403).json({ success: false, message: '只能查看自己的数据' })
+    return null
+  }
+  return auth
+}
 
 async function ensureAttendanceOverrideTable() {
   await pool.query(`
@@ -110,6 +124,7 @@ router.get('/attendance/me/:memberId', async (req, res) => {
     if (!memberId) {
       return res.status(400).json({ success: false, message: '无效的成员ID' })
     }
+    if (!(await requireStudentSelf(req, res, memberId))) return
     const ctx = await loadAttendanceContext()
     const data = buildAttendanceList(ctx, { showAll: true, memberId })
     res.json({ success: true, data: data[0] || null })
@@ -126,6 +141,7 @@ router.get('/training/me/:memberId', async (req, res) => {
     if (!memberId) {
       return res.status(400).json({ success: false, message: '无效的成员ID' })
     }
+    if (!(await requireStudentSelf(req, res, memberId))) return
     const cfg = await loadReminderConfig()
     // 学员始终按倒计时预警判断，避免踢人周期非提醒日看不到自己已被催促
     const rows = await queryTrainingReminders(cfg.defaultTimeoutDays, TRAINING_WARN_DAYS)

@@ -103,7 +103,7 @@ export default function ProtectedRoute({ children, requiredUserType }: Protected
     // 周期复核：库中删掉管理员后，即使不刷新页面也会在约 30s 内踢出
     const timer = window.setInterval(() => {
       void checkAuth()
-    }, 30_000)
+    }, 90_000)
 
     return () => {
       cancelled = true

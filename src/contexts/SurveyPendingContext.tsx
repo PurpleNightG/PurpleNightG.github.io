@@ -66,7 +66,7 @@ export function SurveyPendingProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     refresh()
-    const id = window.setInterval(refresh, 60_000)
+    const id = window.setInterval(refresh, 120_000)
     const onStorage = () => refresh()
     window.addEventListener('storage', onStorage)
     window.addEventListener('focus', refresh)

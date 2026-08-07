@@ -63,7 +63,7 @@ export default function StudentApplyAssessment() {
       const [applicationsRes, guidelinesRes, memberRes] = await Promise.all([
         assessmentApplicationAPI.getByMemberId(studentUser.id),
         assessmentGuidelinesAPI.get(),
-        memberAPI.getById(studentUser.id)
+        memberAPI.getMe()
       ])
 
       setApplications(applicationsRes.data)

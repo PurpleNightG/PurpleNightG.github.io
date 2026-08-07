@@ -3,13 +3,23 @@ import { pool } from '../config/database.js'
 
 const router = express.Router()
 
+const SETTING_CACHE_TTL_MS = 5 * 60_000
+const settingCache = new Map()
+
 /** 读取配置；不存在时用 defaultValue 并写入 */
 export async function getSetting(key, defaultValue = null) {
+  const cached = settingCache.get(key)
+  if (cached && Date.now() - cached.at < SETTING_CACHE_TTL_MS) {
+    return cached.row
+  }
   const [rows] = await pool.query(
     'SELECT * FROM system_settings WHERE setting_key = ?',
     [key]
   )
-  if (rows.length > 0) return rows[0]
+  if (rows.length > 0) {
+    settingCache.set(key, { at: Date.now(), row: rows[0] })
+    return rows[0]
+  }
   if (defaultValue === null || defaultValue === undefined) return null
   await pool.query(
     `INSERT INTO system_settings (setting_key, setting_value, description)
@@ -17,7 +27,9 @@ export async function getSetting(key, defaultValue = null) {
      ON DUPLICATE KEY UPDATE setting_value = setting_value`,
     [key, String(defaultValue), '']
   )
-  return { setting_key: key, setting_value: String(defaultValue) }
+  const row = { setting_key: key, setting_value: String(defaultValue) }
+  settingCache.set(key, { at: Date.now(), row })
+  return row
 }
 
 export async function upsertSetting(key, value, description = '') {
@@ -27,6 +39,7 @@ export async function upsertSetting(key, value, description = '') {
      ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
     [key, String(value), description]
   )
+  settingCache.delete(key)
 }
 
 // 获取系统配置

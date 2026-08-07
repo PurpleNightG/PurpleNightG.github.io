@@ -127,7 +127,11 @@ app.use('/api', identityGateMiddleware)
 // 路由
 app.use('/api/auth', authRoutes)
 app.use('/api/student', studentAuthRoutes)
-app.use('/api/members', ...adminGuard, membersRoutes)
+app.use(
+  '/api/members',
+  requireAdminUnless([{ path: '/me', methods: ['GET'] }]),
+  membersRoutes
+)
 app.use(
   '/api/leaves',
   requireAdminUnless([
@@ -138,13 +142,32 @@ app.use(
   leavesRoutes
 )
 app.use('/api/blackpoints', requireAdminUnless([{ path: '/my', methods: ['GET'] }]), blackpointsRoutes)
-app.use('/api/reminders', ...adminGuard, remindersRoutes)
+app.use(
+  '/api/reminders',
+  requireAdminUnless([
+    { path: '/attendance/me', methods: ['GET'] },
+    { path: '/training/me', methods: ['GET'] },
+  ]),
+  remindersRoutes
+)
 app.use('/api/quit', ...adminGuard, quitRoutes)
 app.use('/api/retention', ...adminGuard, retentionRoutes)
-app.use('/api/courses', ...adminGuard, coursesRoutes)
-app.use('/api/progress', ...adminGuard, progressRoutes)
+app.use(
+  '/api/courses',
+  requireAdminUnless([{ path: '/config/difficulties', methods: ['GET'] }]),
+  coursesRoutes
+)
+app.use(
+  '/api/progress',
+  requireAdminUnless([{ path: '/my', methods: ['GET'] }]),
+  progressRoutes
+)
 app.use('/api/settings', ...adminGuard, settingsRoutes)
-app.use('/api/assessments', ...adminGuard, assessmentsRoutes)
+app.use(
+  '/api/assessments',
+  requireAdminUnless([{ path: '/member', methods: ['GET'] }]),
+  assessmentsRoutes
+)
 app.use(
   '/api/assessment-applications',
   requireAdminUnless([
@@ -160,7 +183,10 @@ app.use(
 )
 app.use(
   '/api/public-videos',
-  requireAdminUnless([{ path: '*', methods: ['GET'] }]),
+  requireAdminUnless([
+    { path: '*', methods: ['GET'] },
+    { path: '/', methods: ['POST'] },
+  ]),
   publicVideosRoutes
 )
 app.use('/api/video-upload', ...adminGuard, videoUploadRoutes)
@@ -171,7 +197,11 @@ app.use('/api/volc', volcRoutes)
 app.use('/api/room', roomRoutes)
 app.use('/api/meeting', meetingRoutes)
 app.use('/api/versions', versionsRoutes)
-app.use('/api/duty', ...adminGuard, dutyRoutes)
+app.use(
+  '/api/duty',
+  requireAdminUnless([{ path: '/today', methods: ['GET'] }]),
+  dutyRoutes
+)
 app.use(
   '/api/docs',
   requireAdminUnless([

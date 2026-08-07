@@ -90,7 +90,7 @@ export default function StudentSheetView() {
   // 只读表格定时刷新；共享编辑时不自动覆盖本地未保存内容
   useEffect(() => {
     if (canEdit) return
-    const t = setInterval(() => load(true), 15000)
+    const t = setInterval(() => load(true), 30000)
     return () => clearInterval(t)
   }, [canEdit, load])
 

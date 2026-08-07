@@ -63,33 +63,65 @@ router.get('/me', async (req, res) => {
 router.get('/audit-logs', async (req, res) => {
   try {
     await ensureAuditLogTable()
-    const limit = Math.min(Number(req.query.limit) || 100, 300)
-    const offset = Math.max(Number(req.query.offset) || 0, 0)
+
+    const pageSize = Math.min(Math.max(Number(req.query.pageSize) || Number(req.query.limit) || 20, 1), 100)
+    const page = Math.max(Number(req.query.page) || 1, 1)
+    const offset =
+      req.query.offset != null
+        ? Math.max(Number(req.query.offset) || 0, 0)
+        : (page - 1) * pageSize
     const adminId = req.query.admin_id ? Number(req.query.admin_id) : null
     const q = String(req.query.q || '').trim()
+    const from = String(req.query.from || '').trim()
+    const to = String(req.query.to || '').trim()
 
-    let sql = `SELECT id, admin_id, admin_username, action, method, path,
-                      resource_type, resource_id, summary, ip, user_agent, created_at
-               FROM admin_audit_logs WHERE 1=1`
+    let where = ' WHERE 1=1'
     const params = []
     if (adminId) {
-      sql += ' AND admin_id = ?'
+      where += ' AND admin_id = ?'
       params.push(adminId)
     }
     if (q) {
-      sql += ' AND (admin_username LIKE ? OR summary LIKE ? OR path LIKE ? OR ip LIKE ?)'
+      where += ' AND (admin_username LIKE ? OR summary LIKE ? OR path LIKE ? OR ip LIKE ?)'
       const like = `%${q}%`
       params.push(like, like, like, like)
     }
-    sql += ' ORDER BY id DESC LIMIT ? OFFSET ?'
-    params.push(limit, offset)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(from)) {
+      where += ' AND created_at >= ?'
+      params.push(`${from} 00:00:00`)
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+      where += ' AND created_at <= ?'
+      params.push(`${to} 23:59:59`)
+    }
 
-    const [rows] = await pool.query(sql, params)
+    const [[countRow]] = await pool.query(
+      `SELECT COUNT(*) AS total FROM admin_audit_logs${where}`,
+      params
+    )
+    const total = Number(countRow?.total) || 0
+
+    const [rows] = await pool.query(
+      `SELECT id, admin_id, admin_username, action, method, path,
+              resource_type, resource_id, summary, ip, user_agent, created_at
+       FROM admin_audit_logs${where}
+       ORDER BY id DESC
+       LIMIT ? OFFSET ?`,
+      [...params, pageSize, offset]
+    )
     const data = rows.map((row) => {
       const { summary_tech, summary_human } = resolveAuditDisplay(row)
       return { ...row, summary_tech, summary_human }
     })
-    res.json({ success: true, data })
+    res.json({
+      success: true,
+      data,
+      meta: {
+        total,
+        page: Math.floor(offset / pageSize) + 1,
+        pageSize,
+      },
+    })
   } catch (e) {
     console.error('[security] audit-logs', e)
     res.status(500).json({ success: false, message: '获取审计日志失败' })

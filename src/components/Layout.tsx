@@ -70,11 +70,14 @@ export default function Layout({ children }: LayoutProps) {
 
   // 用服务端资料刷新头像（避免本地缓存缺少 avatar）
   useEffect(() => {
-    const token =
-      localStorage.getItem('token') ||
-      sessionStorage.getItem('token') ||
-      localStorage.getItem('studentToken') ||
-      sessionStorage.getItem('studentToken')
+    const hash = String(window.location.hash || '')
+    const preferStudent = /#\/student\b|#\/assistant\b/.test(hash)
+    const studentToken =
+      localStorage.getItem('studentToken') || sessionStorage.getItem('studentToken')
+    const adminToken = localStorage.getItem('token') || sessionStorage.getItem('token')
+    const token = preferStudent
+      ? studentToken || adminToken
+      : adminToken || studentToken
     if (!token) return
     let cancelled = false
     ;(async () => {

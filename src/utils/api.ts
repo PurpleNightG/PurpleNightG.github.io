@@ -39,19 +39,54 @@ export function forceRelogin(message?: string, kind: 'admin' | 'student' | 'all'
   }
 }
 
-function resolveRequestToken(headers: Record<string, string>) {
-  if (headers['Authorization']) return null
-  return (
-    localStorage.getItem('token') ||
-    sessionStorage.getItem('token') ||
-    localStorage.getItem('studentToken') ||
-    sessionStorage.getItem('studentToken') ||
-    ''
-  )
+function getAdminToken() {
+  return localStorage.getItem('token') || sessionStorage.getItem('token') || ''
 }
 
-function hasAdminToken() {
-  return !!(localStorage.getItem('token') || sessionStorage.getItem('token'))
+function getStudentToken() {
+  return localStorage.getItem('studentToken') || sessionStorage.getItem('studentToken') || ''
+}
+
+/** 当前前端区域：避免管理/学员双登录时串用对方 token */
+function resolveAppArea(): 'admin' | 'student' | 'assistant' | 'public' {
+  try {
+    const hash = String(window.location.hash || '')
+    const path = String(window.location.pathname || '')
+    const loc = `${hash} ${path}`
+    if (/#\/admin\b|\/admin\b/.test(loc)) return 'admin'
+    if (/#\/assistant\b|\/assistant\b/.test(loc)) return 'assistant'
+    if (/#\/student\b|\/student\b/.test(loc)) return 'student'
+  } catch {
+    /* ignore */
+  }
+  return 'public'
+}
+
+function resolveRequestToken(headers: Record<string, string>) {
+  if (headers['Authorization']) return null
+  const area = resolveAppArea()
+  const adminToken = getAdminToken()
+  const studentToken = getStudentToken()
+  // 学员/助教区优先学员 JWT，避免管理端安全策略（绑邮箱/设备指纹）误伤学员接口
+  if (area === 'student' || area === 'assistant') {
+    return studentToken || adminToken
+  }
+  if (area === 'admin') {
+    return adminToken || studentToken
+  }
+  return adminToken || studentToken
+}
+
+function authKindFromBearer(headers: Record<string, string>): 'admin' | 'student' | 'all' {
+  const raw = headers['Authorization'] || ''
+  const token = raw.replace(/^Bearer\s+/i, '').trim()
+  if (!token) return 'all'
+  if (token === getStudentToken() && token !== getAdminToken()) return 'student'
+  if (token === getAdminToken() && token !== getStudentToken()) return 'admin'
+  const area = resolveAppArea()
+  if (area === 'student' || area === 'assistant') return 'student'
+  if (area === 'admin') return 'admin'
+  return 'all'
 }
 
 // 通用请求函数
@@ -66,8 +101,9 @@ async function request(url: string, options: RequestInit = {}) {
     headers['Authorization'] = `Bearer ${token}`
   }
 
-  // 管理端：附带 Fingerprint + 公网 IP，供中途换 IP / 换设备检测
-  if (hasAdminToken()) {
+  // 仅当实际使用管理员 JWT 时附带设备指纹，避免学员区误带管理端安全头
+  const bearer = (headers['Authorization'] || '').replace(/^Bearer\s+/i, '').trim()
+  if (bearer && bearer === getAdminToken()) {
     try {
       const sec = await getAdminSecurityHeaders()
       Object.assign(headers, sec)
@@ -109,7 +145,7 @@ async function request(url: string, options: RequestInit = {}) {
         code === 'SESSION_SUPERSEDED' ||
         /会话已失效|账号已不存在|账号已失效|管理员账号已失效|未绑定安全邮箱|禁止登录|IP 变化|设备环境变化|其它设备登录/.test(msg))
     ) {
-      forceRelogin(msg, 'all')
+      forceRelogin(msg, authKindFromBearer(headers))
     }
     const err: any = new Error(msg)
     err.code = code
@@ -142,6 +178,8 @@ export function clearCache(pattern?: string) {
 // 成员管理 API
 export const memberAPI = {
   getAll: () => request('/members'),
+  /** 学员端：当前登录学员资料 */
+  getMe: () => request('/members/me'),
   getById: (id: number) => request(`/members/${id}`),
   lookupByQq: (qq: string) =>
     request(`/members/lookup-qq?qq=${encodeURIComponent(qq)}`),
@@ -627,6 +665,9 @@ export const courseAPI = {
 export const progressAPI = {
   // 获取所有成员及其进度信息
   getMembers: () => request('/progress/members'),
+
+  // 学员端：自己的课程进度
+  getMy: () => request('/progress/my'),
   
   // 获取单个成员的所有课程进度
   getMemberProgress: (memberId: string) => request(`/progress/member/${memberId}`),
@@ -768,12 +809,25 @@ export const accountSecurityAPI = {
 /** 管理端安全中心（审计 / 全管理员会话 / 账号管理） */
 export const securityAPI = {
   getMe: () => request('/security/me'),
-  getAuditLogs: (params?: { limit?: number; offset?: number; q?: string; admin_id?: number }) => {
+  getAuditLogs: (params?: {
+    page?: number
+    pageSize?: number
+    limit?: number
+    offset?: number
+    q?: string
+    admin_id?: number
+    from?: string
+    to?: string
+  }) => {
     const qs = new URLSearchParams()
+    if (params?.page != null) qs.set('page', String(params.page))
+    if (params?.pageSize != null) qs.set('pageSize', String(params.pageSize))
     if (params?.limit != null) qs.set('limit', String(params.limit))
     if (params?.offset != null) qs.set('offset', String(params.offset))
     if (params?.q) qs.set('q', params.q)
     if (params?.admin_id != null) qs.set('admin_id', String(params.admin_id))
+    if (params?.from) qs.set('from', params.from)
+    if (params?.to) qs.set('to', params.to)
     const q = qs.toString()
     return request(`/security/audit-logs${q ? `?${q}` : ''}`)
   },

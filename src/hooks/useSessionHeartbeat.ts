@@ -8,6 +8,16 @@ const HEARTBEAT_MS = 4 * 60 * 1000
 
 function getEphemeralToken(): string | null {
   // 勾选「记住登录」会写入 localStorage；未勾选只用 sessionStorage
+  const hash = String(window.location.hash || '')
+  const preferStudent = /#\/student\b|#\/assistant\b/.test(hash)
+  if (preferStudent) {
+    if (localStorage.getItem('studentToken')) return null
+    return sessionStorage.getItem('studentToken') || null
+  }
+  if (/#\/admin\b/.test(hash)) {
+    if (localStorage.getItem('token')) return null
+    return sessionStorage.getItem('token') || null
+  }
   if (localStorage.getItem('token') || localStorage.getItem('studentToken')) {
     return null
   }
@@ -20,7 +30,8 @@ function getEphemeralToken(): string | null {
 
 async function pingHeartbeat(token: string) {
   try {
-    const isAdmin = !!sessionStorage.getItem('token')
+    const adminTok = sessionStorage.getItem('token') || localStorage.getItem('token')
+    const isAdmin = !!adminTok && token === adminTok
     const sec = isAdmin ? await getAdminSecurityHeaders().catch(() => ({})) : {}
     await fetch(`${API_URL}/account-security/heartbeat`, {
       method: 'POST',

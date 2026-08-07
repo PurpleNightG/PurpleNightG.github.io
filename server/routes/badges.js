@@ -5,8 +5,12 @@ import { countTrainingReminders } from '../utils/trainingReminderList.js'
 
 const router = express.Router()
 
-// 获取导航栏待办数量
-router.get('/', async (req, res) => {
+/** 进程内短缓存，避免管理端 15～60s 轮询反复扫全表 */
+const BADGE_CACHE_TTL_MS = 60_000
+let badgeCache = { at: 0, data: null }
+let badgeInflight = null
+
+async function computeBadges() {
   let leavePending = 0
   let leaveEndPending = 0
   let assessmentPending = 0
@@ -17,38 +21,46 @@ router.get('/', async (req, res) => {
 
   try {
     const [[row]] = await pool.query(`
-      SELECT COUNT(*) AS cnt
-      FROM leave_applications la
-      INNER JOIN members m ON m.id = la.member_id AND m.status != '已退队'
-      WHERE la.status = '待审批'
+      SELECT
+        (SELECT COUNT(*) FROM leave_applications la
+          INNER JOIN members m ON m.id = la.member_id AND m.status != '已退队'
+          WHERE la.status = '待审批') AS leave_pending,
+        (SELECT COUNT(*) FROM leave_records lr
+          INNER JOIN members m ON m.id = lr.member_id AND m.status != '已退队'
+          WHERE lr.status = '待结束审批') AS leave_end_pending,
+        (SELECT COUNT(*) FROM assessment_applications aa
+          INNER JOIN members m ON m.id = aa.member_id AND m.status != '已退队'
+          WHERE aa.status = '待审批') AS assessment_pending,
+        (SELECT COUNT(*) FROM opinion_box WHERE status = 'pending') AS opinion_pending
     `)
-    leavePending = Number(row.cnt)
+    leavePending = Number(row.leave_pending) || 0
+    leaveEndPending = Number(row.leave_end_pending) || 0
+    assessmentPending = Number(row.assessment_pending) || 0
+    opinionPending = Number(row.opinion_pending) || 0
   } catch (e) {
-    console.error('[badges] leave_applications query failed:', e.message)
-  }
-
-  try {
-    const [[row]] = await pool.query(`
-      SELECT COUNT(*) AS cnt
-      FROM leave_records lr
-      INNER JOIN members m ON m.id = lr.member_id AND m.status != '已退队'
-      WHERE lr.status = '待结束审批'
-    `)
-    leaveEndPending = Number(row.cnt)
-  } catch (e) {
-    console.error('[badges] leave_end_pending query failed:', e.message)
-  }
-
-  try {
-    const [[row]] = await pool.query(`
-      SELECT COUNT(*) AS cnt
-      FROM assessment_applications aa
-      INNER JOIN members m ON m.id = aa.member_id AND m.status != '已退队'
-      WHERE aa.status = '待审批'
-    `)
-    assessmentPending = Number(row.cnt)
-  } catch (e) {
-    console.error('[badges] assessment_applications query failed:', e.message)
+    console.error('[badges] pending counts query failed:', e.message)
+    // opinion_box 可能尚未建表：其余三项再分别兜底
+    try {
+      const [[a]] = await pool.query(`
+        SELECT COUNT(*) AS cnt FROM leave_applications la
+        INNER JOIN members m ON m.id = la.member_id AND m.status != '已退队'
+        WHERE la.status = '待审批'`)
+      leavePending = Number(a.cnt) || 0
+    } catch { /* ignore */ }
+    try {
+      const [[b]] = await pool.query(`
+        SELECT COUNT(*) AS cnt FROM leave_records lr
+        INNER JOIN members m ON m.id = lr.member_id AND m.status != '已退队'
+        WHERE lr.status = '待结束审批'`)
+      leaveEndPending = Number(b.cnt) || 0
+    } catch { /* ignore */ }
+    try {
+      const [[c]] = await pool.query(`
+        SELECT COUNT(*) AS cnt FROM assessment_applications aa
+        INNER JOIN members m ON m.id = aa.member_id AND m.status != '已退队'
+        WHERE aa.status = '待审批'`)
+      assessmentPending = Number(c.cnt) || 0
+    } catch { /* ignore */ }
   }
 
   try {
@@ -79,7 +91,7 @@ router.get('/', async (req, res) => {
       leaveMap.get(row.member_id).push(row)
     }
     const [ignores] = await pool.query('SELECT member_id FROM attendance_reminder_ignores')
-    const ignoreSet = new Set(ignores.map(r => r.member_id))
+    const ignoreSet = new Set(ignores.map((r) => r.member_id))
     for (const m of members) {
       const item = computeAttendanceForMember(m, leaveMap.get(m.id) || [], {
         ignored: ignoreSet.has(m.id),
@@ -93,66 +105,55 @@ router.get('/', async (req, res) => {
   }
 
   try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS opinion_box (
-        id INT PRIMARY KEY AUTO_INCREMENT,
-        member_id INT NOT NULL,
-        is_anonymous TINYINT(1) NOT NULL DEFAULT 1,
-        category VARCHAR(50) NOT NULL DEFAULT '建议',
-        content TEXT NOT NULL,
-        status ENUM('pending','read','archived') NOT NULL DEFAULT 'pending',
-        admin_note TEXT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        INDEX idx_opinion_status (status)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    const [[row]] = await pool.query(`
+      SELECT
+        (SELECT COUNT(*) FROM assistant_student_assignments WHERE status = '待审批') +
+        (SELECT COUNT(*) FROM pending_member_creates WHERE status = '待审批') +
+        (SELECT COUNT(*) FROM pending_stage_promotions WHERE status = '待审批') +
+        (SELECT COUNT(*) FROM pending_member_edits WHERE status = '待审批') +
+        (SELECT COUNT(*) FROM pending_black_points WHERE status = '待审批') +
+        (SELECT COUNT(*) FROM pending_leaves WHERE status = '待审批') AS cnt
     `)
-    const [[row]] = await pool.query(
-      "SELECT COUNT(*) AS cnt FROM opinion_box WHERE status = 'pending'"
-    )
-    opinionPending = Number(row.cnt)
-  } catch (e) {
-    console.error('[badges] opinion_box query failed:', e.message)
-  }
-
-  try {
-    const [[a]] = await pool.query(
-      `SELECT COUNT(*) AS cnt FROM assistant_student_assignments WHERE status = '待审批'`
-    )
-    const [[c]] = await pool.query(
-      `SELECT COUNT(*) AS cnt FROM pending_member_creates WHERE status = '待审批'`
-    )
-    const [[p]] = await pool.query(
-      `SELECT COUNT(*) AS cnt FROM pending_stage_promotions WHERE status = '待审批'`
-    )
-    const [[e]] = await pool.query(
-      `SELECT COUNT(*) AS cnt FROM pending_member_edits WHERE status = '待审批'`
-    )
-    const [[bp]] = await pool.query(
-      `SELECT COUNT(*) AS cnt FROM pending_black_points WHERE status = '待审批'`
-    )
-    const [[lv]] = await pool.query(
-      `SELECT COUNT(*) AS cnt FROM pending_leaves WHERE status = '待审批'`
-    )
-    assistantPending =
-      Number(a.cnt) + Number(c.cnt) + Number(p.cnt) + Number(e.cnt) + Number(bp.cnt) + Number(lv.cnt)
+    assistantPending = Number(row.cnt) || 0
   } catch (e) {
     console.error('[badges] assistant pending query failed:', e.message)
   }
 
-  res.json({
-    success: true,
-    data: {
-      leavePending,
-      leaveEndPending,
-      assessmentPending,
-      opinionPending,
-      assistantPending,
-      reminderCount: reminderCount + attendanceReminderCount,
-      trainingReminderCount: reminderCount,
-      attendanceReminderCount,
+  return {
+    leavePending,
+    leaveEndPending,
+    assessmentPending,
+    opinionPending,
+    assistantPending,
+    reminderCount: reminderCount + attendanceReminderCount,
+    trainingReminderCount: reminderCount,
+    attendanceReminderCount,
+  }
+}
+
+// 获取导航栏待办数量
+router.get('/', async (req, res) => {
+  try {
+    const now = Date.now()
+    if (badgeCache.data && now - badgeCache.at < BADGE_CACHE_TTL_MS) {
+      return res.json({ success: true, data: badgeCache.data, cached: true })
     }
-  })
+    if (!badgeInflight) {
+      badgeInflight = computeBadges()
+        .then((data) => {
+          badgeCache = { at: Date.now(), data }
+          return data
+        })
+        .finally(() => {
+          badgeInflight = null
+        })
+    }
+    const data = await badgeInflight
+    res.json({ success: true, data })
+  } catch (e) {
+    console.error('[badges]', e)
+    res.status(500).json({ success: false, message: '获取徽章失败' })
+  }
 })
 
 export default router

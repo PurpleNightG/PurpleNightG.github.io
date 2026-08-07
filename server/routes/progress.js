@@ -1,7 +1,39 @@
 import express from 'express'
 import { pool } from '../config/database.js'
+import { authenticateRequest } from '../utils/authGate.js'
 
 const router = express.Router()
+
+// 学员端：自己的课程进度
+router.get('/my', async (req, res) => {
+  try {
+    const auth = await authenticateRequest(req, { requireType: 'student' })
+    if (!auth) {
+      return res.status(401).json({ success: false, message: '未登录或会话已失效，请重新登录' })
+    }
+    const memberId = auth.userId
+
+    const [courses] = await pool.query(`
+      SELECT 
+        c.id,
+        c.code,
+        c.name,
+        c.category,
+        c.difficulty,
+        c.hours,
+        COALESCE(scp.progress, 0) as progress
+      FROM courses c
+      LEFT JOIN student_course_progress scp 
+        ON c.id = scp.course_id AND scp.member_id = ?
+      ORDER BY c.\`order\`
+    `, [memberId])
+
+    res.json({ success: true, data: courses })
+  } catch (error) {
+    console.error('获取个人课程进度失败:', error)
+    res.status(500).json({ success: false, message: '获取课程进度失败' })
+  }
+})
 
 // 获取所有成员及其进度信息
 router.get('/members', async (req, res) => {

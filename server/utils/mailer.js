@@ -43,8 +43,9 @@ export function maskEmail(email) {
 function resolveFromName() {
   const raw = String(process.env.SMTP_FROM_NAME || '').trim()
   // .env 若用错误编码保存，会变成 � / 问号串；此时忽略环境变量
+  // 发件显示名勿含「安全中心」（QQ 会屏蔽并退回账号名）
   if (!raw || raw.includes('\uFFFD') || /\?{3,}/.test(raw)) {
-    return '紫夜安全部门'
+    return '紫夜战术公会'
   }
   return raw
 }
@@ -59,11 +60,11 @@ export async function sendLoginOtpMail(to, code) {
   const info = await getTransporter().sendMail({
     from: `"${fromName}" <${fromUser}>`,
     to,
-    subject: '【紫夜安全部门】管理员登录验证码',
-    text: `您正在进行管理员登录二次验证。\n\n验证码：${code}\n\n5 分钟内有效。如非本人操作，请立即修改密码并联系超级管理员。\n\n— 紫夜安全部门`,
+    subject: '【紫夜安全中心】管理员登录验证码',
+    text: `您正在进行管理员登录二次验证。\n\n验证码：${code}\n\n5 分钟内有效。如非本人操作，请立即修改密码并联系超级管理员。\n\n— 紫夜安全中心`,
     html: `
       <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#0f0f14;color:#e8e8ef;border-radius:12px">
-        <h2 style="color:#c4b5fd;margin:0 0 12px">紫夜安全部门</h2>
+        <h2 style="color:#c4b5fd;margin:0 0 12px">紫夜安全中心</h2>
         <p style="margin:0 0 16px;color:#a1a1aa">检测到管理员登录环境变化（IP 或新设备），请使用验证码完成二次验证：</p>
         <div style="font-size:28px;letter-spacing:8px;font-weight:700;color:#fff;background:#1f1633;padding:16px 20px;border-radius:8px;text-align:center">${code}</div>
         <p style="margin:16px 0 0;font-size:13px;color:#71717a">验证码 5 分钟内有效。如非本人操作，请立即修改密码并联系超级管理员。</p>

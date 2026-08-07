@@ -247,7 +247,7 @@ export default function StudentHome() {
         return
       }
 
-      const response = await memberAPI.getById(user.id)
+      const response = await memberAPI.getMe()
       
       if (!response || !response.data) {
         setError('无法获取成员信息，请联系管理员')
@@ -273,7 +273,7 @@ export default function StudentHome() {
       if (!userStr) return
       
       const user = JSON.parse(userStr)
-      const response = await progressAPI.getMemberProgress(String(user.id))
+      const response = await progressAPI.getMy()
       const coursesData = response.data
       
       setCourses(coursesData)

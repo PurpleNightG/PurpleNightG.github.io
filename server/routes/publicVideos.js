@@ -1,5 +1,6 @@
 import express from 'express'
 import { pool } from '../config/database.js'
+import { authenticateRequest } from '../utils/authGate.js'
 
 const router = express.Router()
 
@@ -110,7 +111,23 @@ router.get('/:id', async (req, res) => {
 // 创建公开视频/报告
 router.post('/', async (req, res) => {
   try {
-    const { title, participant_a, participant_b, assessment_date, video_url, description, created_by, assessment_id } = req.body
+    const studentAuth = await authenticateRequest(req, { requireType: 'student' })
+    const adminAuth = studentAuth
+      ? null
+      : await authenticateRequest(req, { requireType: 'admin' })
+    if (!studentAuth && !adminAuth) {
+      return res.status(401).json({ success: false, message: '未登录或会话已失效，请重新登录' })
+    }
+
+    let { title, participant_a, participant_b, assessment_date, video_url, description, created_by, assessment_id } = req.body
+
+    // 学员只能公开自己的考核报告，created_by 强制为本人
+    if (studentAuth) {
+      if (!assessment_id) {
+        return res.status(403).json({ success: false, message: '学员仅可公开自己的考核报告' })
+      }
+      created_by = studentAuth.userId
+    }
     
     if (!created_by) {
       return res.status(400).json({ success: false, message: '缺少创建者信息' })

@@ -169,7 +169,7 @@ export default function StyledSelect({
   const isSm = size === 'sm'
   const triggerClass = isSm
     ? 'px-2 py-1 text-sm rounded'
-    : 'px-3 py-2 rounded-lg'
+    : 'px-4 py-2.5 rounded-lg'
 
   const dropdown =
     isOpen && dropdownStyle ? (

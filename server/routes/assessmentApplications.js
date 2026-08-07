@@ -1,5 +1,6 @@
 import express from 'express'
 import { pool } from '../config/database.js'
+import { authenticateRequest } from '../utils/authGate.js'
 
 const router = express.Router()
 
@@ -50,6 +51,13 @@ router.get('/', async (req, res) => {
 router.get('/member/:memberId', async (req, res) => {
   try {
     const { memberId } = req.params
+    const auth = await authenticateRequest(req, { requireType: 'student' })
+    if (!auth) {
+      return res.status(401).json({ success: false, message: '未登录或会话已失效，请重新登录' })
+    }
+    if (Number(auth.userId) !== Number(memberId)) {
+      return res.status(403).json({ success: false, message: '只能查看自己的数据' })
+    }
     
     const [rows] = await pool.query(`
       SELECT * FROM assessment_applications
@@ -73,16 +81,21 @@ router.get('/member/:memberId', async (req, res) => {
 // 创建申请（学员端）
 router.post('/', async (req, res) => {
   try {
+    const auth = await authenticateRequest(req, { requireType: 'student' })
+    if (!auth) {
+      return res.status(401).json({ success: false, message: '未登录或会话已失效，请重新登录' })
+    }
+
     const {
-      member_id,
       member_name,
       companion,
       preferred_date,
       preferred_time
     } = req.body
+    const member_id = auth.userId
     
     // 验证必填字段
-    if (!member_id || !member_name || !companion || !preferred_date || !preferred_time) {
+    if (!member_name || !companion || !preferred_date || !preferred_time) {
       return res.status(400).json({
         success: false,
         message: '缺少必填字段'

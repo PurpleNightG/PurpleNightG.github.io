@@ -191,7 +191,7 @@ export default function DocsLayout() {
     fetchDocs()
     checkVersion()
     // 每30秒检查一次版本更新
-    const versionCheckInterval = setInterval(checkVersion, 30000)
+    const versionCheckInterval = setInterval(checkVersion, 120000)
     return () => clearInterval(versionCheckInterval)
   }, [])
 

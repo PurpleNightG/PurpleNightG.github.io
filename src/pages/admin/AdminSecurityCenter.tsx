@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   ShieldAlert, RefreshCw, LogOut, ScrollText, MonitorSmartphone,
@@ -10,6 +10,8 @@ import { formatDateTime } from '../../utils/dateFormat'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import ThemeCheckbox from '../../components/ThemeCheckbox'
 import PageSkeleton from '../../components/Skeleton'
+import StyledSelect from '../../components/StyledSelect'
+import DateInput from '../../components/DateInput'
 
 interface AuditRow {
   id: number
@@ -62,6 +64,22 @@ interface AdminAccount {
 
 type Tab = 'sessions' | 'audit' | 'admins'
 
+const AUDIT_PAGE_SIZE = 20
+
+type AuditFilters = {
+  q: string
+  adminId: string
+  from: string
+  to: string
+}
+
+const emptyAuditFilters = (): AuditFilters => ({
+  q: '',
+  adminId: '',
+  from: '',
+  to: '',
+})
+
 export default function AdminSecurityCenter() {
   const [tab, setTab] = useState<Tab>('sessions')
   const [loading, setLoading] = useState(true)
@@ -69,7 +87,11 @@ export default function AdminSecurityCenter() {
   const [audits, setAudits] = useState<AuditRow[]>([])
   const [admins, setAdmins] = useState<AdminAccount[]>([])
   const [isSuper, setIsSuper] = useState(false)
-  const [auditQ, setAuditQ] = useState('')
+  const [auditDraft, setAuditDraft] = useState<AuditFilters>(emptyAuditFilters)
+  const [auditApplied, setAuditApplied] = useState<AuditFilters>(emptyAuditFilters)
+  const [auditPage, setAuditPage] = useState(1)
+  const [auditTotal, setAuditTotal] = useState(0)
+  const [auditJumpInput, setAuditJumpInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [superKey, setSuperKey] = useState('')
   const [confirmKick, setConfirmKick] = useState<AdminSessionGroup | null>(null)
@@ -100,9 +122,19 @@ export default function AdminSecurityCenter() {
     if (res.meta?.is_super_admin != null) setIsSuper(!!res.meta.is_super_admin)
   }, [])
 
-  const loadAudits = useCallback(async (q?: string) => {
-    const res = await securityAPI.getAuditLogs({ limit: 150, q: q?.trim() || undefined })
+  const loadAudits = useCallback(async (filters: AuditFilters, page: number) => {
+    const adminIdNum = filters.adminId ? Number(filters.adminId) : NaN
+    const res = await securityAPI.getAuditLogs({
+      page,
+      pageSize: AUDIT_PAGE_SIZE,
+      q: filters.q.trim() || undefined,
+      admin_id: Number.isFinite(adminIdNum) && adminIdNum > 0 ? adminIdNum : undefined,
+      from: filters.from || undefined,
+      to: filters.to || undefined,
+    })
     setAudits(res.data || [])
+    setAuditTotal(Number(res.meta?.total) || 0)
+    if (res.meta?.page) setAuditPage(Number(res.meta.page) || page)
   }, [])
 
   const loadAdmins = useCallback(async () => {
@@ -117,18 +149,56 @@ export default function AdminSecurityCenter() {
       const me = await securityAPI.getMe().catch(() => null)
       if (me?.data?.is_super_admin != null) setIsSuper(!!me.data.is_super_admin)
       if (tab === 'sessions') await loadSessions()
-      else if (tab === 'audit') await loadAudits(auditQ)
-      else await loadAdmins()
+      else if (tab === 'audit') {
+        await Promise.all([loadAudits(auditApplied, auditPage), loadAdmins()])
+      } else await loadAdmins()
     } catch (e: any) {
       toast.error(e.message || '加载失败')
     } finally {
       setLoading(false)
     }
-  }, [tab, auditQ, loadSessions, loadAudits, loadAdmins])
+  }, [tab, auditApplied, auditPage, loadSessions, loadAudits, loadAdmins])
 
   useEffect(() => {
     void load()
   }, [load])
+
+  const applyAuditFilters = () => {
+    setAuditApplied({ ...auditDraft })
+    setAuditPage(1)
+  }
+
+  const resetAuditFilters = () => {
+    const empty = emptyAuditFilters()
+    setAuditDraft(empty)
+    setAuditApplied(empty)
+    setAuditPage(1)
+  }
+
+  const auditTotalPages = Math.max(1, Math.ceil(auditTotal / AUDIT_PAGE_SIZE))
+
+  const auditAdminOptions = useMemo(
+    () => [
+      { value: '', label: '全部管理员' },
+      ...admins.map((a) => ({
+        value: String(a.id),
+        label: a.name || a.username,
+        description: a.name ? `@${a.username}` : undefined,
+      })),
+    ],
+    [admins]
+  )
+
+  const jumpToAuditPage = () => {
+    const n = parseInt(auditJumpInput.trim(), 10)
+    if (!Number.isFinite(n)) {
+      toast.error('请输入有效页码')
+      return
+    }
+    const next = Math.min(auditTotalPages, Math.max(1, n))
+    setAuditPage(next)
+    setAuditJumpInput('')
+  }
 
   const needKey = () => {
     if (!superKey.trim()) {
@@ -410,24 +480,69 @@ export default function AdminSecurityCenter() {
       ) : tab === 'audit' ? (
         <div className="space-y-4">
           <form
-            className="flex gap-2"
+            className="flex flex-col gap-3"
             onSubmit={(e) => {
               e.preventDefault()
-              void load()
+              applyAuditFilters()
             }}
           >
-            <input
-              value={auditQ}
-              onChange={(e) => setAuditQ(e.target.value)}
-              placeholder="搜索用户名 / 说明 / 路径 / IP"
-              className="flex-1 px-3 py-2 rounded-lg bg-black/30 border border-white/10 text-gray-200 text-sm outline-none focus:border-purple-500/50"
-            />
-            <button
-              type="submit"
-              className="px-4 py-2 rounded-lg bg-purple-600/40 text-purple-100 text-sm border border-purple-500/40"
-            >
-              搜索
-            </button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end [&_.student-glass-field]:!h-[42px] [&_.student-glass-field]:!min-h-[42px] [&_.student-glass-field]:!max-h-[42px] [&_.student-glass-field]:!py-0 [&_.student-glass-field]:!box-border [&_button.student-glass-field]:!flex [&_button.student-glass-field]:!items-center [&_div.student-glass-field]:!flex [&_div.student-glass-field]:!items-center">
+              <div className="min-w-0">
+                <label className="block text-sm font-medium text-gray-300 mb-1">关键词</label>
+                <input
+                  value={auditDraft.q}
+                  onChange={(e) => setAuditDraft((prev) => ({ ...prev, q: e.target.value }))}
+                  placeholder="用户名 / 说明 / 路径 / IP"
+                  className="student-glass-field w-full text-sm !px-4"
+                />
+              </div>
+              <div className="min-w-0">
+                <label className="block text-sm font-medium text-gray-300 mb-1">管理员</label>
+                <StyledSelect
+                  options={auditAdminOptions}
+                  value={auditDraft.adminId}
+                  onChange={(v) => setAuditDraft((prev) => ({ ...prev, adminId: v }))}
+                  placeholder="全部管理员"
+                  searchable
+                  className="w-full"
+                />
+              </div>
+              <div className="min-w-0">
+                <label className="block text-sm font-medium text-gray-300 mb-1">开始日期</label>
+                <DateInput
+                  value={auditDraft.from}
+                  onChange={(value) => setAuditDraft((prev) => ({ ...prev, from: value }))}
+                  className="w-full"
+                />
+              </div>
+              <div className="min-w-0">
+                <label className="block text-sm font-medium text-gray-300 mb-1">结束日期</label>
+                <DateInput
+                  value={auditDraft.to}
+                  onChange={(value) => setAuditDraft((prev) => ({ ...prev, to: value }))}
+                  className="w-full"
+                  min={auditDraft.from || undefined}
+                />
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="submit"
+                className="px-4 py-2 rounded-lg bg-purple-600/40 text-purple-100 text-sm border border-purple-500/40 hover:bg-purple-600/55"
+              >
+                查询
+              </button>
+              <button
+                type="button"
+                onClick={resetAuditFilters}
+                className="px-4 py-2 rounded-lg bg-white/5 text-gray-300 text-sm border border-white/10 hover:bg-white/10"
+              >
+                重置
+              </button>
+              <span className="text-xs text-gray-500 ml-auto">
+                共 {auditTotal} 条
+              </span>
+            </div>
           </form>
           <div className="rounded-xl border border-white/10 overflow-x-auto">
             <table className="w-full text-sm text-left">
@@ -485,6 +600,57 @@ export default function AdminSecurityCenter() {
                 )}
               </tbody>
             </table>
+            {!loading && auditTotal > 0 && (
+              <div className="p-4 border-t border-white/10 flex flex-wrap items-center justify-center gap-3">
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setAuditPage((p) => Math.max(1, p - 1))}
+                    disabled={auditPage <= 1}
+                    className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm whitespace-nowrap"
+                  >
+                    上一页
+                  </button>
+                  <span className="text-gray-400 text-sm whitespace-nowrap tabular-nums">
+                    第 {auditPage} / {auditTotalPages} 页
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setAuditPage((p) => Math.min(auditTotalPages, p + 1))}
+                    disabled={auditPage >= auditTotalPages}
+                    className="px-4 py-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors text-sm whitespace-nowrap"
+                  >
+                    下一页
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 whitespace-nowrap">
+                  <span className="text-gray-500 text-sm shrink-0">跳至</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={auditTotalPages}
+                    value={auditJumpInput}
+                    onChange={(e) => setAuditJumpInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        jumpToAuditPage()
+                      }
+                    }}
+                    placeholder={String(auditPage)}
+                    className="student-glass-field !w-16 !min-w-16 max-w-16 shrink-0 px-2 py-1.5 text-sm text-center"
+                  />
+                  <span className="text-gray-500 text-sm shrink-0">页</span>
+                  <button
+                    type="button"
+                    onClick={jumpToAuditPage}
+                    className="shrink-0 whitespace-nowrap px-3 py-1.5 rounded-lg bg-purple-600/40 text-purple-100 text-sm border border-purple-500/40 hover:bg-purple-600/55"
+                  >
+                    跳转
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       ) : (
