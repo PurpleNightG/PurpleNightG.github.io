@@ -6,7 +6,7 @@ import { formatDateTime } from '../../../utils/dateFormat'
 import ConfirmDialog from '../../../components/ConfirmDialog'
 import MemberNameCell from '../../../components/MemberNameCell'
 import PageSkeleton from '../../../components/Skeleton'
-import { Loader2, RefreshCw, CheckSquare, Square, Eye, Camera, Trash2, StopCircle, CheckCircle, Monitor } from 'lucide-react'
+import { RefreshCw, CheckSquare, Square, Eye, Camera, Trash2, StopCircle, CheckCircle, Monitor } from 'lucide-react'
 
 interface Session {
   id: number

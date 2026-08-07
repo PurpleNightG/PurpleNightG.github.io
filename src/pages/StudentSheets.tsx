@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Table2, Loader2, Share2, Lock, Users, ChevronRight, FileSpreadsheet } from 'lucide-react'
+import { Table2, Share2, Lock, Users, ChevronRight, FileSpreadsheet } from 'lucide-react'
 import { sheetAPI } from '../utils/api'
 import { toast } from '../utils/toast'
 import { formatDateTime } from '../utils/dateFormat'

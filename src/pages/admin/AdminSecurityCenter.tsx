@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  ShieldAlert, Loader2, RefreshCw, LogOut, ScrollText, MonitorSmartphone,
+  ShieldAlert, RefreshCw, LogOut, ScrollText, MonitorSmartphone,
   Users, KeyRound, Trash2, Mail, Crown, Plus, X, Ban, CheckCircle2,
 } from 'lucide-react'
 import { securityAPI } from '../../utils/api'

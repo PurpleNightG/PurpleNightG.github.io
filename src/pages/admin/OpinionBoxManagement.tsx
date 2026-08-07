@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Mailbox, Loader2, Trash2, Eye, Archive, RotateCcw } from 'lucide-react'
+import { Mailbox, Trash2, Eye, Archive, RotateCcw } from 'lucide-react'
 import { opinionBoxAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
 import { formatDateTime } from '../../utils/dateFormat'

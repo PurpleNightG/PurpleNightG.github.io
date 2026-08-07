@@ -5,7 +5,6 @@ import { toast } from '../../utils/toast'
 import { formatDateTime } from '../../utils/dateFormat'
 import PageSkeleton from '../../components/Skeleton'
 import {
-  Loader2,
   ArrowLeft,
   Lock,
   AlertTriangle,

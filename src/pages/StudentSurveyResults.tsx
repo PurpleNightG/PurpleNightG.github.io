@@ -4,7 +4,6 @@ import { surveyAPI } from '../utils/api'
 import { toast } from '../utils/toast'
 import PageSkeleton from '../components/Skeleton'
 import {
-  Loader2,
   ArrowLeft,
   BarChart3,
   Trophy,
