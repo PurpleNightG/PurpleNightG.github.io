@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { X, Calendar, AlertCircle, UserMinus, Save, Key, Loader2, Pencil, Camera, Trash2 } from 'lucide-react'
 import { memberAPI, blackPointAPI, leaveAPI, quitAPI, retentionAPI } from '../../utils/api'
 import { formatDate, formatDateTime, toInputDate, formatDateForDB, getTodayDateString } from '../../utils/dateFormat'
@@ -81,8 +82,13 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
   const loadMemberDetail = async () => {
     setLoading(true)
     try {
-      // 加载成员信息
-      const memberRes = await memberAPI.getById(memberId)
+      const [memberRes, blackPointsRes, leavesRes, retentionRes] = await Promise.all([
+        memberAPI.getById(memberId),
+        blackPointAPI.getAll(),
+        leaveAPI.getAll(),
+        retentionAPI.getAll(),
+      ])
+
       setMember(memberRes.data)
       setEditedMember({
         ...memberRes.data,
@@ -92,19 +98,13 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
       })
       setRemarks(memberRes.data.remarks || '')
 
-      // 加载黑点记录
-      const blackPointsRes = await blackPointAPI.getAll()
-      const memberBlackPoints = blackPointsRes.data.filter((bp: any) => bp.member_id === memberId)
-      setBlackPoints(memberBlackPoints)
-
-      // 加载请假记录
-      const leavesRes = await leaveAPI.getAll()
-      const memberLeaves = leavesRes.data.filter((l: any) => l.member_id === memberId)
-      setLeaveRecords(memberLeaves)
-
-      // 加载留队记录
-      const retentionRes = await retentionAPI.getAll()
-      const memberRetention = retentionRes.data.find((r: any) => r.member_id === memberId)
+      setBlackPoints(
+        (blackPointsRes.data || []).filter((bp: any) => bp.member_id === memberId)
+      )
+      setLeaveRecords(
+        (leavesRes.data || []).filter((l: any) => l.member_id === memberId)
+      )
+      const memberRetention = (retentionRes.data || []).find((r: any) => r.member_id === memberId)
       setRetentionRecord(memberRetention || null)
     } catch (error) {
       console.error('加载成员详情失败:', error)
@@ -344,14 +344,40 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
 
   const activeBlackPoints = blackPoints.filter(bp => bp.status === '生效中').length
 
-  if (loading) {
-    return <PageSkeleton variant="detail" />
+  if (loading || !member) {
+    return createPortal(
+      <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+        <div className="absolute inset-0 glass-modal-backdrop" aria-hidden onClick={onClose} />
+        <div className="relative z-10 glass-modal-frame w-full max-w-4xl">
+          <div className="glass-modal-tilt">
+            <div className="student-glass-panel student-glass-panel--static student-glass-modal w-full max-h-[90vh] flex flex-col overflow-hidden">
+              <div className="shrink-0 border-b border-white/10 px-6 py-4 flex justify-between items-center bg-white/[0.04]">
+                <h2 className="text-xl font-bold text-white">成员详细信息</h2>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="text-gray-400 hover:text-white transition-colors p-1 shrink-0"
+                >
+                  <X size={22} />
+                </button>
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto p-6">
+                {loading ? (
+                  <PageSkeleton variant="detail" padded={false} />
+                ) : (
+                  <p className="text-gray-400 text-sm">加载失败，请关闭后重试</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )
   }
 
-  if (!member) return null
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+  return createPortal(
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
       <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
       <div className="relative z-10 glass-modal-frame w-full max-w-4xl">
         <div className="glass-modal-tilt">
@@ -928,6 +954,7 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
           onCancel={() => setShowResetPasswordConfirm(false)}
         />
       )}
-    </div>
+    </div>,
+    document.body
   )
 }

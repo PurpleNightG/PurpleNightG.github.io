@@ -714,7 +714,7 @@ export default function ProgressAssignment() {
 
             <div className="flex-1 min-h-0 overflow-y-auto scrollbar-none p-6">
               {loadingCourses ? (
-                <div className="text-center text-gray-400 py-12">加载课程中...</div>
+                <PageSkeleton variant="table" rows={8} padded={false} />
               ) : (
                 <div className="space-y-4">
                   {orderedCategories(memberCourses).map(category => {
@@ -827,7 +827,7 @@ export default function ProgressAssignment() {
 
             <div className="flex-1 min-h-0 overflow-y-auto scrollbar-none p-6">
               {loadingBatchCourses ? (
-                <div className="text-center text-gray-400 py-12">加载课程中...</div>
+                <PageSkeleton variant="table" rows={8} padded={false} />
               ) : (
                 <div className="space-y-4">
                   <div className="bg-blue-600/10 border border-blue-600/30 rounded-lg p-4 mb-4">
