@@ -9,6 +9,7 @@ import DateInput from '../../components/DateInput'
 import StyledSelect from '../../components/StyledSelect'
 import MemberAvatar from '../../components/MemberAvatar'
 import ConfirmDialog from '../../components/ConfirmDialog'
+import PageSkeleton from '../../components/Skeleton'
 
 const MEMBER_EDIT_STATUSES = ['正常', '其他']
 
@@ -126,18 +127,7 @@ export default function AssistantStudentDetail({ memberId, onClose, onUpdate }: 
   const activeBlackPoints = blackPoints.filter((bp) => bp.status === '生效中').length
 
   if (loading) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
-        <div className="relative z-10 glass-modal-frame w-full max-w-sm">
-          <div className="glass-modal-tilt">
-            <div className="student-glass-panel student-glass-panel--static student-glass-modal p-8">
-              <div className="text-white">加载中...</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
+    return <PageSkeleton variant="detail" />
   }
 
   if (!member) return null

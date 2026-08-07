@@ -6,6 +6,7 @@ import { CheckSquare, Square, X, Search, Filter, ChevronUp, ChevronDown, BookOpe
 import { formatDate } from '../../utils/dateFormat'
 import { getRoleColor } from '../../utils/roleColors'
 import MemberNameCell from '../../components/MemberNameCell'
+import PageSkeleton from '../../components/Skeleton'
 import {
   parseMetaOptions,
   tagBadgeClass,
@@ -582,7 +583,7 @@ export default function ProgressAssignment() {
 
       <div className="student-glass-panel student-glass-panel--static overflow-hidden">
         {loading ? (
-          <div className="p-12 text-center text-gray-400">加载中...</div>
+          <PageSkeleton variant="table" padded={false} />
         ) : (
           <div className="admin-table-container">
             <table className="admin-table">

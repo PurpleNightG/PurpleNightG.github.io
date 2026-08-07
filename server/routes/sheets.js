@@ -1,6 +1,6 @@
 import express from 'express'
-import jwt from 'jsonwebtoken'
 import { pool } from '../config/database.js'
+import { requireAdmin, requireStudent } from '../utils/authGate.js'
 
 const router = express.Router()
 
@@ -144,36 +144,6 @@ router.use(async (req, res, next) => {
     res.status(500).json({ success: false, message: '数据库初始化失败' })
   }
 })
-
-function requireAdmin(req, res, next) {
-  try {
-    const token = req.headers.authorization?.replace('Bearer ', '')
-    if (!token) return res.status(401).json({ success: false, message: '未登录' })
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key')
-    if (decoded.userType !== 'admin') {
-      return res.status(403).json({ success: false, message: '需要管理员权限' })
-    }
-    req.admin = decoded
-    next()
-  } catch {
-    return res.status(401).json({ success: false, message: '认证令牌无效或已过期' })
-  }
-}
-
-function requireStudent(req, res, next) {
-  try {
-    const token = req.headers.authorization?.replace('Bearer ', '')
-    if (!token) return res.status(401).json({ success: false, message: '未登录' })
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key')
-    if (decoded.role !== 'student' && decoded.userType !== 'student') {
-      return res.status(403).json({ success: false, message: '需要学员权限' })
-    }
-    req.student = decoded
-    next()
-  } catch {
-    return res.status(401).json({ success: false, message: '认证令牌无效或已过期' })
-  }
-}
 
 const REVISION_COALESCE_MS = 5 * 60 * 1000
 const MAX_REVISIONS = 80

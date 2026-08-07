@@ -9,6 +9,7 @@ import ConfirmDialog from '../../components/ConfirmDialog'
 import DateInput from '../../components/DateInput'
 import StyledSelect from '../../components/StyledSelect'
 import MemberAvatar from '../../components/MemberAvatar'
+import PageSkeleton from '../../components/Skeleton'
 
 const MEMBER_STAGE_ROLES = [
   '未新训', '新训初期', '新训一期', '新训二期', '新训三期', '新训准考',
@@ -344,18 +345,7 @@ export default function MemberDetail({ memberId, onClose, onUpdate }: MemberDeta
   const activeBlackPoints = blackPoints.filter(bp => bp.status === '生效中').length
 
   if (loading) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
-        <div className="relative z-10 glass-modal-frame w-full max-w-sm">
-          <div className="glass-modal-tilt">
-            <div className="student-glass-panel student-glass-panel--static student-glass-modal p-8">
-              <div className="text-white">加载中...</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
+    return <PageSkeleton variant="detail" />
   }
 
   if (!member) return null

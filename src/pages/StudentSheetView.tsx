@@ -7,6 +7,7 @@ import { formatDateTime } from '../utils/dateFormat'
 import SheetGrid, { type SheetContent } from '../components/SheetGrid'
 import SheetHistoryPanel from '../components/SheetHistoryPanel'
 import SheetTabBar from '../components/SheetTabBar'
+import PageSkeleton from '../components/Skeleton'
 import {
   addSheet,
   deleteSheet,
@@ -120,11 +121,7 @@ export default function StudentSheetView() {
   }, [])
 
   if (loading) {
-    return (
-      <div className="flex justify-center py-24 text-gray-400">
-        <Loader2 className="animate-spin" />
-      </div>
-    )
+    return <PageSkeleton variant="detail" />
   }
 
   const active = getActiveSheet(workbook)

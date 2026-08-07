@@ -17,24 +17,11 @@ import {
   mergePermissions,
 } from '../utils/assistantConstants.js'
 import { clearAssistantRoleData, cleanupOrphanedAssistantData } from '../utils/clearAssistantData.js'
+import { requireAdmin, assertIdentityValid } from '../utils/authGate.js'
+import { assertSessionActive, touchSession } from '../utils/loginSessions.js'
 
 const router = express.Router()
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key'
-
-function requireAdmin(req, res, next) {
-  try {
-    const token = req.headers.authorization?.replace('Bearer ', '')
-    if (!token) return res.status(401).json({ success: false, message: '未登录' })
-    const decoded = jwt.verify(token, JWT_SECRET)
-    if (decoded.userType !== 'admin') {
-      return res.status(403).json({ success: false, message: '需要管理员权限' })
-    }
-    req.admin = decoded
-    next()
-  } catch {
-    return res.status(401).json({ success: false, message: '认证令牌无效或已过期' })
-  }
-}
 
 async function requireAssistant(req, res, next) {
   try {
@@ -44,6 +31,12 @@ async function requireAssistant(req, res, next) {
     if (decoded.role !== 'student' && decoded.userType !== 'student') {
       return res.status(403).json({ success: false, message: '需要助教登录' })
     }
+    const active = await assertSessionActive(decoded)
+    if (!active) return res.status(401).json({ success: false, message: '会话已失效，请重新登录' })
+    if (!(await assertIdentityValid(decoded))) {
+      return res.status(401).json({ success: false, message: '账号已不存在，请重新登录' })
+    }
+    void touchSession(decoded.jti)
     const [[member]] = await pool.query(
       `SELECT id, nickname, qq, stage_role, status, is_assistant, is_ziye_assistant,
               screen_share_enabled, screen_share_quota, screen_share_used, guest_code_max

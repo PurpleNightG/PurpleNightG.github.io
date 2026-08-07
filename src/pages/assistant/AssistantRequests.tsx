@@ -11,6 +11,7 @@ import {
   Users, UserRoundPlus, ArrowUpRight, ClipboardList, Inbox, Pencil, AlertCircle, Calendar,
   Eye, X, Search, Filter, ChevronUp, ChevronDown,
 } from 'lucide-react'
+import PageSkeleton from '../../components/Skeleton'
 
 type TabKey = 'assignments' | 'creates' | 'promotions' | 'edits' | 'blackPoints' | 'leaves'
 type Filters = { status: string[] }
@@ -357,10 +358,7 @@ export default function AssistantRequests() {
       )}
 
       {loading ? (
-        <div className="student-glass-panel student-glass-panel--static rounded-xl py-16 text-center">
-          <div className="inline-block animate-spin rounded-full h-10 w-10 border-4 border-gray-700 border-t-amber-500 mb-4" />
-          <p className="text-gray-400 text-sm">加载中...</p>
-        </div>
+        <PageSkeleton variant="table" padded={false} />
       ) : (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">

@@ -13,14 +13,10 @@ import {
   touchSession,
   MAX_LOGIN_SESSIONS,
 } from '../utils/loginSessions.js'
+import { assertIdentityValid, resolveUserType } from '../utils/authGate.js'
 
 const router = express.Router()
 const JWT_SECRET = () => process.env.JWT_SECRET || 'your-secret-key'
-
-function resolveUserType(decoded) {
-  if (decoded.role === 'student' || decoded.userType === 'student') return 'student'
-  return 'admin'
-}
 
 async function requireAuth(req, res) {
   const token = req.headers.authorization?.replace('Bearer ', '')
@@ -35,9 +31,19 @@ async function requireAuth(req, res) {
       res.status(401).json({ success: false, message: '会话已失效，请重新登录' })
       return null
     }
+    if (!(await assertIdentityValid(decoded))) {
+      const userType = resolveUserType(decoded)
+      if (userType) {
+        try {
+          await revokeAllSessions(userType, decoded.id)
+        } catch { /* ignore */ }
+      }
+      res.status(401).json({ success: false, message: '账号已不存在或已删除，请重新登录', code: 'ACCOUNT_GONE' })
+      return null
+    }
     void touchSession(decoded.jti)
     const userType = resolveUserType(decoded)
-    return { token, decoded, userType, userId: decoded.id, jti: decoded.jti || null }
+    return { token, decoded, userType, userId: decoded.id, jti: decoded.jti || null, username: decoded.username }
   } catch {
     res.status(401).json({ success: false, message: '登录已过期，请重新登录' })
     return null
@@ -66,6 +72,11 @@ router.get('/profile', async (req, res) => {
     const auth = await requireAuth(req, res)
     if (!auth) return
     await ensureAvatarColumns()
+    // admins.is_super_admin 可能尚未迁移
+    try {
+      const { ensureAdminRoleColumns } = await import('../utils/adminRoles.js')
+      await ensureAdminRoleColumns()
+    } catch { /* ignore */ }
 
     if (auth.userType === 'student') {
       const [rows] = await pool.query(
@@ -91,7 +102,7 @@ router.get('/profile', async (req, res) => {
     }
 
     const [rows] = await pool.query(
-      'SELECT id, username, name, email, avatar FROM admins WHERE id = ?',
+      'SELECT id, username, name, email, avatar, is_super_admin FROM admins WHERE id = ?',
       [auth.userId]
     )
     if (!rows.length) {
@@ -107,6 +118,7 @@ router.get('/profile', async (req, res) => {
         display_name: a.name || a.username,
         email: a.email,
         avatar: a.avatar || null,
+        is_super_admin: Number(a.is_super_admin) === 1,
       },
     })
   } catch (error) {
@@ -139,12 +151,12 @@ router.put('/password', async (req, res) => {
     }
     const hashed = await bcrypt.hash(String(newPassword), 10)
     await pool.query(`UPDATE ${table} SET password = ? WHERE id = ?`, [hashed, auth.userId])
-    // 改密后踢掉其它设备，保留当前会话
-    const n = await revokeOtherSessions(auth.userType, auth.userId, auth.jti)
+    // 改密后强制全部重新登录（含当前），防止旧 token 被盗用
+    await revokeAllSessions(auth.userType, auth.userId)
     res.json({
       success: true,
-      message: n > 0 ? `密码已修改，已登出其它 ${n} 台设备` : '密码修改成功',
-      data: { revoked_others: n },
+      message: '密码已修改，请重新登录',
+      data: { force_relogin: true, revoked_others: 0 },
     })
   } catch (error) {
     console.error('[account-security] password', error)

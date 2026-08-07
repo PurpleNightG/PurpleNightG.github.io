@@ -33,6 +33,7 @@ import SheetEditor from './admin/SheetEditor'
 import OpinionBoxManagement from './admin/OpinionBoxManagement'
 import AssistantManagement from './admin/AssistantManagement'
 import AccountSecurity from './AccountSecurity'
+import AdminSecurityCenter from './admin/AdminSecurityCenter'
 
 function AdminDashboardContent() {
   const [isMobile, setIsMobile] = useState(false)
@@ -107,6 +108,7 @@ function AdminDashboardContent() {
             <Route path="/surveys/:id/results" element={<SurveyResults />} />
             <Route path="/opinion-box" element={<OpinionBoxManagement />} />
             <Route path="/account-security" element={<AccountSecurity />} />
+            <Route path="/security" element={<AdminSecurityCenter />} />
           </Routes>
         </main>
       </div>

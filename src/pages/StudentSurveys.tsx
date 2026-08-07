@@ -5,6 +5,7 @@ import { toast } from '../utils/toast'
 import { isFieldVisible, NOT_ATTENDED } from '../utils/surveyHelpers'
 import { useSurveyPending } from '../contexts/SurveyPendingContext'
 import { formatDateTime } from '../utils/dateFormat'
+import PageSkeleton from '../components/Skeleton'
 import {
   Loader2,
   ClipboardList,
@@ -513,9 +514,7 @@ export default function StudentSurveys() {
         </div>
 
         {detailLoading || !detail ? (
-          <div className="flex justify-center py-16 text-gray-500">
-            <Loader2 className="animate-spin" />
-          </div>
+          <PageSkeleton variant="form" padded={false} />
         ) : (
           <div className="w-full bg-white shadow-md border border-gray-200/80 rounded-sm overflow-hidden survey-fill-form">
             <div className="px-8 md:px-12 lg:px-16 pt-8 pb-6 border-b border-dashed border-gray-200 text-center">
@@ -676,9 +675,7 @@ export default function StudentSurveys() {
       )}
 
       {loading ? (
-        <div className="flex justify-center py-16 text-gray-400">
-          <Loader2 className="animate-spin" />
-        </div>
+        <PageSkeleton variant="table" padded={false} />
       ) : (
         <div className="space-y-3">
           {list.map((s) => (

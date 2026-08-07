@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { getAdminSecurityHeaders } from '../utils/deviceIdentity'
 
 const API_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3000/api'
 
@@ -19,11 +20,14 @@ function getEphemeralToken(): string | null {
 
 async function pingHeartbeat(token: string) {
   try {
+    const isAdmin = !!sessionStorage.getItem('token')
+    const sec = isAdmin ? await getAdminSecurityHeaders().catch(() => ({})) : {}
     await fetch(`${API_URL}/account-security/heartbeat`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
+        ...sec,
       },
     })
   } catch {

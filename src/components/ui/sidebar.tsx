@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useBadges } from "../../contexts/BadgeContext";
 import { useSurveyPending } from "../../contexts/SurveyPendingContext";
 import { motion, AnimatePresence } from "framer-motion";
-import { Home, Users, BookOpen, FileCheck, UserMinus, ChevronDown, FileText, Video, Monitor, AlertTriangle, Calendar, BookMarked, ClipboardList, Mailbox, Shield, GraduationCap, Table2 } from "lucide-react";
+import { Home, Users, BookOpen, FileCheck, UserMinus, ChevronDown, FileText, Video, Monitor, AlertTriangle, Calendar, BookMarked, ClipboardList, Mailbox, Shield, GraduationCap, Table2, ShieldAlert } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { assistantAPI } from "../../utils/api";
 
@@ -358,6 +358,7 @@ const AdminNav = ({ expandedMenus, toggleMenu }: AdminNavProps) => {
     <NavItem path="/admin/sheets" icon={<Table2 size={20} />} label="表格文档" />
     <NavItem path="/admin/surveys" icon={<ClipboardList size={20} />} label="填表管理" />
     <NavItem path="/admin/opinion-box" icon={<Mailbox size={20} />} label="意见箱" badge={badges.opinionPending} />
+    <NavItem path="/admin/security" icon={<ShieldAlert size={20} />} label="安全中心" />
     <NavItem path="/admin/account-security" icon={<Shield size={20} />} label="账户安全" />
     {/* Screen share - opens in new tab */}
     <a href="#/screen-share" target="_blank" rel="noopener noreferrer" className="group block mb-1">

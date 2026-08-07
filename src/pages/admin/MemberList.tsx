@@ -9,6 +9,7 @@ import MemberNameCell from '../../components/MemberNameCell'
 import DateInput from '../../components/DateInput'
 import StyledSelect from '../../components/StyledSelect'
 import ConfirmDialog from '../../components/ConfirmDialog'
+import PageSkeleton from '../../components/Skeleton'
 
 interface Member {
   id: number
@@ -1014,7 +1015,7 @@ export default function MemberList() {
 
       <div className="student-glass-panel student-glass-panel--static overflow-hidden">
         {loading ? (
-          <div className="p-12 text-center text-gray-400">加载中...</div>
+          <PageSkeleton variant="table" padded={false} />
         ) : (
           <div className="admin-table-container">
             <table className="admin-table">
@@ -1325,9 +1326,9 @@ export default function MemberList() {
       {showZiyeDb && (
         <div className="fixed inset-0 z-[105] flex items-center justify-center p-4">
           <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
-          <div className="relative z-10 glass-modal-frame w-full max-w-5xl max-h-[85vh]">
+          <div className="relative z-10 glass-modal-frame w-full max-w-7xl max-h-[90vh]">
             <div className="glass-modal-tilt">
-              <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full flex flex-col max-h-[85vh]">
+              <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full flex flex-col max-h-[90vh]">
                 <div className="flex items-center justify-between mb-4 gap-3">
                   <h2 className="text-xl font-bold text-white tracking-wide">紫夜数据库</h2>
                   <button
@@ -1355,7 +1356,7 @@ export default function MemberList() {
                   />
                 </div>
                 <div className="rounded-xl border border-white/10 overflow-hidden flex-1 min-h-0 bg-black/20">
-                  <div className="overflow-auto max-h-[min(52vh,520px)]">
+                  <div className="overflow-auto max-h-[min(60vh,640px)]">
                     {ziyeDbLoading ? (
                       <div className="p-10 text-center text-gray-400">调取中...</div>
                     ) : ziyeDbMembers.length === 0 ? (
@@ -1403,7 +1404,7 @@ export default function MemberList() {
                                 </td>
                                 <td>
                                   <span
-                                    className="text-gray-300 text-sm max-w-[180px] block truncate"
+                                    className="text-gray-300 text-sm max-w-[260px] block truncate"
                                     title={m.quit_reason || ''}
                                   >
                                     {m.quit_reason || '—'}
@@ -1411,7 +1412,7 @@ export default function MemberList() {
                                 </td>
                                 <td>{m.join_date ? formatDate(m.join_date) : '-'}</td>
                                 <td>
-                                  <div className="flex gap-3">
+                                  <div className="flex gap-4 whitespace-nowrap">
                                     <button
                                       type="button"
                                       onClick={() => openZiyeDbDetail(m.id)}
@@ -1465,7 +1466,7 @@ export default function MemberList() {
                   </button>
                 </div>
                 {ziyeDbDetailLoading || !ziyeDbDetail ? (
-                  <div className="p-8 text-center text-gray-400">加载中...</div>
+                  <PageSkeleton variant="table" padded={false} />
                 ) : (
                   <div className="space-y-4 text-sm">
                     <div className="rounded-xl border border-white/10 bg-black/20 p-4 space-y-2 text-gray-300">

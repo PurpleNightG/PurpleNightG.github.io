@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { videoUploadAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
 import { Upload, Video, RefreshCw, ExternalLink, Film, UploadCloud, Folder, ChevronRight, Home } from 'lucide-react'
+import PageSkeleton from '../../components/Skeleton'
 
 interface ResourceItem {
   isDir: boolean
@@ -272,9 +273,7 @@ export default function VideoUpload() {
         )}
 
         {loading ? (
-          <div className="p-12 text-center text-gray-400">
-            加载中...
-          </div>
+          <PageSkeleton variant="table" padded={false} />
         ) : resources.length === 0 ? (
           <div className="p-12 text-center text-gray-400">
             <Video size={48} className="mx-auto mb-4 opacity-50" />

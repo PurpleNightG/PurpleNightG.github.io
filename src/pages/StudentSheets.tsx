@@ -4,6 +4,7 @@ import { Table2, Loader2, Share2, Lock, Users, ChevronRight, FileSpreadsheet } f
 import { sheetAPI } from '../utils/api'
 import { toast } from '../utils/toast'
 import { formatDateTime } from '../utils/dateFormat'
+import PageSkeleton from '../components/Skeleton'
 
 interface WorkbookItem {
   id: number
@@ -40,10 +41,8 @@ export default function StudentSheets() {
         </header>
 
         {loading ? (
-          <div className="flex justify-center py-20 text-gray-400">
-            <Loader2 className="animate-spin" />
-          </div>
-        ) : list.length === 0 ? (
+        <PageSkeleton variant="table" padded={false} />
+      ) : list.length === 0 ? (
           <div className="student-glass-panel student-glass-panel--static py-16 px-6 text-center">
             <FileSpreadsheet className="mx-auto text-gray-600 mb-3" size={36} />
             <p className="text-gray-400 text-sm">暂无已发布的表格</p>

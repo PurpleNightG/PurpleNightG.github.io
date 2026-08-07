@@ -6,6 +6,7 @@ import ReactMarkdown from 'react-markdown'
 import { useNavigate } from 'react-router-dom'
 import DateInput from '../components/DateInput'
 import TimeInput from '../components/TimeInput'
+import PageSkeleton from '../components/Skeleton'
 
 interface Application {
   id: number
@@ -141,11 +142,7 @@ export default function StudentApplyAssessment() {
   const approvedApplication = applications.find(app => app.status === '已通过')
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-gray-400">加载中...</div>
-      </div>
-    )
+    return <PageSkeleton variant="form" />
   }
 
   return (

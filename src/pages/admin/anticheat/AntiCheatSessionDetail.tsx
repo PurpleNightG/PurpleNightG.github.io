@@ -6,6 +6,7 @@ import { toast } from '../../../utils/toast'
 import { formatDateTime } from '../../../utils/dateFormat'
 import ConfirmDialog from '../../../components/ConfirmDialog'
 import MemberNameCell from '../../../components/MemberNameCell'
+import PageSkeleton from '../../../components/Skeleton'
 import { Loader2, ArrowLeft, Camera, ChevronLeft, ChevronRight, Download, ChevronDown, CheckSquare, Square, Plus, Trash2, Shield } from 'lucide-react'
 import { buildZipStore, base64ToUint8Array } from '../../../utils/zipStore'
 
@@ -483,11 +484,7 @@ export default function AntiCheatSessionDetail() {
   ]
 
   if (loading) {
-    return (
-      <div className="flex justify-center py-20 text-gray-400">
-        <Loader2 className="animate-spin" />
-      </div>
-    )
+    return <PageSkeleton variant="detail" />
   }
 
   if (!session) {

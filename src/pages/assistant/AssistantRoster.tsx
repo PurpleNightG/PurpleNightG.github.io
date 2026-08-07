@@ -8,6 +8,7 @@ import DateInput from '../../components/DateInput'
 import StyledSelect from '../../components/StyledSelect'
 import { Loader2, UserPlus, X, HelpingHand, GraduationCap, Search, Filter, ChevronUp, ChevronDown } from 'lucide-react'
 import MemberAvatar from '../../components/MemberAvatar'
+import PageSkeleton from '../../components/Skeleton'
 import {
   readLocalJson, readLocalString, cycleSort, cmpBasic, type SortConfig,
 } from '../../utils/persistedState'
@@ -491,7 +492,7 @@ export default function AssistantRoster() {
 
       <div className="student-glass-panel student-glass-panel--static overflow-hidden rounded-xl">
         {loading ? (
-          <div className="p-10 text-center text-gray-400">加载中...</div>
+          <PageSkeleton variant="table" padded={false} />
         ) : (
           <div className="admin-table-container">
             <table className="admin-table">

@@ -3,11 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import {
   Shield, KeyRound, MonitorSmartphone, LogOut, Upload, Trash2, Loader2, User,
 } from 'lucide-react'
-import { accountSecurityAPI, clearCache } from '../utils/api'
+import { accountSecurityAPI, clearCache, forceRelogin } from '../utils/api'
 import { toast } from '../utils/toast'
 import { formatDateTime } from '../utils/dateFormat'
 import { compressImageToDataUrl } from '../utils/imageCompress'
 import MemberAvatar from '../components/MemberAvatar'
+import PageSkeleton from '../components/Skeleton'
 
 interface Profile {
   user_type: 'admin' | 'student'
@@ -119,6 +120,10 @@ export default function AccountSecurity() {
       setOldPassword('')
       setNewPassword('')
       setConfirmPassword('')
+      if (res?.data?.force_relogin) {
+        forceRelogin('密码已修改，请重新登录')
+        return
+      }
       await load({ silent: true })
     } catch (err: any) {
       toast.error(err.message || '修改失败')
@@ -232,11 +237,7 @@ export default function AccountSecurity() {
   const shownSessions = sessions.slice(0, 10)
 
   if (loading) {
-    return (
-      <div className="p-6 flex justify-center py-20 text-gray-400">
-        <Loader2 className="animate-spin" />
-      </div>
-    )
+    return <PageSkeleton variant="form" />
   }
 
   return (
@@ -268,6 +269,14 @@ export default function AccountSecurity() {
               <div className="min-w-0 flex-1">
                 <div className="text-white font-medium truncate">{profile?.display_name}</div>
                 <div className="text-sm text-gray-400 truncate">@{profile?.username}</div>
+                {profile?.user_type === 'admin' && (
+                  <div className="text-xs text-gray-500 mt-1">
+                    安全邮箱：{profile.email || '未绑定'}
+                    <span className="block text-gray-600 mt-0.5">
+                      仅超级管理员可在「安全中心」绑定/修改邮箱；未绑定将无法登录管理端。
+                    </span>
+                  </div>
+                )}
                 {profile?.stage_role && (
                   <div className="text-xs text-gray-500 mt-1">{profile.stage_role}</div>
                 )}

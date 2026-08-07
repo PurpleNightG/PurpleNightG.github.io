@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { EyeBall, Pupil } from '@/components/ui/animated-characters-login-page'
+import { getClientPublicIp, getDeviceFingerprint } from '@/utils/deviceIdentity'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
@@ -20,6 +21,14 @@ export default function Login() {
   const [rememberMe, setRememberMe] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [otpStep, setOtpStep] = useState<{
+    challenge_id: string
+    email_hint: string
+    mail_sent: boolean
+    reason_text?: string
+  } | null>(null)
+  const [otpCode, setOtpCode] = useState('')
+  const [sendingOtp, setSendingOtp] = useState(false)
 
   // Animated character states
   const [mouseX, setMouseX] = useState<number>(0)
@@ -149,6 +158,19 @@ export default function Login() {
     setUsername('')
     setPassword('')
     setError('')
+    setOtpStep(null)
+    setOtpCode('')
+  }
+
+  const finishAdminLogin = (data: any) => {
+    const storage = rememberMe ? localStorage : sessionStorage
+    storage.setItem('token', data.token)
+    storage.setItem('user', JSON.stringify(data.user))
+    navigate(from || '/admin')
+  }
+
+  const fetchClientPublicIp = async (): Promise<string | undefined> => {
+    return getClientPublicIp()
   }
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -156,19 +178,72 @@ export default function Login() {
     setError('')
     setLoading(true)
     try {
+      const [clientPublicIp, deviceFingerprint] = await Promise.all([
+        userType === 'admin' ? fetchClientPublicIp() : Promise.resolve(undefined),
+        userType === 'admin' ? getDeviceFingerprint() : Promise.resolve(undefined),
+      ])
+
+      if (otpStep && userType === 'admin') {
+        if (!otpStep.mail_sent) {
+          setError('请先点击发送验证码')
+          return
+        }
+        const response = await fetch(`${API_URL}/auth/login/verify-otp`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(deviceFingerprint ? { 'X-Device-Fingerprint': deviceFingerprint } : {}),
+            ...(clientPublicIp ? { 'X-Client-Public-Ip': clientPublicIp } : {}),
+          },
+          body: JSON.stringify({
+            challenge_id: otpStep.challenge_id,
+            code: otpCode.trim(),
+            ...(clientPublicIp ? { clientPublicIp } : {}),
+            ...(deviceFingerprint ? { deviceFingerprint } : {}),
+          }),
+        })
+        const data = await response.json()
+        if (data.success && data.data?.token) {
+          finishAdminLogin(data.data)
+        } else {
+          setError(data.message || '验证码错误')
+        }
+        return
+      }
+
       const endpoint = userType === 'admin' ? '/auth/login' : '/student/login'
       const response = await fetch(`${API_URL}${endpoint}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password, userType, rememberMe }),
+        headers: {
+          'Content-Type': 'application/json',
+          ...(deviceFingerprint ? { 'X-Device-Fingerprint': deviceFingerprint } : {}),
+          ...(clientPublicIp ? { 'X-Client-Public-Ip': clientPublicIp } : {}),
+        },
+        body: JSON.stringify({
+          username,
+          password,
+          userType,
+          rememberMe,
+          ...(clientPublicIp ? { clientPublicIp } : {}),
+          ...(deviceFingerprint ? { deviceFingerprint } : {}),
+        }),
       })
       const data = await response.json()
       if (data.success) {
+        if (userType === 'admin' && data.data?.require_otp) {
+          setOtpStep({
+            challenge_id: data.data.challenge_id,
+            email_hint: data.data.email_hint || '已绑定邮箱',
+            mail_sent: !!data.data.mail_sent,
+            reason_text: data.message || '需要邮箱验证',
+          })
+          setOtpCode('')
+          setError('')
+          return
+        }
         const storage = rememberMe ? localStorage : sessionStorage
         if (userType === 'admin') {
-          storage.setItem('token', data.data.token)
-          storage.setItem('user', JSON.stringify(data.data.user))
-          navigate(from || '/admin')
+          finishAdminLogin(data.data)
         } else {
           storage.setItem('studentToken', data.data.token)
           storage.setItem('studentUser', JSON.stringify(data.data.member))
@@ -195,6 +270,37 @@ export default function Login() {
       }
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleSendOtp = async () => {
+    if (!otpStep?.challenge_id || sendingOtp) return
+    setError('')
+    setSendingOtp(true)
+    try {
+      const response = await fetch(`${API_URL}/auth/login/send-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ challenge_id: otpStep.challenge_id }),
+      })
+      const data = await response.json()
+      if (data.success) {
+        setOtpStep((prev) =>
+          prev
+            ? {
+                ...prev,
+                mail_sent: true,
+                email_hint: data.data?.email_hint || prev.email_hint,
+              }
+            : prev
+        )
+      } else {
+        setError(data.message || '发送失败')
+      }
+    } catch (err: any) {
+      setError(err.message || '发送失败，请重试')
+    } finally {
+      setSendingOtp(false)
     }
   }
 
@@ -501,6 +607,64 @@ export default function Login() {
 
           {/* Login form */}
           <form onSubmit={handleLogin} className="space-y-5">
+            {otpStep ? (
+              <>
+                <div className="p-3 bg-amber-950/40 border border-amber-700/40 rounded-lg text-sm text-amber-100/90 leading-relaxed">
+                  {otpStep.reason_text || '检测到登录环境变化'}。安全邮箱：{' '}
+                  <span className="font-medium text-amber-50">{otpStep.email_hint}</span>
+                  {otpStep.mail_sent
+                    ? '。验证码已发送，请查收邮件（含垃圾箱）。'
+                    : '。请确认后点击下方按钮发送验证码。'}
+                </div>
+                {!otpStep.mail_sent ? (
+                  <button
+                    type="button"
+                    disabled={sendingOtp}
+                    onClick={() => void handleSendOtp()}
+                    className="w-full h-12 text-base font-semibold rounded-lg bg-amber-600/90 hover:bg-amber-600 text-white disabled:opacity-60"
+                  >
+                    {sendingOtp ? '发送中…' : `确认发送验证码至 ${otpStep.email_hint}`}
+                  </button>
+                ) : (
+                  <div className="space-y-2">
+                    <Label htmlFor="otp" className="text-sm font-medium text-gray-300">
+                      邮箱验证码
+                    </Label>
+                    <Input
+                      id="otp"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      placeholder="6 位数字"
+                      value={otpCode}
+                      onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      required
+                      className="h-12 bg-gray-900 border-gray-700 text-white tracking-[0.35em] text-center text-lg placeholder:tracking-normal placeholder:text-gray-600 focus:border-purple-500 focus-visible:ring-purple-500"
+                    />
+                    <button
+                      type="button"
+                      disabled={sendingOtp}
+                      onClick={() => void handleSendOtp()}
+                      className="text-xs text-purple-300/90 hover:text-purple-200 disabled:opacity-50"
+                    >
+                      {sendingOtp ? '发送中…' : '重新发送验证码'}
+                    </button>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="text-xs text-gray-500 hover:text-gray-300"
+                  onClick={() => {
+                    setOtpStep(null)
+                    setOtpCode('')
+                    setError('')
+                  }}
+                >
+                  ← 返回重新输入密码
+                </button>
+              </>
+            ) : (
+              <>
             <div className="space-y-2">
               <Label htmlFor="username" className="text-sm font-medium text-gray-300">
                 {userType === 'admin' ? '用户名' : '昵称'}
@@ -554,6 +718,8 @@ export default function Login() {
                 记住登录（7天内自动登录）
               </Label>
             </div>
+              </>
+            )}
 
             {/* Error */}
             {error && (
@@ -567,13 +733,17 @@ export default function Login() {
               type="submit"
               className="w-full h-12 text-base font-semibold bg-purple-600 hover:bg-purple-700 text-white"
               size="lg"
-              disabled={loading}
+              disabled={loading || !!(otpStep && !otpStep.mail_sent)}
             >
               {loading ? (
                 <span className="flex items-center gap-2">
                   <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  登录中...
+                  {otpStep?.mail_sent ? '验证中...' : '登录中...'}
                 </span>
+              ) : otpStep?.mail_sent ? (
+                '验证并登录'
+              ) : otpStep ? (
+                '请先发送验证码'
               ) : (
                 '登录'
               )}

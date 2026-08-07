@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { anticheatAPI } from '../../../utils/api'
 import { toast } from '../../../utils/toast'
+import PageSkeleton from '../../../components/Skeleton'
 import { Loader2, Save, Shield } from 'lucide-react'
 
 export default function AntiCheatSettings() {
@@ -39,11 +40,7 @@ export default function AntiCheatSettings() {
   }
 
   if (loading) {
-    return (
-      <div className="flex justify-center py-20 text-gray-400">
-        <Loader2 className="animate-spin" />
-      </div>
-    )
+    return <PageSkeleton variant="form" />
   }
 
   return (

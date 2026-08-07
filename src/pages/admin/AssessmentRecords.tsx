@@ -13,6 +13,7 @@ import { formatDate, formatDateTime, toInputDate } from '../../utils/dateFormat'
 import PublicAssessmentReportDetail, { normalizePublicAssessment } from '../../components/PublicAssessmentReportDetail'
 import FullscreenReportModal from '../../components/FullscreenReportModal'
 import MemberNameCell from '../../components/MemberNameCell'
+import PageSkeleton from '../../components/Skeleton'
 
 interface Assessment {
   id: number
@@ -485,11 +486,7 @@ export default function AssessmentRecords() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-gray-400">加载中...</div>
-      </div>
-    )
+    return <PageSkeleton variant="table" />
   }
 
   return (

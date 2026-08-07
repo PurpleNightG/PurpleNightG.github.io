@@ -3,6 +3,7 @@ import { Users, TrendingUp, TrendingDown } from 'lucide-react'
 import { formatDate } from '../utils/dateFormat'
 import { getRoleColor } from '../utils/roleColors'
 import MemberAvatar from '../components/MemberAvatar'
+import PageSkeleton from '../components/Skeleton'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
@@ -87,7 +88,7 @@ export default function StudentClassmates() {
       <div className="flex items-center justify-center min-h-[50vh]">
         <div className="text-center">
           <div className="inline-block w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-          <div className="text-gray-400">加载中...</div>
+          <PageSkeleton variant="cards" padded={false} />
         </div>
       </div>
     )

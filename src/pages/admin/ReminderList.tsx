@@ -7,6 +7,7 @@ import { formatDate } from '../../utils/dateFormat'
 import { getRoleColor } from '../../utils/roleColors'
 import { useBadges } from '../../contexts/BadgeContext'
 import MemberNameCell from '../../components/MemberNameCell'
+import PageSkeleton from '../../components/Skeleton'
 
 interface ReminderItem {
   id: number
@@ -1112,7 +1113,7 @@ export default function ReminderList() {
             加入后 60 天内达新训三期 → 再 45 天内达新训准考及以上（总上限 105 天）→ 准考 / 紫夜 / 紫夜尖兵半年需参加新训。请假暂停计时；留队 / 其他不计。剩余 ≤7 天进入名单。
           </div>
           {attendanceLoading ? (
-            <div className="p-8 text-center text-gray-400">加载中...</div>
+            <PageSkeleton variant="table" padded={false} />
           ) : filteredAttendance.length === 0 ? (
             <div className="p-8 text-center text-gray-500">当前没有考勤催促对象</div>
           ) : (
@@ -1419,7 +1420,7 @@ export default function ReminderList() {
 
       <div className="student-glass-panel student-glass-panel--static overflow-hidden">
         {loading ? (
-          <div className="p-12 text-center text-gray-400">加载中...</div>
+          <PageSkeleton variant="table" padded={false} />
         ) : filteredItems.length === 0 ? (
           <div className="p-12 text-center text-gray-400">
             <p>暂无需要催促的成员</p>

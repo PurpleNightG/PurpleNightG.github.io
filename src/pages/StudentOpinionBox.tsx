@@ -3,6 +3,7 @@ import { Mailbox, Send, Loader2, EyeOff, User } from 'lucide-react'
 import { opinionBoxAPI } from '../utils/api'
 import { toast } from '../utils/toast'
 import { formatDateTime } from '../utils/dateFormat'
+import PageSkeleton from '../components/Skeleton'
 
 const CATEGORIES = ['建议', '问题反馈', '表扬', '其他'] as const
 
@@ -212,10 +213,8 @@ export default function StudentOpinionBox() {
       <div className="student-glass-panel p-6">
         <h2 className="text-lg font-semibold text-white mb-4">我的投递</h2>
         {loading ? (
-          <div className="flex justify-center py-10 text-gray-400">
-            <Loader2 className="animate-spin" />
-          </div>
-        ) : list.length === 0 ? (
+        <PageSkeleton variant="table" padded={false} />
+      ) : list.length === 0 ? (
           <p className="text-center text-gray-500 py-8 text-sm">还没有投递记录</p>
         ) : (
           <div className="space-y-3">

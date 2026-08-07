@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Edit, Trash2, Search, X, Filter, CheckSquare, Square, Settings, GripVertical, Users, Loader2, BookOpen, ArrowUpToLine, ArrowDownToLine, ListOrdered } from 'lucide-react'
+import PageSkeleton from '../../components/Skeleton'
 import {
   DndContext,
   closestCenter,
@@ -1263,7 +1264,7 @@ export default function CourseManagement() {
 
       <div className="student-glass-panel student-glass-panel--static overflow-hidden">
         {loading ? (
-          <div className="p-12 text-center text-gray-400">加载中...</div>
+          <PageSkeleton variant="table" padded={false} />
         ) : (
           <div className="admin-table-container">
             <DndContext

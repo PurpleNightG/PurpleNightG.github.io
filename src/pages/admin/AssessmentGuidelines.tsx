@@ -4,6 +4,7 @@ import { toast } from 'react-hot-toast'
 import { formatDateTime } from '../../utils/dateFormat'
 import { FileText, Save, Eye, EyeOff } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
+import PageSkeleton from '../../components/Skeleton'
 
 interface Guidelines {
   id: number
@@ -59,11 +60,7 @@ export default function AssessmentGuidelines() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-gray-400">加载中...</div>
-      </div>
-    )
+    return <PageSkeleton variant="form" />
   }
 
   return (

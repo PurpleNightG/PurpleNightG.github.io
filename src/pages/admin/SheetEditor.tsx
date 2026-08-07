@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import PageSkeleton from '../../components/Skeleton'
 import {
   ArrowLeft,
   Loader2,
@@ -217,11 +218,7 @@ export default function SheetEditor() {
   }, [])
 
   if (loading) {
-    return (
-      <div className="flex justify-center py-24 text-gray-400">
-        <Loader2 className="animate-spin" />
-      </div>
-    )
+    return <PageSkeleton variant="detail" />
   }
 
   const active = getActiveSheet(workbook)

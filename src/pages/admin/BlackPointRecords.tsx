@@ -7,6 +7,7 @@ import ConfirmDialog from '../../components/ConfirmDialog'
 import SearchableSelect from '../../components/SearchableSelect'
 import DateInput from '../../components/DateInput'
 import MemberNameCell from '../../components/MemberNameCell'
+import PageSkeleton from '../../components/Skeleton'
 
 interface BlackPointRecord {
   id: number
@@ -390,7 +391,7 @@ export default function BlackPointRecords() {
 
       <div className="student-glass-panel student-glass-panel--static overflow-hidden">
         {loading ? (
-          <div className="p-12 text-center text-gray-400">加载中...</div>
+          <PageSkeleton variant="table" padded={false} />
         ) : (
           <div className="admin-table-container">
             <table className="admin-table">

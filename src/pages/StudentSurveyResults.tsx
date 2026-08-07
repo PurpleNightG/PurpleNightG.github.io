@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { surveyAPI } from '../utils/api'
 import { toast } from '../utils/toast'
+import PageSkeleton from '../components/Skeleton'
 import {
   Loader2,
   ArrowLeft,
@@ -79,11 +80,7 @@ export default function StudentSurveyResults() {
   }, [data])
 
   if (loading) {
-    return (
-      <div className="flex justify-center py-24 text-gray-400">
-        <Loader2 className="animate-spin" />
-      </div>
-    )
+    return <PageSkeleton variant="table" />
   }
 
   if (!data) return null

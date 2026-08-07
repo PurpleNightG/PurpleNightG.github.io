@@ -6,6 +6,7 @@ import { toast } from '../../utils/toast'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import SearchableSelect from '../../components/SearchableSelect'
 import MemberNameCell from '../../components/MemberNameCell'
+import PageSkeleton from '../../components/Skeleton'
 
 interface QuitApproval {
   id: number
@@ -576,7 +577,7 @@ export default function QuitApproval() {
 
       <div className="student-glass-panel student-glass-panel--static overflow-hidden">
         {loading ? (
-          <div className="p-12 text-center text-gray-400">加载中...</div>
+          <PageSkeleton variant="table" padded={false} />
         ) : (
           <div className="admin-table-container">
             <table className="admin-table">

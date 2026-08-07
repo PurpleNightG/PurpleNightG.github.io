@@ -1,0 +1,67 @@
+import nodemailer from 'nodemailer'
+
+let transporter = null
+
+function smtpConfig() {
+  return {
+    host: process.env.SMTP_HOST || 'smtp.qq.com',
+    port: Number(process.env.SMTP_PORT || 465),
+    secure: process.env.SMTP_SECURE !== '0',
+    auth: {
+      user: process.env.SMTP_USER || '',
+      pass: process.env.SMTP_PASS || '',
+    },
+  }
+}
+
+export function isMailConfigured() {
+  const c = smtpConfig()
+  return !!(c.auth.user && c.auth.pass)
+}
+
+function getTransporter() {
+  if (!isMailConfigured()) {
+    throw new Error('邮件服务未配置（缺少 SMTP_USER / SMTP_PASS）')
+  }
+  if (!transporter) {
+    transporter = nodemailer.createTransport(smtpConfig())
+  }
+  return transporter
+}
+
+export function maskEmail(email) {
+  const s = String(email || '').trim()
+  const at = s.indexOf('@')
+  if (at <= 0) return '***'
+  const name = s.slice(0, at)
+  const domain = s.slice(at + 1)
+  const show = name.length <= 2 ? name[0] : name.slice(0, 2)
+  return `${show}***@${domain}`
+}
+
+/**
+ * 发送登录验证码
+ */
+export async function sendLoginOtpMail(to, code) {
+  const fromUser = process.env.SMTP_USER
+  const fromName = process.env.SMTP_FROM_NAME || '紫夜安全中心'
+  const info = await getTransporter().sendMail({
+    // 用对象形式，由 nodemailer 按 RFC2047 编码中文显示名，避免 QQ/Foxmail 乱码
+    from: {
+      name: fromName,
+      address: fromUser,
+    },
+    to,
+    subject: '【紫夜安全中心】管理员登录验证码',
+    text: `您正在进行管理员登录二次验证。\n\n验证码：${code}\n\n5 分钟内有效。如非本人操作，请立即修改密码并联系超级管理员。\n\n— 紫夜安全中心`,
+    html: `
+      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#0f0f14;color:#e8e8ef;border-radius:12px">
+        <h2 style="color:#c4b5fd;margin:0 0 12px">紫夜安全中心</h2>
+        <p style="margin:0 0 16px;color:#a1a1aa">检测到管理员登录环境变化（IP 或新设备），请使用验证码完成二次验证：</p>
+        <div style="font-size:28px;letter-spacing:8px;font-weight:700;color:#fff;background:#1f1633;padding:16px 20px;border-radius:8px;text-align:center">${code}</div>
+        <p style="margin:16px 0 0;font-size:13px;color:#71717a">验证码 5 分钟内有效。如非本人操作，请立即修改密码并联系超级管理员。</p>
+      </div>
+    `,
+  })
+  return info
+}

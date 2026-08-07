@@ -4,6 +4,7 @@ import { Calendar, Plus, Clock, CheckCircle, Loader2 } from 'lucide-react'
 import { formatDate } from '../utils/dateFormat'
 import { toast } from '../utils/toast'
 import DateInput from '../components/DateInput'
+import PageSkeleton from '../components/Skeleton'
 
 interface LeaveRecord {
   id: number
@@ -156,7 +157,7 @@ export default function StudentLeave() {
 
       <div className="student-glass-panel overflow-hidden">
         {loading ? (
-          <div className="p-12 text-center text-gray-400">加载中...</div>
+          <PageSkeleton variant="table" padded={false} />
         ) : tab === 'records' ? (
           records.length === 0 ? (
             <div className="p-12 text-center">

@@ -9,6 +9,7 @@ import { toast } from '../utils/toast'
 import { useSurveyPending } from '../contexts/SurveyPendingContext'
 import { formatDate } from '../utils/dateFormat'
 import { resolveCongratsToShow, acknowledgeCongrats, syncCongratsBaseline, type CongratsConfig } from '../utils/stageCongrats'
+import PageSkeleton from '../components/Skeleton'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 
@@ -566,14 +567,7 @@ export default function StudentHome() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="inline-block w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-          <div className="text-gray-400">加载中...</div>
-        </div>
-      </div>
-    )
+    return <PageSkeleton variant="cards" />
   }
 
   if (error || !member) {

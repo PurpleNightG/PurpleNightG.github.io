@@ -5,6 +5,7 @@ import { CheckCircle, XCircle, Clock, Search, Filter, X, Calendar, Users, Trash2
 import { formatDate, formatDateTime } from '../../utils/dateFormat'
 import { useBadges } from '../../contexts/BadgeContext'
 import MemberNameCell from '../../components/MemberNameCell'
+import PageSkeleton from '../../components/Skeleton'
 
 interface Application {
   id: number
@@ -300,11 +301,7 @@ export default function AssessmentApproval() {
   const pendingCount = applications.filter(a => a.status === '待审批').length
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-gray-400">加载中...</div>
-      </div>
-    )
+    return <PageSkeleton variant="table" />
   }
 
   return (

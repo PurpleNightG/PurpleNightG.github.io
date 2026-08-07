@@ -6,6 +6,7 @@ import { formatDateTime } from '../../../utils/dateFormat'
 import ConfirmDialog from '../../../components/ConfirmDialog'
 import SearchableSelect from '../../../components/SearchableSelect'
 import MemberNameCell from '../../../components/MemberNameCell'
+import PageSkeleton from '../../../components/Skeleton'
 import { Loader2, Plus, Trash2, Shield, RefreshCw, Search } from 'lucide-react'
 
 interface WhitelistRow {
@@ -203,9 +204,7 @@ export default function AntiCheatDllWhitelist() {
 
       <div className="student-glass-panel student-glass-panel--static overflow-x-auto">
         {loading ? (
-          <div className="flex justify-center py-16 text-gray-400">
-            <Loader2 className="animate-spin" />
-          </div>
+          <PageSkeleton variant="table" padded={false} />
         ) : rows.length === 0 ? (
           <p className="text-center text-gray-500 py-14 text-sm">暂无白名单记录</p>
         ) : (

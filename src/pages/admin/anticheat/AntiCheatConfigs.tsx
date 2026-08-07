@@ -6,6 +6,7 @@ import { toast } from '../../../utils/toast'
 import { formatDateTime } from '../../../utils/dateFormat'
 import ConfirmDialog from '../../../components/ConfirmDialog'
 import MemberNameCell from '../../../components/MemberNameCell'
+import PageSkeleton from '../../../components/Skeleton'
 import { filterPakFiles, hashPakFiles, type ModFileMeta } from '../../../utils/modHash'
 import {
   Loader2,
@@ -346,9 +347,7 @@ export default function AntiCheatConfigs() {
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-16 text-gray-400">
-          <Loader2 className="animate-spin" />
-        </div>
+        <PageSkeleton variant="table" padded={false} />
       ) : (
         <div className="student-glass-panel student-glass-panel--static overflow-x-auto">
           <table className="w-full text-sm">

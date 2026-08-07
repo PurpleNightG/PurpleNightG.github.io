@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { ArrowLeft, AlertCircle } from 'lucide-react'
+import PageSkeleton from '../components/Skeleton'
 import { docRemarkPlugins, docRehypePlugins } from '../utils/markdown'
 
 export default function DocViewer() {
@@ -34,14 +35,7 @@ export default function DocViewer() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
-          <p className="text-gray-400">加载文档中...</p>
-        </div>
-      </div>
-    )
+    return <PageSkeleton variant="plain" />
   }
 
   if (error) {

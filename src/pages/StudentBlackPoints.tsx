@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { blackPointAPI } from '../utils/api'
 import { AlertTriangle, ShieldOff, ShieldCheck } from 'lucide-react'
 import { formatDate } from '../utils/dateFormat'
+import PageSkeleton from '../components/Skeleton'
 
 interface BlackPoint {
   id: number
@@ -70,7 +71,7 @@ export default function StudentBlackPoints() {
 
       <div className="student-glass-panel overflow-hidden">
         {loading ? (
-          <div className="p-12 text-center text-gray-400">加载中...</div>
+          <PageSkeleton variant="table" padded={false} />
         ) : records.length === 0 ? (
           <div className="p-12 text-center">
             <ShieldCheck className="text-green-400 mx-auto mb-3" size={48} />

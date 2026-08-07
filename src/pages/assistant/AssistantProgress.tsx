@@ -6,6 +6,7 @@ import { formatDate } from '../../utils/dateFormat'
 import { getRoleColor } from '../../utils/roleColors'
 import MemberNameCell from '../../components/MemberNameCell'
 import ConfirmDialog from '../../components/ConfirmDialog'
+import PageSkeleton from '../../components/Skeleton'
 import {
   readLocalJson, readLocalString, cycleSort, cmpBasic, type SortConfig,
 } from '../../utils/persistedState'
@@ -599,7 +600,7 @@ export default function AssistantProgress() {
 
       <div className="student-glass-panel student-glass-panel--static overflow-hidden">
         {loading ? (
-          <div className="p-12 text-center text-gray-400">加载中...</div>
+          <PageSkeleton variant="table" padded={false} />
         ) : (
           <div className="admin-table-container">
             <table className="admin-table">

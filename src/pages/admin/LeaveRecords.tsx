@@ -8,6 +8,7 @@ import SearchableSelect from '../../components/SearchableSelect'
 import DateInput from '../../components/DateInput'
 import { useBadges } from '../../contexts/BadgeContext'
 import MemberNameCell from '../../components/MemberNameCell'
+import PageSkeleton from '../../components/Skeleton'
 
 interface LeaveRecord {
   id: number
@@ -569,7 +570,7 @@ export default function LeaveRecords() {
       {activeTab === 'endApproval' && (
         <div className="student-glass-panel student-glass-panel--static overflow-hidden">
           {loading ? (
-            <div className="p-12 text-center text-gray-400">加载中...</div>
+            <PageSkeleton variant="table" padded={false} />
           ) : endApprovalRecords.length === 0 ? (
             <div className="p-12 text-center">
               <Bell className="text-gray-600 mx-auto mb-3" size={48} />
@@ -624,7 +625,7 @@ export default function LeaveRecords() {
       {activeTab === 'applications' && (
         <div className="student-glass-panel student-glass-panel--static overflow-hidden">
           {loadingApps ? (
-            <div className="p-12 text-center text-gray-400">加载中...</div>
+            <PageSkeleton variant="table" padded={false} />
           ) : applications.length === 0 ? (
             <div className="p-12 text-center">
               <Bell className="text-gray-600 mx-auto mb-3" size={48} />
@@ -695,7 +696,7 @@ export default function LeaveRecords() {
       {activeTab === 'records' && (
       <div className="student-glass-panel student-glass-panel--static overflow-hidden">
         {loading ? (
-          <div className="p-12 text-center text-gray-400">加载中...</div>
+          <PageSkeleton variant="table" padded={false} />
         ) : (
           <div className="admin-table-container">
             <table className="admin-table">

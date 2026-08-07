@@ -6,6 +6,7 @@ import { getRoleColor } from '../../utils/roleColors'
 import MemberNameCell from '../../components/MemberNameCell'
 import StyledSelect from '../../components/StyledSelect'
 import AssistantStudentDetail from './AssistantStudentDetail'
+import PageSkeleton from '../../components/Skeleton'
 import {
   Loader2, ArrowRightLeft, UserMinus, X, Eye, CalendarCheck, Users, Search, Filter, ChevronUp, ChevronDown,
 } from 'lucide-react'
@@ -326,7 +327,7 @@ export default function AssistantStudents() {
 
       <div className="student-glass-panel student-glass-panel--static overflow-hidden rounded-xl">
         {loading ? (
-          <div className="p-10 text-center text-gray-400">加载中...</div>
+          <PageSkeleton variant="table" padded={false} />
         ) : list.length === 0 ? (
           <div className="p-10 text-center text-gray-400">暂无已通过归属的学员</div>
         ) : filtered.length === 0 ? (

@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react'
+import { getAdminSecurityHeaders } from '../utils/deviceIdentity'
 
 const API = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3000/api'
 
@@ -39,9 +40,11 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
 
   const fetchBadges = useCallback(async () => {
     try {
-      const token = localStorage.getItem('token')
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token')
+      if (!token) return
+      const sec = await getAdminSecurityHeaders().catch(() => ({} as Record<string, string>))
       const res = await fetch(`${API}/badges`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        headers: { Authorization: `Bearer ${token}`, ...sec },
         cache: 'no-store',
       })
       const data = await res.json()

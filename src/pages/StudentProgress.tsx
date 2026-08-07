@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { progressAPI, courseAPI } from '../utils/api'
 import { toast } from '../utils/toast'
 import { BookOpen, Award, Clock, TrendingUp, ChevronDown } from 'lucide-react'
+import PageSkeleton from '../components/Skeleton'
 import {
   parseMetaOptions,
   tagBadgeClass,
@@ -152,11 +153,7 @@ export default function StudentProgress() {
   }, {} as Record<string, Course[]>)
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-white text-lg">加载中...</div>
-      </div>
-    )
+    return <PageSkeleton variant="cards" />
   }
 
   return (

@@ -4,6 +4,7 @@ import { toast } from '../utils/toast'
 import { FileText, Calendar, User, Search, X } from 'lucide-react'
 import PublicAssessmentReportDetail, { normalizePublicAssessment, PublicAssessment } from '../components/PublicAssessmentReportDetail'
 import FullscreenReportModal from '../components/FullscreenReportModal'
+import PageSkeleton from '../components/Skeleton'
 
 interface PublicVideo {
   id: number
@@ -54,11 +55,7 @@ export default function PublicVideos() {
   })
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-gray-400">加载中...</div>
-      </div>
-    )
+    return <PageSkeleton variant="cards" />
   }
 
   return (

@@ -16,6 +16,7 @@ import {
   syncCongratsBaseline,
   type CongratsConfig,
 } from '../../utils/stageCongrats'
+import PageSkeleton from '../../components/Skeleton'
 
 const STAGE_ORDER = ['未新训', '新训初期', '新训一期', '新训二期', '新训三期', '新训准考']
 const STAGE_TEXT = [
@@ -274,10 +275,7 @@ export default function AssistantHome() {
         </div>
 
         {loading ? (
-          <div className="text-center py-20">
-            <div className="inline-block animate-spin rounded-full h-16 w-16 border-4 border-gray-700 border-t-teal-500" />
-            <p className="text-gray-400 mt-6 text-lg">加载中...</p>
-          </div>
+          <PageSkeleton variant="cards" padded={false} />
         ) : (
           <div className="space-y-6">
             <div className="student-glass-panel p-5 sm:p-6">

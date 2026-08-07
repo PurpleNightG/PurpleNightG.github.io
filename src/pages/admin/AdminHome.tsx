@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
+import PageSkeleton from '../../components/Skeleton'
 import {
   Users, UserMinus, Award, Bell, FileText, BookOpen, GraduationCap, Clock,
   LogIn, LogOut, X, AlertCircle, Mailbox, Calendar, CheckCircle2, ShieldAlert,
@@ -11,8 +12,20 @@ import { formatDate } from '../../utils/dateFormat'
 import { getRoleColor } from '../../utils/roleColors'
 import { useBadges } from '../../contexts/BadgeContext'
 import MemberAvatar from '../../components/MemberAvatar'
+import { getAdminSecurityHeaders } from '../../utils/deviceIdentity'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+
+async function adminFetch(path: string, init: RequestInit = {}) {
+  const token = localStorage.getItem('token') || sessionStorage.getItem('token') || ''
+  const sec = await getAdminSecurityHeaders().catch(() => ({} as Record<string, string>))
+  const headers: Record<string, string> = {
+    ...(init.headers as Record<string, string>),
+    ...sec,
+  }
+  if (token) headers.Authorization = `Bearer ${token}`
+  return fetch(`${API_URL}${path}`, { ...init, headers })
+}
 
 interface Statistics {
   totalMembers: number
@@ -105,7 +118,7 @@ export default function AdminHome() {
 
   const loadDutyStatus = async (username: string) => {
     try {
-      const res = await fetch(`${API_URL}/duty/status/${encodeURIComponent(username)}`)
+      const res = await adminFetch(`/duty/status/${encodeURIComponent(username)}`)
       const data = await res.json()
       setOnDuty(data.onDuty)
       setClockedInAt(data.clockedInAt || null)
@@ -116,7 +129,7 @@ export default function AdminHome() {
     if (!adminUsername || dutyLoading) return
     setDutyLoading(true)
     try {
-      const res = await fetch(`${API_URL}/duty/clock-in`, {
+      const res = await adminFetch('/duty/clock-in', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: adminUsername, nickname: adminName }),
@@ -134,7 +147,7 @@ export default function AdminHome() {
     if (!adminUsername || dutyLoading) return
     setDutyLoading(true)
     try {
-      const res = await fetch(`${API_URL}/duty/clock-out`, {
+      const res = await adminFetch('/duty/clock-out', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: adminUsername }),
@@ -523,10 +536,7 @@ export default function AdminHome() {
         </div>
 
         {loading ? (
-          <div className="text-center py-20">
-            <div className="inline-block animate-spin rounded-full h-16 w-16 border-4 border-gray-700 border-t-purple-600" />
-            <p className="text-gray-400 mt-6 text-lg">加载中...</p>
-          </div>
+          <PageSkeleton variant="cards" padded={false} />
         ) : (
           <div className="space-y-6">
             {/* 意见箱首页醒目提示条 */}

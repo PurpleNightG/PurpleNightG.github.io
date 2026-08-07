@@ -6,6 +6,7 @@ import { formatDate, formatDateTime, getTodayDateString } from '../../utils/date
 import DateInput from '../../components/DateInput'
 import StyledSelect from '../../components/StyledSelect'
 import MemberNameCell from '../../components/MemberNameCell'
+import PageSkeleton from '../../components/Skeleton'
 import {
   readLocalJson, readLocalString, cycleSort, cmpBasic, type SortConfig,
 } from '../../utils/persistedState'
@@ -269,9 +270,7 @@ export default function AssistantBlackPoints() {
       )}
 
       {loading ? (
-        <div className="student-glass-panel student-glass-panel--static rounded-xl py-16 text-center text-gray-400">
-          加载中...
-        </div>
+        <PageSkeleton variant="table" padded={false} />
       ) : (
         <div className="student-glass-panel student-glass-panel--static overflow-hidden rounded-xl">
           {filtered.length === 0 ? (

@@ -4,6 +4,7 @@ import { toast } from '../../utils/toast'
 import { formatDate } from '../../utils/dateFormat'
 import { getRoleColor } from '../../utils/roleColors'
 import MemberNameCell from '../../components/MemberNameCell'
+import PageSkeleton from '../../components/Skeleton'
 import {
   Search, X, CheckSquare, Square, Copy, Eye, EyeOff, Filter, ChevronUp, ChevronDown, Calendar,
 } from 'lucide-react'
@@ -414,7 +415,7 @@ export default function AssistantAttendance() {
             {!showCustomExtended && '（已隐藏自定义延期）'}
           </div>
           {loading ? (
-            <div className="p-10 text-center text-gray-400">加载中...</div>
+            <PageSkeleton variant="table" padded={false} />
           ) : filteredTraining.length === 0 ? (
             <div className="p-10 text-center text-gray-500">当前没有新训催促对象</div>
           ) : (
@@ -524,7 +525,7 @@ export default function AssistantAttendance() {
             加入后 60 天内达新训三期 → 再 45 天内达准考及以上（总上限 105 天）→ 准考/紫夜半年需新训。请假暂停计时。剩余 ≤7 天进入预警。
           </div>
           {attendanceLoading ? (
-            <div className="p-10 text-center text-gray-400">加载中...</div>
+            <PageSkeleton variant="table" padded={false} />
           ) : filteredAttendance.length === 0 ? (
             <div className="p-10 text-center text-gray-500">当前没有考勤进度对象</div>
           ) : (

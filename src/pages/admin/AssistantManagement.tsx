@@ -10,6 +10,7 @@ import { listMemberEditDiffs, memberEditDiffCount } from '../../utils/memberEdit
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { useBadges } from '../../contexts/BadgeContext'
 import { readLocalJson } from '../../utils/persistedState'
+import PageSkeleton from '../../components/Skeleton'
 
 type PendingTabKey = 'assignments' | 'creates' | 'promotions' | 'edits' | 'blackPoints' | 'leaves'
 
@@ -689,7 +690,7 @@ export default function AssistantManagement() {
       </div>
 
       {loading ? (
-        <div className="text-gray-400 p-8">加载中...</div>
+        <PageSkeleton variant="table" padded={false} />
       ) : tab === 'list' ? (
         <div className="student-glass-panel student-glass-panel--static overflow-hidden rounded-xl">
           <div className="admin-table-container">
@@ -1744,9 +1745,7 @@ export default function AssistantManagement() {
             </div>
 
             {assignLoading ? (
-              <div className="flex items-center justify-center gap-2 text-gray-400 py-10">
-                <Loader2 size={18} className="animate-spin" /> 加载中…
-              </div>
+              <PageSkeleton variant="table" padded={false} rows={5} />
             ) : assignMode === 'view' ? (
               <>
                 <div className="text-xs text-gray-500 mb-1 shrink-0">长期归属</div>

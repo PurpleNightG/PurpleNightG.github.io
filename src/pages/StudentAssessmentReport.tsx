@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { assessmentAPI, publicVideoAPI } from '../utils/api'
 import { toast } from '../utils/toast'
 import { MapPin, CheckCircle, XCircle, Clock, AlertCircle, FileText, Target, Upload, X } from 'lucide-react'
+import PageSkeleton from '../components/Skeleton'
 
 // 扣分项配置
 const DEDUCTION_CATEGORIES = {
@@ -204,11 +205,7 @@ export default function StudentAssessmentReport() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-gray-400">加载中...</div>
-      </div>
-    )
+    return <PageSkeleton variant="detail" />
   }
 
   if (assessments.length === 0) {

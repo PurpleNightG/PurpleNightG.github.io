@@ -35,11 +35,48 @@ import sheetsRoutes from './routes/sheets.js'
 import opinionBoxRoutes from './routes/opinionBox.js'
 import accountSecurityRoutes from './routes/accountSecurity.js'
 import assistantRoutes from './routes/assistant.js'
+import securityRoutes from './routes/security.js'
+import { requireAdmin, identityGateMiddleware } from './utils/authGate.js'
+import { adminAuditMiddleware, ensureAuditLogTable } from './utils/adminAudit.js'
+import { ensureAdminRoleColumns } from './utils/adminRoles.js'
+import { ensureLoginOtpTable } from './utils/loginOtp.js'
 
 dotenv.config()
 
 const app = express()
 const PORT = process.env.PORT || 8000
+
+const trustProxy =
+  process.env.TRUST_PROXY === '1' ||
+  process.env.TRUST_PROXY === 'true' ||
+  process.env.TRUST_PROXY === 'yes'
+if (trustProxy) {
+  // 生产反代（Nginx/Caddy 等）后，让 Express 与 getClientIp 信任 X-Forwarded-For
+  app.set('trust proxy', 1)
+}
+
+const adminGuard = [requireAdmin, adminAuditMiddleware]
+
+/** 混合路由：白名单路径（可限制方法）以外要求管理员 */
+function requireAdminUnless(rules) {
+  const normalized = rules.map((r) =>
+    typeof r === 'string' ? { path: r, methods: null } : r
+  )
+  return (req, res, next) => {
+    const p = req.path || ''
+    const method = req.method
+    const hit = normalized.some((r) => {
+      if (!r.methods || r.methods.includes(method)) {
+        if (r.path === '*') return true
+        if (r.path === '/') return p === '/' || (r.includeSubpaths && p.startsWith('/'))
+        return p === r.path || p.startsWith(r.path + '/')
+      }
+      return false
+    })
+    if (hit) return next()
+    return requireAdmin(req, res, () => adminAuditMiddleware(req, res, next))
+  }
+}
 
 // CORS配置 - 允许的来源
 const allowedOrigins = [
@@ -84,23 +121,49 @@ app.use(express.json({ limit: '512kb' }))
 app.use(express.urlencoded({ extended: true, limit: '512kb' }))
 app.use(express.urlencoded({ extended: true }))
 
+// 已持有合法 JWT 时：账号被删 / 会话被踢立即 401（防止删库管理员仍可操作）
+app.use('/api', identityGateMiddleware)
+
 // 路由
 app.use('/api/auth', authRoutes)
-app.use('/api/student', studentAuthRoutes)  // 学员端登录路由
-app.use('/api/members', membersRoutes)
-app.use('/api/leaves', leavesRoutes)
-app.use('/api/blackpoints', blackpointsRoutes)
-app.use('/api/reminders', remindersRoutes)
-app.use('/api/quit', quitRoutes)
-app.use('/api/retention', retentionRoutes)
-app.use('/api/courses', coursesRoutes)
-app.use('/api/progress', progressRoutes)
-app.use('/api/settings', settingsRoutes)
-app.use('/api/assessments', assessmentsRoutes)
-app.use('/api/assessment-applications', assessmentApplicationsRoutes)
-app.use('/api/assessment-guidelines', assessmentGuidelinesRoutes)
-app.use('/api/public-videos', publicVideosRoutes)
-app.use('/api/video-upload', videoUploadRoutes)
+app.use('/api/student', studentAuthRoutes)
+app.use('/api/members', ...adminGuard, membersRoutes)
+app.use(
+  '/api/leaves',
+  requireAdminUnless([
+    { path: '/my', methods: ['GET'] },
+    { path: '/applications/my', methods: ['GET'] },
+    { path: '/applications', methods: ['POST'] },
+  ]),
+  leavesRoutes
+)
+app.use('/api/blackpoints', requireAdminUnless([{ path: '/my', methods: ['GET'] }]), blackpointsRoutes)
+app.use('/api/reminders', ...adminGuard, remindersRoutes)
+app.use('/api/quit', ...adminGuard, quitRoutes)
+app.use('/api/retention', ...adminGuard, retentionRoutes)
+app.use('/api/courses', ...adminGuard, coursesRoutes)
+app.use('/api/progress', ...adminGuard, progressRoutes)
+app.use('/api/settings', ...adminGuard, settingsRoutes)
+app.use('/api/assessments', ...adminGuard, assessmentsRoutes)
+app.use(
+  '/api/assessment-applications',
+  requireAdminUnless([
+    { path: '/', methods: ['POST'] },
+    { path: '/member', methods: ['GET'] },
+  ]),
+  assessmentApplicationsRoutes
+)
+app.use(
+  '/api/assessment-guidelines',
+  requireAdminUnless([{ path: '/', methods: ['GET'] }]),
+  assessmentGuidelinesRoutes
+)
+app.use(
+  '/api/public-videos',
+  requireAdminUnless([{ path: '*', methods: ['GET'] }]),
+  publicVideosRoutes
+)
+app.use('/api/video-upload', ...adminGuard, videoUploadRoutes)
 app.use('/api/classmates', classmatesRoutes)
 app.use('/api/turn', turnRoutes)
 app.use('/api/agora', agoraRoutes)
@@ -108,15 +171,25 @@ app.use('/api/volc', volcRoutes)
 app.use('/api/room', roomRoutes)
 app.use('/api/meeting', meetingRoutes)
 app.use('/api/versions', versionsRoutes)
-app.use('/api/duty', dutyRoutes)
-app.use('/api/docs', docsRoutes)
-app.use('/api/badges', badgesRoutes)
+app.use('/api/duty', ...adminGuard, dutyRoutes)
+app.use(
+  '/api/docs',
+  requireAdminUnless([
+    { path: '/version', methods: ['GET'] },
+    { path: '/list', methods: ['GET'] },
+    { path: '/file', methods: ['GET'] },
+    { path: '/index', methods: ['GET'] },
+  ]),
+  docsRoutes
+)
+app.use('/api/badges', ...adminGuard, badgesRoutes)
 app.use('/api/anticheat', anticheatRoutes)
 app.use('/api/surveys', surveysRoutes)
 app.use('/api/sheets', sheetsRoutes)
 app.use('/api/opinion-box', opinionBoxRoutes)
 app.use('/api/account-security', accountSecurityRoutes)
 app.use('/api/assistant', assistantRoutes)
+app.use('/api/security', ...adminGuard, securityRoutes)
 
 // 健康检查
 app.get('/api/health', (req, res) => {
@@ -131,6 +204,14 @@ async function startServer() {
   if (!dbConnected) {
     console.error('⚠️  数据库连接失败，服务器启动中止')
     process.exit(1)
+  }
+
+  try {
+    await ensureAdminRoleColumns()
+    await ensureAuditLogTable()
+    await ensureLoginOtpTable()
+  } catch (e) {
+    console.warn('安全相关表初始化失败:', e.message)
   }
 
   app.listen(PORT, () => {

@@ -42,8 +42,8 @@ export default function Toast({ message, type, onClose, duration = 3000 }: Toast
   const style = styles[type]
 
   return (
-    <div className="fixed top-4 right-4 z-[9999] animate-slide-in">
-      <div className={`${style.bg} ${style.text} border rounded-lg shadow-lg backdrop-blur-sm px-4 py-3 pr-10 min-w-[300px] max-w-md`}>
+    <div className="relative pointer-events-auto animate-slide-in">
+      <div className={`${style.bg} ${style.text} border rounded-lg shadow-lg px-4 py-3 pr-10 min-w-[300px] max-w-md`}>
         <div className="flex items-center gap-3">
           {style.icon}
           <span className="font-medium">{message}</span>

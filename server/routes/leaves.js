@@ -4,12 +4,30 @@ import jwt from 'jsonwebtoken'
 
 const router = express.Router()
 
+function requireStudentToken(req, res) {
+  const token = req.headers.authorization?.replace('Bearer ', '')
+  if (!token) {
+    res.status(401).json({ success: false, message: '未登录' })
+    return null
+  }
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key')
+    if (decoded.role !== 'student' && decoded.userType !== 'student') {
+      res.status(403).json({ success: false, message: '仅学员可访问' })
+      return null
+    }
+    return decoded
+  } catch {
+    res.status(401).json({ success: false, message: '登录已失效' })
+    return null
+  }
+}
+
 // 学员获取自己的请假记录
 router.get('/my', async (req, res) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '')
-    if (!token) return res.status(401).json({ success: false, message: '未登录' })
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key')
+    const decoded = requireStudentToken(req, res)
+    if (!decoded) return
     const memberId = decoded.id
 
     const [rows] = await pool.query(`
@@ -45,9 +63,8 @@ router.get('/applications', async (req, res) => {
 // 学员获取自己的请假申请
 router.get('/applications/my', async (req, res) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '')
-    if (!token) return res.status(401).json({ success: false, message: '未登录' })
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key')
+    const decoded = requireStudentToken(req, res)
+    if (!decoded) return
     const memberId = decoded.id
 
     const [rows] = await pool.query(`
@@ -63,9 +80,8 @@ router.get('/applications/my', async (req, res) => {
 // 学员提交请假申请
 router.post('/applications', async (req, res) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '')
-    if (!token) return res.status(401).json({ success: false, message: '未登录' })
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key')
+    const decoded = requireStudentToken(req, res)
+    if (!decoded) return
     const memberId = decoded.id
 
     const { reason, start_date, end_date } = req.body

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
+import PageSkeleton from '../../components/Skeleton'
 import {
   Plus,
   Table2,
@@ -349,9 +350,7 @@ export default function SheetManagement() {
       )}
 
       {loading ? (
-        <div className="flex justify-center py-20 text-gray-400">
-          <Loader2 className="animate-spin" />
-        </div>
+        <PageSkeleton variant="table" padded={false} />
       ) : list.length === 0 ? (
         <div className="student-glass-panel student-glass-panel--static py-16 px-6 text-center">
           <FileSpreadsheet className="mx-auto text-gray-600 mb-3" size={36} />

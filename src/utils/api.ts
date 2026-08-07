@@ -1,3 +1,5 @@
+import { getAdminSecurityHeaders } from './deviceIdentity'
+
 // API 基础配置
 const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost:8000/api'
 
@@ -5,50 +7,122 @@ const API_BASE_URL = (import.meta as any).env?.VITE_API_URL || 'http://localhost
 const requestCache = new Map<string, { data: any; timestamp: number }>()
 const CACHE_DURATION = 3000 // 3秒缓存
 
+function clearStoredAuth(kind?: 'admin' | 'student' | 'all') {
+  const clearAdmin = !kind || kind === 'admin' || kind === 'all'
+  const clearStudent = !kind || kind === 'student' || kind === 'all'
+  if (clearAdmin) {
+    localStorage.removeItem('token')
+    localStorage.removeItem('user')
+    sessionStorage.removeItem('token')
+    sessionStorage.removeItem('user')
+  }
+  if (clearStudent) {
+    localStorage.removeItem('studentToken')
+    localStorage.removeItem('studentUser')
+    sessionStorage.removeItem('studentToken')
+    sessionStorage.removeItem('studentUser')
+  }
+}
+
+/** 账号删除 / 会话踢出后强制回登录页 */
+export function forceRelogin(message?: string, kind: 'admin' | 'student' | 'all' = 'all') {
+  clearStoredAuth(kind)
+  clearCache()
+  try {
+    if (message) sessionStorage.setItem('auth_flash', message)
+  } catch {
+    /* ignore */
+  }
+  const path = window.location.pathname || ''
+  if (!path.includes('/login')) {
+    window.location.assign('/#/login')
+  }
+}
+
+function resolveRequestToken(headers: Record<string, string>) {
+  if (headers['Authorization']) return null
+  return (
+    localStorage.getItem('token') ||
+    sessionStorage.getItem('token') ||
+    localStorage.getItem('studentToken') ||
+    sessionStorage.getItem('studentToken') ||
+    ''
+  )
+}
+
+function hasAdminToken() {
+  return !!(localStorage.getItem('token') || sessionStorage.getItem('token'))
+}
+
 // 通用请求函数
 async function request(url: string, options: RequestInit = {}) {
-  const token = localStorage.getItem('token')
-  
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string>),
   }
-  
+
+  const token = resolveRequestToken(headers)
   if (token && !headers['Authorization']) {
     headers['Authorization'] = `Bearer ${token}`
   }
-  
+
+  // 管理端：附带 Fingerprint + 公网 IP，供中途换 IP / 换设备检测
+  if (hasAdminToken()) {
+    try {
+      const sec = await getAdminSecurityHeaders()
+      Object.assign(headers, sec)
+    } catch {
+      /* ignore */
+    }
+  }
+
   // 只缓存GET请求
   const cacheKey = `${url}_${options.method || 'GET'}`
   const isGetRequest = !options.method || options.method === 'GET'
-  
+
   if (isGetRequest) {
     const cached = requestCache.get(cacheKey)
     if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
       return cached.data
     }
   }
-  
+
   const response = await fetch(`${API_BASE_URL}${url}`, {
     ...options,
     headers,
   })
-  
+
   const data = await response.json()
-  
+
   if (!response.ok) {
-    const err: any = new Error(data.message || '请求失败')
-    err.code = data.code
+    const code = data?.code
+    const msg = data?.message || '请求失败'
+    if (
+      response.status === 401 &&
+      headers['Authorization'] &&
+      (code === 'ACCOUNT_GONE' ||
+        code === 'EMAIL_REQUIRED' ||
+        code === 'LOGIN_DISABLED' ||
+        code === 'SESSION_IP_CHANGED' ||
+        code === 'SESSION_DEVICE_CHANGED' ||
+        code === 'SESSION_BINDING' ||
+        code === 'SESSION_SUPERSEDED' ||
+        /会话已失效|账号已不存在|账号已失效|管理员账号已失效|未绑定安全邮箱|禁止登录|IP 变化|设备环境变化|其它设备登录/.test(msg))
+    ) {
+      forceRelogin(msg, 'all')
+    }
+    const err: any = new Error(msg)
+    err.code = code
     err.data = data.data
     err.status = response.status
     throw err
   }
-  
+
   // 缓存GET请求结果
   if (isGetRequest) {
     requestCache.set(cacheKey, { data, timestamp: Date.now() })
   }
-  
+
   return data
 }
 
@@ -689,6 +763,65 @@ export const accountSecurityAPI = {
       headers: { Authorization: `Bearer ${token}` },
     })
   },
+}
+
+/** 管理端安全中心（审计 / 全管理员会话 / 账号管理） */
+export const securityAPI = {
+  getMe: () => request('/security/me'),
+  getAuditLogs: (params?: { limit?: number; offset?: number; q?: string; admin_id?: number }) => {
+    const qs = new URLSearchParams()
+    if (params?.limit != null) qs.set('limit', String(params.limit))
+    if (params?.offset != null) qs.set('offset', String(params.offset))
+    if (params?.q) qs.set('q', params.q)
+    if (params?.admin_id != null) qs.set('admin_id', String(params.admin_id))
+    const q = qs.toString()
+    return request(`/security/audit-logs${q ? `?${q}` : ''}`)
+  },
+  getAdminSessions: () => request('/security/admin-sessions'),
+  getAdmins: () => request('/security/admins'),
+  revokeAdminSessions: (adminId: number, superKey: string) =>
+    request(`/security/admins/${adminId}/revoke-sessions`, {
+      method: 'POST',
+      body: JSON.stringify({ super_key: superKey }),
+    }),
+  revokeSession: (rowId: number, adminId: number, superKey: string) =>
+    request(`/security/sessions/${rowId}/revoke`, {
+      method: 'POST',
+      body: JSON.stringify({ admin_id: adminId, super_key: superKey }),
+    }),
+  setAdminEmail: (adminId: number, email: string, superKey: string) =>
+    request(`/security/admins/${adminId}/email`, {
+      method: 'PUT',
+      body: JSON.stringify({ email, super_key: superKey }),
+    }),
+  createAdmin: (data: {
+    username: string
+    password: string
+    name?: string
+    email: string
+    is_super_admin?: boolean
+    super_key: string
+  }) =>
+    request('/security/admins', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  setSuperAdmin: (adminId: number, is_super_admin: boolean, superKey: string) =>
+    request(`/security/admins/${adminId}/super`, {
+      method: 'PUT',
+      body: JSON.stringify({ is_super_admin, super_key: superKey }),
+    }),
+  setLoginDisabled: (adminId: number, login_disabled: boolean, superKey: string) =>
+    request(`/security/admins/${adminId}/login-disabled`, {
+      method: 'PUT',
+      body: JSON.stringify({ login_disabled, super_key: superKey }),
+    }),
+  deleteAdmin: (adminId: number, superKey: string) =>
+    request(`/security/admins/${adminId}`, {
+      method: 'DELETE',
+      headers: { 'x-super-key': superKey },
+      body: JSON.stringify({ super_key: superKey }),
+    }),
 }
 
 // 考核记录 API

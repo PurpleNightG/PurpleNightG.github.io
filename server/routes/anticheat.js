@@ -1,25 +1,8 @@
 import express from 'express'
-import jwt from 'jsonwebtoken'
 import { pool } from '../config/database.js'
+import { requireAdmin } from '../utils/authGate.js'
 
 const router = express.Router()
-
-function requireAdmin(req, res, next) {
-  try {
-    const token = req.headers.authorization?.replace('Bearer ', '')
-    if (!token) {
-      return res.status(401).json({ success: false, message: '未登录' })
-    }
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key')
-    if (decoded.userType !== 'admin') {
-      return res.status(403).json({ success: false, message: '需要管理员权限' })
-    }
-    req.admin = decoded
-    next()
-  } catch (error) {
-    return res.status(401).json({ success: false, message: '认证令牌无效或已过期' })
-  }
-}
 
 function dbError(res, error, fallback = '操作失败') {
   console.error('[anticheat]', error)

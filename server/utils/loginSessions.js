@@ -48,12 +48,34 @@ export async function ensureLoginSessionsTable() {
           AFTER ip
     `)
   }
+
+  const [fpCols] = await pool.query(`
+    SELECT COLUMN_NAME FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'login_sessions'
+      AND COLUMN_NAME = 'device_fingerprint'
+  `)
+  if (fpCols.length === 0) {
+    await pool.query(`
+      ALTER TABLE login_sessions
+        ADD COLUMN device_fingerprint VARCHAR(128) NULL
+          COMMENT 'FingerprintJS visitorId'
+          AFTER user_agent
+    `)
+  }
 }
 
 export function getClientIp(req) {
-  const fwd = req.headers['x-forwarded-for']
-  if (typeof fwd === 'string' && fwd.trim()) {
-    return fwd.split(',')[0].trim().slice(0, 45)
+  // 仅在显式信任反向代理时读取 X-Forwarded-For，避免客户端伪造 IP 绕过限流/异地校验
+  const trustProxy =
+    process.env.TRUST_PROXY === '1' ||
+    process.env.TRUST_PROXY === 'true' ||
+    process.env.TRUST_PROXY === 'yes'
+  if (trustProxy) {
+    const fwd = req.headers['x-forwarded-for']
+    if (typeof fwd === 'string' && fwd.trim()) {
+      return fwd.split(',')[0].trim().slice(0, 45)
+    }
   }
   return (req.ip || req.socket?.remoteAddress || '').slice(0, 45) || null
 }
@@ -153,19 +175,23 @@ export async function trimSessions(userType, userId, keep = MAX_LOGIN_SESSIONS) 
   )
 }
 
-export async function createLoginSession(req, { userType, userId, deviceName, rememberMe = true }) {
+export async function createLoginSession(req, { userType, userId, deviceName, rememberMe = true, ipOverride = null, deviceFingerprint = null }) {
   await ensureLoginSessionsTable()
   await expireStaleSessions(userType, userId)
   const sessionId = crypto.randomUUID()
   const ua = String(req.headers['user-agent'] || '').slice(0, 512)
-  const ip = getClientIp(req)
+  const ip = (ipOverride && String(ipOverride).slice(0, 45)) || getClientIp(req)
   const name = (deviceName && String(deviceName).trim().slice(0, 160)) || parseDeviceName(ua)
   const remember = rememberMe ? 1 : 0
+  const fp =
+    (deviceFingerprint && String(deviceFingerprint).trim().slice(0, 128)) ||
+    String(req.headers['x-device-fingerprint'] || '').trim().slice(0, 128) ||
+    null
   await pool.query(
     `INSERT INTO login_sessions
-       (user_type, user_id, session_id, device_name, user_agent, ip, remember_me, last_active_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
-    [userType, userId, sessionId, name, ua || null, ip, remember]
+       (user_type, user_id, session_id, device_name, user_agent, device_fingerprint, ip, remember_me, last_active_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+    [userType, userId, sessionId, name, ua || null, fp || null, ip, remember]
   )
   await trimSessions(userType, userId)
   return sessionId
@@ -193,9 +219,12 @@ export async function touchSession(sessionId) {
   }
 }
 
-/** 校验会话未撤销且未过期；无 jti 的旧 token 放行；记录被删也视为失效 */
+/** 校验会话未撤销且未过期；管理员必须有 jti；无 jti 的旧学员 token 仍放行至自然过期 */
 export async function assertSessionActive(decoded) {
-  if (!decoded?.jti) return true
+  if (!decoded?.jti) {
+    if (decoded?.userType === 'admin') return false
+    return true
+  }
   await ensureLoginSessionsTable()
   const [rows] = await pool.query(
     `SELECT id, created_at, revoked_at, remember_me, last_active_at

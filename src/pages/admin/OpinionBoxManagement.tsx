@@ -6,6 +6,7 @@ import { formatDateTime } from '../../utils/dateFormat'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { useBadges } from '../../contexts/BadgeContext'
 import MemberNameCell from '../../components/MemberNameCell'
+import PageSkeleton from '../../components/Skeleton'
 
 const STATUS_LABEL: Record<string, string> = {
   pending: '待查阅',
@@ -147,10 +148,8 @@ export default function OpinionBoxManagement() {
 
       <div className="student-glass-panel student-glass-panel--static overflow-hidden">
         {loading ? (
-          <div className="flex justify-center py-16 text-gray-400">
-            <Loader2 className="animate-spin" />
-          </div>
-        ) : items.length === 0 ? (
+        <PageSkeleton variant="table" padded={false} />
+      ) : items.length === 0 ? (
           <p className="text-center text-gray-500 py-14 text-sm">暂无意见</p>
         ) : (
           <div className="divide-y divide-white/5">

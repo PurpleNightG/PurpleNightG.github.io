@@ -7,6 +7,7 @@ import DateInput from '../../components/DateInput'
 import StyledSelect from '../../components/StyledSelect'
 import MemberNameCell from '../../components/MemberNameCell'
 import ConfirmDialog from '../../components/ConfirmDialog'
+import PageSkeleton from '../../components/Skeleton'
 import {
   readLocalJson, readLocalString, cycleSort, cmpBasic, type SortConfig,
 } from '../../utils/persistedState'
@@ -318,9 +319,7 @@ export default function AssistantLeaves() {
       )}
 
       {loading ? (
-        <div className="student-glass-panel student-glass-panel--static rounded-xl py-16 text-center text-gray-400">
-          加载中...
-        </div>
+        <PageSkeleton variant="table" padded={false} />
       ) : (
         <div className="space-y-5">
           <div className="student-glass-panel student-glass-panel--static overflow-hidden rounded-xl">
