@@ -271,8 +271,7 @@ export default function StudentHome() {
     try {
       const userStr = localStorage.getItem('studentUser') || sessionStorage.getItem('studentUser')
       if (!userStr) return
-      
-      const user = JSON.parse(userStr)
+
       const response = await progressAPI.getMy()
       const coursesData = response.data
       
