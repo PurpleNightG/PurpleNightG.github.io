@@ -193,13 +193,13 @@ export default function ScreenShareGuestCodesPanel({
             </p>
 
             <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center gap-0.5 bg-gray-900/50 border border-gray-700/45 rounded-lg p-0.5">
+              <div className="flex items-stretch overflow-hidden bg-gray-900/50 border border-gray-700/45 rounded-lg">
                 {MODE_OPTIONS.map(o => (
                   <button
                     key={o.id}
                     type="button"
                     onClick={() => setMode(o.id)}
-                    className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                    className={`px-2.5 py-1 text-xs font-medium transition-colors ${
                       mode === o.id ? 'bg-amber-600/35 text-amber-100' : 'text-gray-500 hover:text-gray-300'
                     }`}
                   >
