@@ -1,0 +1,6 @@
+{
+  "enabled": true,
+  "manifestUrl": "https://gitee.com/NDYian/ziyeguanwangbendi/raw/master/latest.json",
+  "checkTimeoutMs": 5000,
+  "docsRemoteBase": "https://raw.githubusercontent.com/PurpleNightG/PurpleNightG.github.io/main/public"
+}

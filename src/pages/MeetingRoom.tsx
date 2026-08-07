@@ -29,7 +29,7 @@ import {
 } from '../utils/volcScreenShare'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
-const VOLC_APP_ID: string = import.meta.env.VITE_VOLC_APP_ID || '69a1d9e90340ba017226d5c0'
+const VOLC_APP_ID: string = import.meta.env.VITE_VOLC_APP_ID || '6a762b1245f6750167a070ee'
 
 type MeetingMember = {
   sessionId?: string

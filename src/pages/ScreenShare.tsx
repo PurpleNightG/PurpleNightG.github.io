@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Peer, { MediaConnection } from 'peerjs'
-import { Monitor, Users, Copy, Check, StopCircle, Play, Link2, X, Maximize2, Minimize2, Wifi, Zap, Globe, Lock, Clock, CheckCircle, XCircle, ChevronDown, Search, Trash2, GraduationCap, Mic, MicOff, Volume2, VolumeX, LogIn, GripVertical, Video, PhoneOff, UserX, UserPlus, CheckSquare, Square, Loader2 } from 'lucide-react'
+import { Monitor, Users, Copy, Check, StopCircle, Play, Link2, X, Maximize2, Minimize2, Wifi, Zap, Lock, Clock, CheckCircle, XCircle, ChevronDown, Search, Trash2, GraduationCap, Mic, MicOff, Volume2, VolumeX, LogIn, GripVertical, Video, PhoneOff, UserX, UserPlus, CheckSquare, Square, Loader2 } from 'lucide-react'
 import ScreenShareAssistantPanel, { type AssistantRow, type AssistantCandidate } from '../components/ScreenShareAssistantPanel'
 import ScreenShareGuestCodesPanel from '../components/ScreenShareGuestCodesPanel'
 import MeetingRoom from './MeetingRoom'
@@ -28,8 +28,7 @@ type Status = 'idle' | 'connecting' | 'streaming' | 'watching' | 'error'
 const PEER_PREFIX = 'ziye-share-'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
-const AGORA_APP_ID: string = import.meta.env.VITE_AGORA_APP_ID || 'a51f2304cab54d86a883ab04b41840a6'
-const VOLC_APP_ID: string = import.meta.env.VITE_VOLC_APP_ID || '69a1d9e90340ba017226d5c0'
+const VOLC_APP_ID: string = import.meta.env.VITE_VOLC_APP_ID || '6a762b1245f6750167a070ee'
 
 type ScreenQuality = 240 | 480 | 720 | 1080
 type ScreenFps = 30 | 60
@@ -1331,210 +1330,13 @@ export default function ScreenShare() {
   }
 
   const handleStartHostAgora = async () => {
-    setMode('host')
-    setStatus('connecting')
-    setErrorMsg('')
-    setConnectStep('初始化声网SDK...')
-    await consumePermission('agora', true)
-    try {
-      const { default: AgoraRTC } = await import('agora-rtc-sdk-ng')
-      AgoraRTC.setLogLevel(4)
-      const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' })
-      agoraClientRef.current = client
-
-      setConnectStep('获取屏幕共享权限...')
-      const screenTrack = await AgoraRTC.createScreenVideoTrack(
-        { encoderConfig: '1080p_1', optimizationMode: 'detail' },
-        'auto'
-      )
-      const videoTrack = Array.isArray(screenTrack) ? screenTrack[0] : screenTrack
-      agoraTrackRef.current = screenTrack
-
-      const code = generateRoomCode()
-      setRoomCode(code)
-
-      setConnectStep('获取连接凭证...')
-      const hostRes = await fetch(`${API_URL}/room/${code}/host`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildHostPayload('agora')),
-      })
-      if (hostRes.status === 409) {
-        const d = await hostRes.json()
-        throw new Error(d.error || '该账号已在其他房间中活跃')
-      }
-      rtcRoomRef.current = code
-      rtcRoleRef.current = 'host'
-      rtcUidRef.current = 'agora-host'
-      const tokenRes = await fetch(`${API_URL}/agora/token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ channelName: code, role: 'publisher' })
-      })
-      const tokenData = await tokenRes.json()
-      if (!tokenData.success) throw new Error(tokenData.error || '获取Agora Token失败，请检查后端配置')
-      const token: string = tokenData.token
-
-      setConnectStep('连接声网服务器...')
-      await client.join(AGORA_APP_ID, code, token, null)
-
-      setConnectStep('发布屏幕流...')
-      await client.publish(Array.isArray(screenTrack) ? screenTrack : [videoTrack])
-
-      const mediaStream = new MediaStream([videoTrack.getMediaStreamTrack()])
-      streamRef.current = mediaStream
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream
-        videoRef.current.muted = true
-        videoRef.current.play().catch(() => {})
-      }
-
-      videoTrack.on('track-ended', () => handleStop())
-
-      setConnectionInfo('声网Agora')
-      setStatus('streaming')
-
-      if (latencyIntervalRef.current) clearInterval(latencyIntervalRef.current)
-      latencyIntervalRef.current = setInterval(async () => {
-        const stats = client.getRTCStats()
-        if (stats && stats.RTT !== undefined) setLatency(Math.round(Number(stats.RTT)))
-        try {
-          const r = await fetch(`${API_URL}/room/${code}`)
-          const d = await r.json()
-          if (d.killed) { cleanup(); setErrorMsg(`已被管理员 ${d.killedBy || '管理员'} 强制关闭`); setStatus('error'); return }
-          if (d.viewers) { setViewerNames(d.viewers); setViewerCount(d.viewers.length) }
-        } catch {}
-      }, 3000)
-    } catch (err: any) {
-      cleanup()
-      if (err.name === 'NotAllowedError' || err.code === 'PERMISSION_DENIED') {
-        setErrorMsg('您取消了屏幕共享')
-      } else {
-        setErrorMsg(`声网连接失败: ${err.message}`)
-      }
-      setStatus('error')
-      setMode('select')
-    }
+    setErrorMsg('声网模式已停用，请改用 WebRTC 或火山引擎')
+    setStatus('error')
   }
 
-  const handleJoinRoomAgora = async (code: string) => {
-    setMode('viewer')
-    setStatus('connecting')
-    setErrorMsg('')
-    setConnectStep('初始化声网SDK...')
-    await consumePermission('agora', false)
-    try {
-      const { default: AgoraRTC } = await import('agora-rtc-sdk-ng')
-      AgoraRTC.setLogLevel(4)
-      const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' })
-      agoraClientRef.current = client
-
-      const agoraViewerNumUid = Math.floor(Math.random() * 900000000) + 100000000
-      const agoraViewerUid = String(agoraViewerNumUid)
-
-      setConnectStep('获取连接凭证...')
-      const viewerDisplayName = myName.current || agoraViewerUid
-      const viewerRes = await fetch(`${API_URL}/room/${code}/viewer`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: agoraViewerUid,
-          displayName: viewerDisplayName,
-          userType: effectiveUserType,
-          memberId: memberIdRef.current,
-          fromRequest: fromRequestRef.current || undefined,
-        }),
-      })
-      if (viewerRes.status === 403) {
-        const d = await viewerRes.json().catch(() => ({}))
-        fromRequestRef.current = false
-        throw new Error(d.error || '尚未获得进入许可')
-      }
-      if (viewerRes.status === 409) {
-        const d = await viewerRes.json()
-        throw new Error(d.error || '该账号已在其他房间中活跃')
-      }
-      fromRequestRef.current = false
-      rtcRoomRef.current = code
-      rtcRoleRef.current = 'viewer'
-      rtcUidRef.current = agoraViewerUid
-      const roomRes = await viewerRes.json()
-      if (roomRes.hostName) setHostName(roomRes.hostName)
-      const tokenRes = await fetch(`${API_URL}/agora/token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ channelName: code, role: 'subscriber' })
-      })
-      const tokenData = await tokenRes.json()
-      if (!tokenData.success) throw new Error(tokenData.error || '获取Agora Token失败，请检查后端配置')
-      const token: string = tokenData.token
-
-      setConnectStep('连接声网服务器...')
-      await client.join(AGORA_APP_ID, code, token, agoraViewerNumUid)
-
-      // Heartbeat + viewer list poll every 10s
-      if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current)
-      heartbeatIntervalRef.current = setInterval(async () => {
-        try {
-          const hr = await fetch(`${API_URL}/room/${code}/heartbeat`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: agoraViewerUid }),
-          })
-          const hd = await hr.json()
-          if (hd?.kicked) {
-            kickedExitRef.current?.()
-            return
-          }
-        } catch {}
-        try {
-          const r = await fetch(`${API_URL}/room/${code}`)
-          const d = await r.json()
-          if (d.killed) { cleanup(); setErrorMsg(`已被管理员 ${d.killedBy || '管理员'} 强制关闭`); setStatus('error'); return }
-          if (d.viewers) { setViewerCount(d.viewers.length); setViewerNames(d.viewers) }
-        } catch {}
-      }, 10000)
-
-      setConnectStep('等待主播视频流...')
-
-      client.on('user-published', async (user: any, mediaType: any) => {
-        await client.subscribe(user, mediaType)
-        if (mediaType === 'video' && user.videoTrack) {
-          const mediaStream = new MediaStream([user.videoTrack.getMediaStreamTrack()])
-          streamRef.current = mediaStream
-          setConnectionInfo('声网Agora')
-          setStatus('watching')
-          if (videoRef.current) {
-            videoRef.current.srcObject = mediaStream
-            videoRef.current.play().catch(() => {})
-          }
-          if (latencyIntervalRef.current) clearInterval(latencyIntervalRef.current)
-          latencyIntervalRef.current = setInterval(() => {
-            const stats = client.getRTCStats()
-            if (stats && stats.RTT !== undefined) setLatency(Math.round(Number(stats.RTT)))
-          }, 2000)
-        }
-      })
-
-      client.on('user-unpublished', (_user: any, mediaType: any) => {
-        if (mediaType === 'video') {
-          setErrorMsg('主播已停止共享')
-          setStatus('error')
-          setTimeout(cleanup, 0)
-        }
-      })
-
-      setTimeout(() => {
-        if (statusRef.current === 'connecting') {
-          cleanup()
-          setErrorMsg(`连接超时，卡在：${connectStepRef.current}`)
-          setStatus('error')
-          setMode('select')
-        }
-      }, 15000)
-    } catch (err: any) {
-      cleanup()
-      setErrorMsg(`声网连接失败: ${err.message}`)
-      setStatus('error')
-      setMode('select')
-    }
+  const handleJoinRoomAgora = async (_code: string) => {
+    setErrorMsg('声网模式已停用，请改用 WebRTC 或火山引擎')
+    setStatus('error')
   }
 
   const checkAlreadyActive = async (): Promise<boolean> => {
@@ -2391,9 +2193,12 @@ export default function ScreenShare() {
 
   // Unified mode change handler: syncs hostConnMode and connMode
   const handleModeChange = (m: 'peerjs' | 'agora' | 'volc') => {
+    if (m === 'agora') {
+      setErrorMsg('声网模式已停用，请改用 WebRTC 或火山引擎')
+      return
+    }
     setHostConnMode(m)
-    if (m === 'agora') setConnMode('agora')
-    else if (m === 'volc') setConnMode('volc')
+    if (m === 'volc') setConnMode('volc')
     else setConnMode('auto')
   }
 
@@ -3045,10 +2850,9 @@ export default function ScreenShare() {
                     </>
                   ) : (
                     <>
-                  <div className="grid grid-cols-3 gap-1.5">
+                  <div className="grid grid-cols-2 gap-1.5">
                     {([
                       { key: 'peerjs' as const, label: 'WebRTC', icon: Wifi, color: 'emerald' },
-                      { key: 'agora' as const, label: '声网', icon: Globe, color: 'blue' },
                       { key: 'volc' as const, label: '火山', icon: Zap, color: 'orange' },
                     ]).map(({ key, label, icon: Icon, color }) => {
                       const isActive = hostConnMode === key
@@ -3867,7 +3671,7 @@ export default function ScreenShare() {
               </h3>
               {rtcPerm.canUseRtc ? (
                 <p className="text-gray-400 text-xs">
-                  可直接使用声网 / 火山引擎分享，无需逐次审批。
+                  可直接使用火山引擎分享，无需逐次审批。
                   {rtcPerm.quotaRemaining == null
                     ? ' 次数不限。'
                     : ` 剩余 ${rtcPerm.quotaRemaining} 次（已用 ${rtcPerm.screenShareUsed ?? 0} 次）。`}
@@ -3876,7 +3680,7 @@ export default function ScreenShare() {
               ) : !rtcPerm.screenShareEnabled ? (
                 <p className="text-gray-500 text-xs">管理员已关闭您的屏幕共享权限，请联系管理员。</p>
               ) : (
-                <p className="text-gray-500 text-xs">声网 / 火山共享次数已用完，请联系管理员增加配额或重置次数。</p>
+                <p className="text-gray-500 text-xs">火山共享次数已用完，请联系管理员增加配额或重置次数。</p>
               )}
             </div>
           )}

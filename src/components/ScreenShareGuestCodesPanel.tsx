@@ -6,7 +6,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 export type GuestCodeRow = {
   id: number
   code: string
-  mode: 'peerjs' | 'agora' | 'volc'
+  mode: 'peerjs' | 'volc'
   created_by_type: 'admin' | 'assistant'
   created_by_member_id: number | null
   created_by_name: string
@@ -31,7 +31,6 @@ type Props = {
 
 const MODE_OPTIONS = [
   { id: 'peerjs' as const, label: 'WebRTC' },
-  { id: 'agora' as const, label: '声网' },
   { id: 'volc' as const, label: '火山' },
 ]
 
@@ -50,7 +49,7 @@ export default function ScreenShareGuestCodesPanel({
 }: Props) {
   const [open, setOpen] = useState(defaultOpen)
   const [codes, setCodes] = useState<GuestCodeRow[]>([])
-  const [mode, setMode] = useState<'peerjs' | 'agora' | 'volc'>('peerjs')
+  const [mode, setMode] = useState<'peerjs' | 'volc'>('peerjs')
   const [loading, setLoading] = useState(false)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')

@@ -71,7 +71,7 @@ function computePanelStyle(el: HTMLElement): React.CSSProperties {
     bottom: openUp ? window.innerHeight - rect.top + 4 : undefined,
     left,
     width,
-    zIndex: 9999,
+    zIndex: 11000,
   }
 }
 

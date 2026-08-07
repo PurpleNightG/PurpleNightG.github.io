@@ -1639,7 +1639,7 @@ export default function AssistantManagement() {
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
                     <ThemeCheckbox
                       checked={screenDraft.enabled}
-                      label="允许使用声网/火山引擎"
+                      label="允许使用火山引擎"
                       onCheckedChange={(enabled) => setScreenDraft({ ...screenDraft, enabled })}
                     />
                     <ThemeCheckbox
@@ -1683,7 +1683,7 @@ export default function AssistantManagement() {
                   </div>
 
                   <p className="text-gray-600 text-xs leading-relaxed">
-                    开启后即可使用声网/火山引擎分享屏幕，无需管理员逐次审批。次数在发起共享或生成访客码时扣除。「访客码上限」控制一次可同时持有多少枚未使用访客码。
+                    开启后即可使用火山引擎分享屏幕，无需管理员逐次审批。次数在发起共享或生成访客码时扣除。「访客码上限」控制一次可同时持有多少枚未使用访客码。
                   </p>
                 </div>
               )}

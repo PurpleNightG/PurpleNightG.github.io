@@ -20,7 +20,6 @@ import publicVideosRoutes from './routes/publicVideos.js'
 import videoUploadRoutes from './routes/videoUpload.js'
 import classmatesRoutes from './routes/classmates.js'
 import turnRoutes from './routes/turn.js'
-import agoraRoutes from './routes/agora.js'
 import volcRoutes from './routes/volc.js'
 import roomRoutes from './routes/room.js'
 import meetingRoutes from './routes/meeting.js'
@@ -192,7 +191,6 @@ app.use(
 app.use('/api/video-upload', ...adminGuard, videoUploadRoutes)
 app.use('/api/classmates', classmatesRoutes)
 app.use('/api/turn', turnRoutes)
-app.use('/api/agora', agoraRoutes)
 app.use('/api/volc', volcRoutes)
 app.use('/api/room', roomRoutes)
 app.use('/api/meeting', meetingRoutes)

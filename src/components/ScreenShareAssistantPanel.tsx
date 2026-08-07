@@ -225,7 +225,7 @@ export default function ScreenShareAssistantPanel({
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
                         <ThemeCheckbox
                           checked={draft.enabled}
-                          label="允许使用声网/火山引擎"
+                          label="允许使用火山引擎"
                           onCheckedChange={enabled => setDrafts(prev => ({
                             ...prev,
                             [a.id]: { ...getDraft(a), enabled },
@@ -293,7 +293,7 @@ export default function ScreenShareAssistantPanel({
             )}
 
             <p className="text-gray-600 text-xs leading-relaxed">
-              助教可使用声网/火山引擎分享屏幕，无需管理员逐次审批。WebRTC 模式所有人可用。次数在<strong className="text-gray-500">发起共享</strong>或<strong className="text-gray-500">生成访客码</strong>时扣除。「访客码上限」控制助教一次可同时持有多少枚未使用访客码。
+              助教可使用火山引擎分享屏幕，无需管理员逐次审批。WebRTC 模式所有人可用。次数在<strong className="text-gray-500">发起共享</strong>或<strong className="text-gray-500">生成访客码</strong>时扣除。「访客码上限」控制助教一次可同时持有多少枚未使用访客码。
             </p>
           </div>
         </div>
