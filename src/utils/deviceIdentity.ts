@@ -15,21 +15,34 @@ async function getFpAgent() {
   return fpAgentPromise
 }
 
-/** FingerprintJS visitorId（开源版，MIT） */
+const FP_STORAGE_KEY = 'ziye_device_fp'
+
+/** FingerprintJS visitorId（开源版，MIT）；并落盘，避免关浏览器后偶发算不出导致会话被误伤 */
 export async function getDeviceFingerprint(): Promise<string | undefined> {
   try {
     if (cachedVisitorId) return cachedVisitorId
+    try {
+      const stored = localStorage.getItem(FP_STORAGE_KEY)
+      if (stored) cachedVisitorId = stored
+    } catch {
+      /* ignore */
+    }
     const agent = await getFpAgent()
     const result = await agent.get()
     const id = String(result?.visitorId || '').trim()
     if (id) {
       cachedVisitorId = id
+      try {
+        localStorage.setItem(FP_STORAGE_KEY, id)
+      } catch {
+        /* ignore */
+      }
       return id
     }
   } catch (e) {
     console.warn('[deviceIdentity] fingerprint failed', e)
   }
-  return undefined
+  return cachedVisitorId || undefined
 }
 
 function pickIp(text: string): string | undefined {

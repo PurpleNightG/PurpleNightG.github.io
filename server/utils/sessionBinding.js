@@ -66,7 +66,7 @@ export async function assertAdminSessionBinding(req, decoded) {
 
   await ensureLoginSessionsTable()
   const [rows] = await pool.query(
-    `SELECT id, ip, device_fingerprint, revoked_at
+    `SELECT id, ip, device_fingerprint, revoked_at, remember_me
      FROM login_sessions WHERE session_id = ? LIMIT 1`,
     [decoded.jti]
   )
@@ -75,6 +75,7 @@ export async function assertAdminSessionBinding(req, decoded) {
   }
 
   const row = rows[0]
+  const rememberMe = Number(row.remember_me) !== 0
   const fp = String(req.headers['x-device-fingerprint'] || '').trim().slice(0, 128)
   const seen = getClientIp(req)
   const onLoopback = isLoopbackIp(seen)
@@ -82,22 +83,20 @@ export async function assertAdminSessionBinding(req, decoded) {
   const hasClaimedPublic = claimed && !isLoopbackIp(claimed)
   const currentIp = await resolveEffectiveClientIpAsync(req)
 
-  if (row.device_fingerprint) {
-    if (!fp || fp !== row.device_fingerprint) {
-      try {
-        await revokeCurrentSession('admin', decoded.id, decoded.jti)
-      } catch { /* ignore */ }
-      return {
-        ok: false,
-        code: 'SESSION_DEVICE_CHANGED',
-        message: '检测到设备环境变化，请重新登录',
-      }
+  // FingerprintJS：用于登录时识别设备 / 异地验证，不在会话期内因漂移或偶发失败踢出
+  // （关掉浏览器再开属于正常「记住登录」，指纹偶发变化不应清会话）
+  if (fp) {
+    if (!row.device_fingerprint) {
+      await pool.query(
+        `UPDATE login_sessions SET device_fingerprint = ? WHERE id = ? AND device_fingerprint IS NULL`,
+        [fp, row.id]
+      )
+    } else if (fp !== row.device_fingerprint) {
+      await pool.query(`UPDATE login_sessions SET device_fingerprint = ? WHERE id = ?`, [
+        fp,
+        row.id,
+      ])
     }
-  } else if (fp) {
-    await pool.query(
-      `UPDATE login_sessions SET device_fingerprint = ? WHERE id = ? AND device_fingerprint IS NULL`,
-      [fp, row.id]
-    )
   }
 
   const sessionIp = row.ip ? String(row.ip).trim() : ''
@@ -117,6 +116,14 @@ export async function assertAdminSessionBinding(req, decoded) {
 
     if (onLoopback) {
       if (hasClaimedPublic && !ipsEqual(sessionIp, claimed)) {
+        // 本地版常走 127.0.0.1 + 浏览器探测公网 IP；记住登录时只更新绑定，不踢出
+        if (rememberMe) {
+          await pool.query(`UPDATE login_sessions SET ip = ? WHERE id = ?`, [
+            claimed.slice(0, 45),
+            row.id,
+          ])
+          return { ok: true }
+        }
         try {
           await revokeCurrentSession('admin', decoded.id, decoded.jti)
         } catch { /* ignore */ }
@@ -130,6 +137,16 @@ export async function assertAdminSessionBinding(req, decoded) {
     }
 
     if (!currentIp || isLoopbackIp(currentIp) || !ipsEqual(sessionIp, currentIp)) {
+      if (rememberMe && currentIp && !isLoopbackIp(currentIp)) {
+        await pool.query(`UPDATE login_sessions SET ip = ? WHERE id = ?`, [
+          currentIp.slice(0, 45),
+          row.id,
+        ])
+        return { ok: true }
+      }
+      if (rememberMe) {
+        return { ok: true }
+      }
       try {
         await revokeCurrentSession('admin', decoded.id, decoded.jti)
       } catch { /* ignore */ }

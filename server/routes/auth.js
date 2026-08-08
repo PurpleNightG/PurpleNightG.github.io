@@ -25,7 +25,8 @@ import { writeAdminAudit } from '../utils/adminAudit.js'
 const router = express.Router()
 
 function issueAdminToken(user, sessionId, rememberMe) {
-  const expiresIn = rememberMe ? '12h' : '4h'
+  // 与登录页「记住登录（7天）」及学员端一致；未勾选则 1 天（仍可用 local/session 存储区分关浏览器）
+  const expiresIn = rememberMe ? '7d' : '1d'
   const isSuper = Number(user.is_super_admin) === 1
   const token = jwt.sign(
     {
