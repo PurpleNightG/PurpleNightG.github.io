@@ -6,6 +6,9 @@ import {
   AlignLeft,
   AlignCenter,
   AlignRight,
+  AlignVerticalJustifyStart,
+  AlignVerticalJustifyCenter,
+  AlignVerticalJustifyEnd,
   Highlighter,
   Type,
   PaintBucket,
@@ -37,6 +40,7 @@ import ThemeCheckbox from './ThemeCheckbox'
 import { HyperFormula } from 'hyperformula'
 
 export type CellAlign = 'left' | 'center' | 'right'
+export type CellVAlign = 'top' | 'middle' | 'bottom'
 
 /** 单元格：html 存选中文字级格式；旧字段兼容整格样式 */
 export type CellData = {
@@ -55,6 +59,8 @@ export type CellData = {
   bg?: string
   fontFamily?: string
   align?: CellAlign
+  /** 垂直对齐：顶 / 中 / 底 */
+  vAlign?: CellVAlign
   /** 单元格边框（相对本格四边） */
   borders?: {
     t?: boolean
@@ -773,7 +779,18 @@ function cellsHaveFormatDiff(
     if (!a && !b) continue
     if (!a || !b) return true
     if ((a.html || '') !== (b.html || '')) return true
-    if (a.bg || a.color || a.bold || a.italic || a.underline || a.fontSize || a.fontFamily || a.align || a.borders) {
+    if (
+      a.bg ||
+      a.color ||
+      a.bold ||
+      a.italic ||
+      a.underline ||
+      a.fontSize ||
+      a.fontFamily ||
+      a.align ||
+      a.vAlign ||
+      a.borders
+    ) {
       return true
     }
   }
@@ -890,7 +907,7 @@ function ColorMenu({
 }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="relative">
+    <div className={`relative ${open ? 'z-[100]' : ''}`}>
       <button
         type="button"
         title={title}
@@ -913,11 +930,11 @@ function ColorMenu({
       {open && (
         <>
           <div
-            className="fixed inset-0 z-[55]"
+            className="fixed inset-0 z-[90]"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => setOpen(false)}
           />
-          <div className="absolute left-0 top-8 z-[60] p-2 rounded-lg border border-white/10 bg-gray-900 shadow-xl grid grid-cols-4 gap-1.5 min-w-[152px]">
+          <div className="absolute left-0 top-8 z-[110] p-2 rounded-lg border border-white/10 bg-gray-900 shadow-xl grid grid-cols-4 gap-1.5 min-w-[152px]">
             {colors.map((c) => (
               <button
                 key={c}
@@ -979,7 +996,7 @@ function BorderMenu({
     { mode: 'none', label: '无边框', icon: <Ban size={14} /> },
   ]
   return (
-    <div className="relative">
+    <div className={`relative ${open ? 'z-[100]' : ''}`}>
       <button
         type="button"
         title="单元格边框"
@@ -993,8 +1010,8 @@ function BorderMenu({
       </button>
       {open && (
         <>
-          <div className="fixed inset-0 z-[55]" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-8 z-[60] w-44 rounded-lg border border-white/10 bg-gray-900 shadow-xl shadow-black/40 overflow-hidden py-1">
+          <div className="fixed inset-0 z-[90]" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-8 z-[110] w-44 rounded-lg border border-white/10 bg-gray-900 shadow-xl shadow-black/40 overflow-hidden py-1">
             {items.map((it) => (
               <button
                 key={it.mode}
@@ -1076,7 +1093,7 @@ function FormatSizeMenu({
     </button>
   )
   return (
-    <div className="relative">
+    <div className={`relative ${open ? 'z-[100]' : ''}`}>
       <button
         type="button"
         title="格式（行高 / 列宽）"
@@ -1091,8 +1108,8 @@ function FormatSizeMenu({
       </button>
       {open && (
         <>
-          <div className="fixed inset-0 z-[55]" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-8 z-[60] w-52 rounded-lg border border-white/10 bg-gray-900 shadow-xl shadow-black/40 overflow-hidden py-1">
+          <div className="fixed inset-0 z-[90]" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-8 z-[110] w-52 rounded-lg border border-white/10 bg-gray-900 shadow-xl shadow-black/40 overflow-hidden py-1">
             <div className="px-3 py-1 text-[10px] font-semibold text-gray-500 tracking-wide">
               单元格大小
             </div>
@@ -1130,7 +1147,7 @@ function SelectMenu({
   const [open, setOpen] = useState(false)
   const label = options.find((o) => o.value === value)?.label ?? options[0]?.label ?? ''
   return (
-    <div className={`relative ${className}`}>
+    <div className={`relative ${open ? 'z-[100]' : ''} ${className}`}>
       <button
         type="button"
         title={title}
@@ -1148,11 +1165,11 @@ function SelectMenu({
       {open && (
         <>
           <div
-            className="fixed inset-0 z-[55]"
+            className="fixed inset-0 z-[90]"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => setOpen(false)}
           />
-          <div className="absolute left-0 top-8 z-[60] min-w-full max-h-56 overflow-auto sheet-scrollbar rounded-lg border border-white/10 bg-gray-900 py-1 shadow-xl shadow-black/40">
+          <div className="absolute left-0 top-8 z-[110] min-w-full max-h-56 overflow-auto sheet-scrollbar rounded-lg border border-white/10 bg-gray-900 py-1 shadow-xl shadow-black/40">
             {options.map((o) => (
               <button
                 key={o.value}
@@ -1811,8 +1828,8 @@ export default function SheetGrid({
         const html = applyExecToHtml(cellToHtml(prev), cmd, val)
         const plain = htmlToPlain(html).trim()
         if (!plain && !html.replace(/<br\s*\/?>/gi, '').replace(/&nbsp;/g, '').trim()) {
-          if (prev?.bg || prev?.align) {
-            nextCells[key] = { bg: prev.bg, align: prev.align }
+          if (prev?.bg || prev?.align || prev?.vAlign) {
+            nextCells[key] = { bg: prev.bg, align: prev.align, vAlign: prev.vAlign }
           } else {
             delete nextCells[key]
           }
@@ -1969,8 +1986,13 @@ export default function SheetGrid({
         const key = cellKey(r, c)
         const prev = nextCells[key]
         if (!prev) continue
-        if (prev.bg || prev.align || prev.borders) {
-          nextCells[key] = { bg: prev.bg, align: prev.align, borders: prev.borders }
+        if (prev.bg || prev.align || prev.vAlign || prev.borders) {
+          nextCells[key] = {
+            bg: prev.bg,
+            align: prev.align,
+            vAlign: prev.vAlign,
+            borders: prev.borders,
+          }
         } else {
           delete nextCells[key]
         }
@@ -2047,7 +2069,7 @@ export default function SheetGrid({
           if (isCovered(merges, tr, tc)) continue
           const src = formatted[cellKey(r, c)]
           const key = cellKey(tr, tc)
-          if (src && (src.v || src.html || src.bg || src.align || src.borders)) {
+          if (src && (src.v || src.html || src.bg || src.align || src.vAlign || src.borders)) {
             nextCells[key] = { ...src }
           } else {
             delete nextCells[key]
@@ -2124,7 +2146,17 @@ export default function SheetGrid({
         for (let c = 0; c < colCount; c++) {
           const src = rich[r]?.[c]
           const k = cellKey(r, c)
-          if (src && (src.v || src.html || src.bg || src.align || src.borders || src.color || src.bold)) {
+          if (
+            src &&
+            (src.v ||
+              src.html ||
+              src.bg ||
+              src.align ||
+              src.vAlign ||
+              src.borders ||
+              src.color ||
+              src.bold)
+          ) {
             formatted[k] = { ...src }
             const t = cellToTextOnly(src)
             if (t) textOnly[k] = t
@@ -2328,7 +2360,7 @@ export default function SheetGrid({
         const prev = nextCells[key] || {}
         if (bg === 'transparent') {
           const { bg: _, ...rest } = prev
-          if (!rest.html && !rest.v && !rest.align && !rest.borders) delete nextCells[key]
+          if (!rest.html && !rest.v && !rest.align && !rest.vAlign && !rest.borders) delete nextCells[key]
           else nextCells[key] = rest
         } else {
           nextCells[key] = { ...prev, bg }
@@ -2353,7 +2385,7 @@ export default function SheetGrid({
         const prev = { ...(nextCells[key] || {}) }
         if (mode === 'none') {
           delete prev.borders
-          if (!prev.html && !prev.v && !prev.align && !prev.bg) delete nextCells[key]
+          if (!prev.html && !prev.v && !prev.align && !prev.vAlign && !prev.bg) delete nextCells[key]
           else nextCells[key] = prev
           continue
         }
@@ -2437,6 +2469,19 @@ export default function SheetGrid({
         if (isCovered(merges, r, c)) continue
         const key = cellKey(r, c)
         nextCells[key] = { ...(nextCells[key] || {}), align }
+      }
+    }
+    persist({ cells: nextCells })
+  }
+
+  const setCellVAlign = (vAlign: CellVAlign) => {
+    if (!sel || readOnly) return
+    const nextCells = { ...(value.cells || {}) }
+    for (let r = sel.r0; r <= sel.r1; r++) {
+      for (let c = sel.c0; c <= sel.c1; c++) {
+        if (isCovered(merges, r, c)) continue
+        const key = cellKey(r, c)
+        nextCells[key] = { ...(nextCells[key] || {}), vAlign }
       }
     }
     persist({ cells: nextCells })
@@ -3089,7 +3134,7 @@ export default function SheetGrid({
       {!readOnly && (
         <div
           ref={toolbarRef}
-          className="relative z-50 shrink-0 flex flex-wrap items-center gap-0.5 border-b border-white/10 bg-gradient-to-b from-gray-800/90 to-gray-900/90 px-2 py-1.5"
+          className="relative z-[80] shrink-0 flex flex-wrap items-center gap-0.5 border-b border-white/10 bg-gradient-to-b from-gray-800/90 to-gray-900/90 px-2 py-1.5"
         >
           <SelectMenu
             title="字体（作用于选中文字）"
@@ -3190,6 +3235,33 @@ export default function SheetGrid({
             onClick={() => setCellAlign('right')}
           >
             <AlignRight size={14} />
+          </TbBtn>
+
+          <Divider />
+
+          <TbBtn
+            title="顶端对齐"
+            active={(activeCell?.vAlign || 'top') === 'top'}
+            disabled={!focus}
+            onClick={() => setCellVAlign('top')}
+          >
+            <AlignVerticalJustifyStart size={14} />
+          </TbBtn>
+          <TbBtn
+            title="垂直居中"
+            active={activeCell?.vAlign === 'middle'}
+            disabled={!focus}
+            onClick={() => setCellVAlign('middle')}
+          >
+            <AlignVerticalJustifyCenter size={14} />
+          </TbBtn>
+          <TbBtn
+            title="底端对齐"
+            active={activeCell?.vAlign === 'bottom'}
+            disabled={!focus}
+            onClick={() => setCellVAlign('bottom')}
+          >
+            <AlignVerticalJustifyEnd size={14} />
           </TbBtn>
 
           <ColorMenu
@@ -3363,7 +3435,7 @@ export default function SheetGrid({
       {!readOnly && (
         <div
           ref={formulaBarRowRef}
-          className="relative z-50 shrink-0 flex items-center gap-1.5 px-2 py-1.5 border-b border-white/10 bg-gray-950/70"
+          className="relative z-40 shrink-0 flex items-center gap-1.5 px-2 py-1.5 border-b border-white/10 bg-gray-950/70"
         >
           <div
             className="w-14 shrink-0 h-7 rounded-md bg-black/35 border border-white/10 text-[11px] text-gray-300 flex items-center justify-center font-medium"
@@ -3372,7 +3444,7 @@ export default function SheetGrid({
             {formulaBarAddr || '—'}
           </div>
 
-          <div className="relative shrink-0">
+          <div className={`relative shrink-0 ${fnPickerOpen ? 'z-[100]' : ''}`}>
             <button
               type="button"
               title="插入函数"
@@ -3389,8 +3461,8 @@ export default function SheetGrid({
             </button>
             {fnPickerOpen && (
               <>
-                <div className="fixed inset-0 z-[55]" onClick={() => setFnPickerOpen(false)} />
-                <div className="absolute left-0 top-8 z-[60] w-72 max-h-80 rounded-lg border border-white/10 bg-gray-900 shadow-xl overflow-hidden flex flex-col">
+                <div className="fixed inset-0 z-[90]" onClick={() => setFnPickerOpen(false)} />
+                <div className="absolute left-0 top-8 z-[110] w-72 max-h-80 rounded-lg border border-white/10 bg-gray-900 shadow-xl overflow-hidden flex flex-col">
                   <div className="p-2 border-b border-white/10">
                     <input
                       autoFocus
@@ -3733,7 +3805,7 @@ export default function SheetGrid({
                         rowSpan={rowspan}
                         colSpan={colspan}
                         data-cell={`${r},${c}`}
-                        className={`border-b border-r p-0 align-top overflow-hidden relative select-none ${
+                        className={`border-b border-r p-0 overflow-hidden relative select-none ${
                           value.gridStyle === 'bold'
                             ? 'border-gray-500/70'
                             : 'border-gray-700/80'
@@ -3754,6 +3826,12 @@ export default function SheetGrid({
                           backgroundColor:
                             cell?.bg && cell.bg !== 'transparent' ? cell.bg : undefined,
                           textAlign: cell?.align || 'left',
+                          verticalAlign:
+                            cell?.vAlign === 'middle'
+                              ? 'middle'
+                              : cell?.vAlign === 'bottom'
+                                ? 'bottom'
+                                : 'top',
                         }}
                         onMouseDown={(e) => onCellMouseDown(r, c, e)}
                         onMouseEnter={() => onCellMouseEnter(r, c)}
@@ -3769,6 +3847,14 @@ export default function SheetGrid({
                               minHeight: height,
                               maxHeight: height,
                               textAlign: cell?.align || 'left',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              justifyContent:
+                                cell?.vAlign === 'middle'
+                                  ? 'center'
+                                  : cell?.vAlign === 'bottom'
+                                    ? 'flex-end'
+                                    : 'flex-start',
                             }}
                             onInput={() => {
                               if (!editRef.current) return
@@ -3783,17 +3869,29 @@ export default function SheetGrid({
                           />
                         ) : (
                           <div
-                            className={`px-2 py-1 overflow-hidden break-words select-none [&_a]:text-blue-300 ${
-                              cell?.f ? 'text-sky-200' : 'text-gray-100'
-                            }`}
+                            className="box-border overflow-hidden"
                             style={{
                               height,
                               maxHeight: height,
-                              textAlign: cell?.align || 'left',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              justifyContent:
+                                cell?.vAlign === 'middle'
+                                  ? 'center'
+                                  : cell?.vAlign === 'bottom'
+                                    ? 'flex-end'
+                                    : 'flex-start',
                             }}
                             title={cell?.f || undefined}
-                            dangerouslySetInnerHTML={{ __html: cellToHtml(cell) || '&nbsp;' }}
-                          />
+                          >
+                            <div
+                              className={`w-full px-2 py-1 break-words select-none [&_a]:text-blue-300 ${
+                                cell?.f ? 'text-sky-200' : 'text-gray-100'
+                              }`}
+                              style={{ textAlign: cell?.align || 'left' }}
+                              dangerouslySetInnerHTML={{ __html: cellToHtml(cell) || '&nbsp;' }}
+                            />
+                          </div>
                         )}
                       </td>
                     )
