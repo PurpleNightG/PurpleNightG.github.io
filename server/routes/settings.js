@@ -84,6 +84,8 @@ router.put('/:key', async (req, res) => {
 
     const descriptions = {
       reminder_timeout_days: '催促名单全局超时天数设置',
+      reminder_formal_timeout_days: '正式队员（紫夜/尖兵）训练催促天数，0=关闭改走180天考勤',
+      reminder_rules_config: '催促/考勤规则总配置 JSON',
       reminder_kick_weekday: '踢人日（1=周一…7=周日）',
       reminder_kick_lead_days: '踢人提前提醒天数',
       reminder_display_mode: '催促名单显示模式 remaining|kick_cycle',

@@ -21,6 +21,8 @@ import {
   type WorkbookDocument,
 } from '../utils/workbookModel'
 import { evaluateWorkbook } from '../utils/sheetFormulaEngine'
+import { useSheetPresence } from '../hooks/useSheetPresence'
+import SheetPresenceBar from '../components/SheetPresenceBar'
 
 export default function StudentSheetView() {
   const { id } = useParams()
@@ -40,13 +42,24 @@ export default function StudentSheetView() {
   const workbookRef = useRef(workbook)
   workbookRef.current = workbook
 
+  const { others, othersEditing } = useSheetPresence({
+    workbookId,
+    enabled: Number.isFinite(workbookId) && workbookId > 0,
+    editing: canEdit,
+    asStudent: true,
+  })
+
   const scheduleSave = (next: WorkbookDocument) => {
     setDirty(true)
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => {
       sheetAPI
         .studentSave(workbookId, next)
-        .then(() => setDirty(false))
+        .then((res) => {
+          setDirty(false)
+          if (res.data?.updated_at) setUpdatedAt(res.data.updated_at)
+          if (res.data?.updated_by != null) setUpdatedBy(res.data.updated_by)
+        })
         .catch(() => {})
     }, 1200)
   }
@@ -136,11 +149,6 @@ export default function StudentSheetView() {
           <ArrowLeft size={16} /> 返回列表
         </button>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-gray-500">
-            {dirty ? '编辑中…' : '已同步'}
-            {updatedAt ? ` · ${formatDateTime(updatedAt)}` : ''}
-            {updatedBy ? ` · ${updatedBy}` : ''}
-          </span>
           <button
             type="button"
             onClick={() => setShowHistory(true)}
@@ -168,7 +176,7 @@ export default function StudentSheetView() {
         </div>
       </div>
 
-      <div className="student-glass-panel student-glass-panel--static p-4 sm:p-5 shrink-0">
+      <div className="student-glass-panel student-glass-panel--static p-4 sm:p-5 shrink-0 space-y-3">
         <h1 className="text-xl font-bold text-white flex flex-wrap items-center gap-2">
           {title}
           <span
@@ -188,8 +196,15 @@ export default function StudentSheetView() {
           </span>
         </h1>
         {description && (
-          <p className="text-sm text-gray-400 mt-2 whitespace-pre-wrap">{description}</p>
+          <p className="text-sm text-gray-400 whitespace-pre-wrap">{description}</p>
         )}
+        <SheetPresenceBar
+          others={others}
+          othersEditing={othersEditing}
+          updatedAtLabel={updatedAt ? formatDateTime(updatedAt) : undefined}
+          updatedBy={updatedBy}
+          dirty={canEdit && dirty}
+        />
       </div>
 
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden rounded-xl border border-white/10 bg-black/20">

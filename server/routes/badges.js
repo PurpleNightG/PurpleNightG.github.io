@@ -2,13 +2,22 @@ import express from 'express'
 import { pool } from '../config/database.js'
 import { computeAttendanceForMember } from '../utils/attendanceReminder.js'
 import { countTrainingReminders } from '../utils/trainingReminderList.js'
+import { loadFormalAttendancePolicy } from '../utils/formalAttendancePolicy.js'
 
 const router = express.Router()
 
-/** 进程内短缓存，避免管理端 15～60s 轮询反复扫全表 */
+/** 进程内短缓存，避免管理端轮询反复扫全表；写操作后必须 invalidate */
 const BADGE_CACHE_TTL_MS = 60_000
 let badgeCache = { at: 0, data: null }
 let badgeInflight = null
+let badgeCacheEpoch = 0
+
+/** 审批/名单变更后立刻失效，避免导航徽章仍显示旧计数 */
+export function invalidateBadgeCache() {
+  badgeCacheEpoch += 1
+  badgeCache = { at: 0, data: null }
+  badgeInflight = null
+}
 
 async function computeBadges() {
   let leavePending = 0
@@ -92,11 +101,15 @@ async function computeBadges() {
     }
     const [ignores] = await pool.query('SELECT member_id FROM attendance_reminder_ignores')
     const ignoreSet = new Set(ignores.map((r) => r.member_id))
+    const { formalTimeoutDays, use180Set, rulesConfig } = await loadFormalAttendancePolicy()
     for (const m of members) {
       const item = computeAttendanceForMember(m, leaveMap.get(m.id) || [], {
         ignored: ignoreSet.has(m.id),
         inRetention: !!m.in_retention,
         showAll: false,
+        formalTimeoutDays,
+        useFormal180: use180Set.has(Number(m.id)),
+        rulesConfig,
       })
       if (item) attendanceReminderCount++
     }
@@ -131,25 +144,49 @@ async function computeBadges() {
   }
 }
 
-// 获取导航栏待办数量
+async function getBadgeData({ forceFresh = false } = {}) {
+  if (forceFresh) {
+    invalidateBadgeCache()
+    const epoch = badgeCacheEpoch
+    const data = await computeBadges()
+    if (epoch === badgeCacheEpoch) {
+      badgeCache = { at: Date.now(), data }
+    }
+    return { data, cached: false }
+  }
+
+  const now = Date.now()
+  if (badgeCache.data && now - badgeCache.at < BADGE_CACHE_TTL_MS) {
+    return { data: badgeCache.data, cached: true }
+  }
+
+  if (!badgeInflight) {
+    const epoch = badgeCacheEpoch
+    badgeInflight = computeBadges()
+      .then((data) => {
+        if (epoch === badgeCacheEpoch) {
+          badgeCache = { at: Date.now(), data }
+        }
+        return data
+      })
+      .finally(() => {
+        badgeInflight = null
+      })
+  }
+  const data = await badgeInflight
+  return { data: badgeCache.data || data, cached: false }
+}
+
+// 获取导航栏待办数量；?fresh=1 强制重算（前端审批后 refresh 用）
 router.get('/', async (req, res) => {
   try {
-    const now = Date.now()
-    if (badgeCache.data && now - badgeCache.at < BADGE_CACHE_TTL_MS) {
-      return res.json({ success: true, data: badgeCache.data, cached: true })
-    }
-    if (!badgeInflight) {
-      badgeInflight = computeBadges()
-        .then((data) => {
-          badgeCache = { at: Date.now(), data }
-          return data
-        })
-        .finally(() => {
-          badgeInflight = null
-        })
-    }
-    const data = await badgeInflight
-    res.json({ success: true, data })
+    const forceFresh =
+      req.query.fresh === '1' ||
+      req.query.fresh === 'true' ||
+      String(req.headers['x-badge-fresh'] || '') === '1'
+
+    const { data, cached } = await getBadgeData({ forceFresh })
+    res.json({ success: true, data, ...(cached ? { cached: true } : {}) })
   } catch (e) {
     console.error('[badges]', e)
     res.status(500).json({ success: false, message: '获取徽章失败' })

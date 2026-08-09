@@ -27,7 +27,7 @@ import ziyeRoutes from './routes/ziye.js'
 import versionsRoutes from './routes/versions.js'
 import dutyRoutes from './routes/duty.js'
 import docsRoutes from './routes/docs.js'
-import badgesRoutes from './routes/badges.js'
+import badgesRoutes, { invalidateBadgeCache } from './routes/badges.js'
 import anticheatRoutes from './routes/anticheat.js'
 import surveysRoutes from './routes/surveys.js'
 import sheetsRoutes from './routes/sheets.js'
@@ -122,6 +122,31 @@ app.use(express.urlencoded({ extended: true }))
 
 // 已持有合法 JWT 时：账号被删 / 会话被踢立即 401（防止删库管理员仍可操作）
 app.use('/api', identityGateMiddleware)
+
+// 影响导航徽章计数的写接口成功后立刻失效短缓存，避免审批后仍显示旧数字
+const BADGE_MUTATION_PREFIXES = [
+  '/api/leaves',
+  '/api/reminders',
+  '/api/assessment-applications',
+  '/api/assessments',
+  '/api/opinion-box',
+  '/api/assistant',
+  '/api/quit',
+  '/api/retention',
+  '/api/members',
+]
+app.use((req, res, next) => {
+  const method = req.method
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return next()
+  const path = req.path || ''
+  if (!BADGE_MUTATION_PREFIXES.some((p) => path === p || path.startsWith(p + '/'))) return next()
+  res.on('finish', () => {
+    if (res.statusCode >= 200 && res.statusCode < 400) {
+      invalidateBadgeCache()
+    }
+  })
+  next()
+})
 
 // 路由
 app.use('/api/auth', authRoutes)

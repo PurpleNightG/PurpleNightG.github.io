@@ -2,7 +2,22 @@ import express from 'express'
 import { pool } from '../config/database.js'
 import { TRAINING_STAGES, TRAINING_WARN_DAYS } from '../utils/reminderQuery.js'
 import { computeAttendanceForMember, ATTENDANCE_WARN_DAYS } from '../utils/attendanceReminder.js'
-import { loadReminderConfig, queryTrainingReminders } from '../utils/trainingReminderList.js'
+import {
+  loadReminderConfig,
+  queryTrainingReminders,
+  queryTrainingReminderForMember,
+} from '../utils/trainingReminderList.js'
+import {
+  ensureFormalUse180Table,
+  isFormalMemberStage,
+  loadFormalAttendancePolicy,
+} from '../utils/formalAttendancePolicy.js'
+import {
+  ALL_MEMBER_STAGES,
+  getDefaultReminderRulesConfig,
+  loadReminderRulesConfig,
+  saveReminderRulesConfig,
+} from '../utils/reminderRulesConfig.js'
 import { authenticateRequest } from '../utils/authGate.js'
 
 const router = express.Router()
@@ -76,11 +91,30 @@ async function loadAttendanceContext() {
     overrideMap = new Map()
   }
 
-  return { members, leaveMap, ignoreSet, overrideMap }
+  const policy = await loadFormalAttendancePolicy()
+
+  return {
+    members,
+    leaveMap,
+    ignoreSet,
+    overrideMap,
+    formalTimeoutDays: policy.formalTimeoutDays,
+    formalStages: policy.formalStages,
+    use180Set: policy.use180Set,
+    rulesConfig: policy.rulesConfig,
+  }
 }
 
 function buildAttendanceList(ctx, { showAll = false, memberId = null } = {}) {
-  const { members, leaveMap, ignoreSet, overrideMap } = ctx
+  const {
+    members,
+    leaveMap,
+    ignoreSet,
+    overrideMap,
+    formalTimeoutDays = 0,
+    use180Set = new Set(),
+    rulesConfig = null,
+  } = ctx
   const list = []
   for (const m of members) {
     if (memberId != null && m.id !== memberId) continue
@@ -92,6 +126,9 @@ function buildAttendanceList(ctx, { showAll = false, memberId = null } = {}) {
         inRetention: !!m.in_retention,
         showAll: showAll || memberId != null,
         overrides: overrideMap.get(m.id) || {},
+        formalTimeoutDays,
+        useFormal180: use180Set.has(Number(m.id)),
+        rulesConfig,
       }
     )
     if (item) list.push(item)
@@ -99,6 +136,34 @@ function buildAttendanceList(ctx, { showAll = false, memberId = null } = {}) {
   list.sort((a, b) => a.remaining_days - b.remaining_days)
   return list
 }
+
+/** 催促/考勤规则总配置 */
+router.get('/rules-config', async (_req, res) => {
+  try {
+    const config = await loadReminderRulesConfig()
+    res.json({
+      success: true,
+      data: config,
+      meta: {
+        allStages: ALL_MEMBER_STAGES,
+        defaults: getDefaultReminderRulesConfig(),
+      },
+    })
+  } catch (error) {
+    console.error('获取规则配置失败:', error)
+    res.status(500).json({ success: false, message: '获取规则配置失败' })
+  }
+})
+
+router.put('/rules-config', async (req, res) => {
+  try {
+    const config = await saveReminderRulesConfig(req.body?.config ?? req.body)
+    res.json({ success: true, data: config, message: '规则配置已保存' })
+  } catch (error) {
+    console.error('保存规则配置失败:', error)
+    res.status(500).json({ success: false, message: '保存规则配置失败' })
+  }
+})
 
 // 考勤催促名单
 router.get('/attendance', async (req, res) => {
@@ -109,7 +174,12 @@ router.get('/attendance', async (req, res) => {
     res.json({
       success: true,
       data,
-      meta: { showAll, warnDays: ATTENDANCE_WARN_DAYS, total: data.length },
+      meta: {
+        showAll,
+        warnDays: ctx.rulesConfig?.attendance?.warnDays ?? ATTENDANCE_WARN_DAYS,
+        total: data.length,
+        formalTimeoutDays: ctx.formalTimeoutDays || 0,
+      },
     })
   } catch (error) {
     console.error('获取考勤催促失败:', error)
@@ -143,15 +213,21 @@ router.get('/training/me/:memberId', async (req, res) => {
     }
     if (!(await requireStudentSelf(req, res, memberId))) return
     const cfg = await loadReminderConfig()
-    // 学员始终按倒计时预警判断，避免踢人周期非提醒日看不到自己已被催促
-    const rows = await queryTrainingReminders(cfg.defaultTimeoutDays, TRAINING_WARN_DAYS)
-    const item = rows.find(r => Number(r.member_id) === memberId || Number(r.id) === memberId) || null
+    // 学员始终按倒计时；正式队员开启短周期考勤时，即便未进管理端预警窗也返回倒计时
+    const warnDays = cfg.trainingWarnDays ?? TRAINING_WARN_DAYS
+    const item = await queryTrainingReminderForMember(
+      memberId,
+      cfg.defaultTimeoutDays,
+      warnDays,
+      { formalTimeoutDays: cfg.formalTimeoutDays }
+    )
     res.json({
       success: true,
       data: item,
       meta: {
         timeoutDays: cfg.defaultTimeoutDays,
-        warnDays: TRAINING_WARN_DAYS,
+        formalTimeoutDays: cfg.formalTimeoutDays,
+        warnDays,
       },
     })
   } catch (error) {
@@ -187,6 +263,57 @@ router.delete('/attendance/ignore/:memberId', async (req, res) => {
   } catch (error) {
     console.error('取消忽略考勤催促失败:', error)
     res.status(500).json({ success: false, message: '取消忽略失败' })
+  }
+})
+
+/** 正式队员取消短周期考勤 → 改用 180 天考勤催促 */
+router.post('/formal/:memberId/use-180', async (req, res) => {
+  try {
+    const memberId = parseInt(req.params.memberId, 10)
+    if (!memberId) {
+      return res.status(400).json({ success: false, message: '无效成员' })
+    }
+    const [[member]] = await pool.query('SELECT id, stage_role FROM members WHERE id = ?', [memberId])
+    if (!member) {
+      return res.status(404).json({ success: false, message: '成员不存在' })
+    }
+    const policy = await loadFormalAttendancePolicy()
+    if (!isFormalMemberStage(member.stage_role, policy.formalStages)) {
+      return res.status(400).json({
+        success: false,
+        message: `仅「${(policy.formalStages || []).join(' / ') || '正式队员'}」可取消考勤`,
+      })
+    }
+    if (!(policy.formalTimeoutDays > 0)) {
+      return res.status(400).json({ success: false, message: '请先在规则设置中填写正式队员考勤时间' })
+    }
+    await ensureFormalUse180Table()
+    await pool.query(
+      `INSERT INTO reminder_formal_use_180 (member_id, note)
+       VALUES (?, '取消考勤')
+       ON DUPLICATE KEY UPDATE note = VALUES(note)`,
+      [memberId]
+    )
+    res.json({ success: true, message: '已取消考勤，该成员改按 180 天计入考勤催促' })
+  } catch (error) {
+    console.error('正式队员取消考勤失败:', error)
+    res.status(500).json({ success: false, message: '操作失败' })
+  }
+})
+
+/** 恢复正式队员短周期考勤（从 180 天回到训练催促） */
+router.delete('/formal/:memberId/use-180', async (req, res) => {
+  try {
+    const memberId = parseInt(req.params.memberId, 10)
+    if (!memberId) {
+      return res.status(400).json({ success: false, message: '无效成员' })
+    }
+    await ensureFormalUse180Table()
+    await pool.query('DELETE FROM reminder_formal_use_180 WHERE member_id = ?', [memberId])
+    res.json({ success: true, message: '已恢复正式队员考勤，该成员改走训练催促' })
+  } catch (error) {
+    console.error('恢复正式队员考勤失败:', error)
+    res.status(500).json({ success: false, message: '操作失败' })
   }
 })
 
@@ -226,6 +353,9 @@ router.put('/attendance/batch/timeout', async (req, res) => {
         inRetention: !!member.in_retention,
         showAll: true,
         overrides: {},
+        formalTimeoutDays: ctx.formalTimeoutDays || 0,
+        useFormal180: ctx.use180Set?.has(Number(mid)),
+        rulesConfig: ctx.rulesConfig,
       })
       if (!item) continue
       const customDeadline = Math.max(1, item.elapsed_days + remainingDays)
@@ -277,6 +407,9 @@ router.put('/attendance/:memberId/timeout', async (req, res) => {
       inRetention: !!member.in_retention,
       showAll: true,
       overrides: {},
+      formalTimeoutDays: ctx.formalTimeoutDays || 0,
+      useFormal180: ctx.use180Set?.has(Number(memberId)),
+      rulesConfig: ctx.rulesConfig,
     })
     if (!item) {
       return res.status(400).json({ success: false, message: '该成员当前无考勤计时' })
@@ -311,20 +444,28 @@ router.get('/', async (req, res) => {
       : cfg.displayMode
 
     let rows = []
-    let warnDays = TRAINING_WARN_DAYS
+    let warnDays = cfg.trainingWarnDays ?? TRAINING_WARN_DAYS
     let kickMeta = null
 
     if (mode === 'kick_cycle') {
       kickMeta = cfg.kickInfo
       if (cfg.kickInfo.inWindow) {
         // 只显示「在本轮踢人日或之前就会超期」的人 = 还剩天数 ≤ 距踢人日天数
+        // 不含「自定义延期」旁路：延期到踢人日之后的人不应出现在本轮踢人名单
         warnDays = cfg.kickInfo.daysUntilKick
-        rows = await queryTrainingReminders(cfg.defaultTimeoutDays, warnDays)
+        rows = await queryTrainingReminders(cfg.defaultTimeoutDays, warnDays, {
+          includeCustomExtended: false,
+          includeLeaveBuffer: false,
+          formalTimeoutDays: cfg.formalTimeoutDays,
+        })
       }
       // 非提醒窗口：名单为空（例如周二～周四）
     } else {
-      warnDays = TRAINING_WARN_DAYS
-      rows = await queryTrainingReminders(cfg.defaultTimeoutDays, warnDays)
+      warnDays = cfg.trainingWarnDays ?? TRAINING_WARN_DAYS
+      rows = await queryTrainingReminders(cfg.defaultTimeoutDays, warnDays, {
+        includeCustomExtended: true,
+        formalTimeoutDays: cfg.formalTimeoutDays,
+      })
     }
 
     res.json({
@@ -333,6 +474,7 @@ router.get('/', async (req, res) => {
       meta: {
         mode,
         timeoutDays: cfg.defaultTimeoutDays,
+        formalTimeoutDays: cfg.formalTimeoutDays,
         warnDays,
         today: cfg.todayIso,
         kick: kickMeta,
@@ -382,6 +524,10 @@ router.post('/auto-update', async (req, res) => {
           OR (m.last_training_date IS NULL AND m.join_date IS NOT NULL AND DATEDIFF(CURDATE(), m.join_date) >= GREATEST(? - 3, 0))
         )
         AND r.id IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM leave_records al
+          WHERE al.member_id = m.id AND al.status IN ('请假中', '待结束审批')
+        )
     `, [...trainingStages, timeoutDays, timeoutDays])
     
     await pool.query('TRUNCATE TABLE reminder_list')

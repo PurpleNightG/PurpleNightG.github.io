@@ -3,11 +3,112 @@ import { reminderAPI, quitAPI, memberAPI } from '../../utils/api'
 import { Settings, Edit, Filter, ChevronUp, ChevronDown, Search, X, CheckSquare, Square, UserMinus, Copy, Eye, EyeOff, BellOff, Bell, MoreHorizontal } from 'lucide-react'
 import { toast } from '../../utils/toast'
 import ConfirmDialog from '../../components/ConfirmDialog'
-import { formatDate } from '../../utils/dateFormat'
+import { formatDate, getTodayDateString } from '../../utils/dateFormat'
 import { getRoleColor } from '../../utils/roleColors'
 import { useBadges } from '../../contexts/BadgeContext'
 import MemberNameCell from '../../components/MemberNameCell'
 import PageSkeleton from '../../components/Skeleton'
+import DateInput from '../../components/DateInput'
+import ReminderRulesSettings from '../../components/ReminderRulesSettings'
+
+/** 东八区语义下按天加减 YYYY-MM-DD */
+function addDaysToYmd(ymd: string, days: number): string {
+  const d = new Date(`${ymd}T12:00:00`)
+  d.setDate(d.getDate() + days)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/** 今天 → 目标日的整天差（目标日为今天则为 0） */
+function daysFromTodayTo(ymd: string): number {
+  const today = getTodayDateString()
+  const a = new Date(`${today}T12:00:00`).getTime()
+  const b = new Date(`${ymd}T12:00:00`).getTime()
+  return Math.round((b - a) / 86400000)
+}
+
+function quitDateFromRemaining(remainingDays: number): string {
+  return addDaysToYmd(getTodayDateString(), Math.max(0, Math.floor(remainingDays)))
+}
+
+type QuitInputMode = 'days' | 'date'
+
+/** 希望退队：天数 / 日期切换（内部以 YYYY-MM-DD 为空表示恢复默认） */
+function QuitDeadlineFields({
+  mode,
+  onModeChange,
+  quitDate,
+  onQuitDateChange,
+  hint,
+}: {
+  mode: QuitInputMode
+  onModeChange: (m: QuitInputMode) => void
+  quitDate: string
+  onQuitDateChange: (ymd: string) => void
+  hint: string
+}) {
+  const remainingStr = quitDate === '' ? '' : String(Math.max(0, daysFromTodayTo(quitDate)))
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-medium text-gray-300">希望退队</span>
+        <div className="inline-flex rounded-lg overflow-hidden border border-gray-600 text-xs">
+          <button
+            type="button"
+            onClick={() => onModeChange('days')}
+            className={`px-3 py-1.5 transition-colors ${
+              mode === 'days' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            }`}
+          >
+            按天数
+          </button>
+          <button
+            type="button"
+            onClick={() => onModeChange('date')}
+            className={`px-3 py-1.5 transition-colors ${
+              mode === 'date' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            }`}
+          >
+            按日期
+          </button>
+        </div>
+      </div>
+      {mode === 'date' ? (
+        <DateInput
+          label="希望退队日期"
+          value={quitDate}
+          onChange={onQuitDateChange}
+          min={getTodayDateString()}
+          size="sm"
+        />
+      ) : (
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-1">希望还剩天数</label>
+          <input
+            type="number"
+            min={0}
+            max={3650}
+            value={remainingStr}
+            onChange={(e) => {
+              const raw = e.target.value
+              if (raw === '') {
+                onQuitDateChange('')
+                return
+              }
+              const n = Math.max(0, Math.min(3650, parseInt(raw, 10) || 0))
+              onQuitDateChange(quitDateFromRemaining(n))
+            }}
+            placeholder="留空 = 恢复默认"
+            className="student-glass-field"
+          />
+        </div>
+      )}
+      <p className="text-xs text-gray-400">{hint}</p>
+    </div>
+  )
+}
 
 interface ReminderItem {
   id: number
@@ -24,10 +125,10 @@ interface ReminderItem {
   buffer_remaining_days?: number | null
   /** 有自定义超时且尚未进入有效超时预警窗（延期保留在名单） */
   is_custom_extended?: number | boolean
+  /** 因开启「正式队员考勤时间」而进入训练催促的紫夜/尖兵 */
+  is_formal_member_attendance?: number | boolean
+  formal_timeout_days?: number | null
 }
-
-/** 与后端 TRAINING_WARN_DAYS 一致：还剩 ≤N 天进入训练催促 */
-const TRAINING_WARN_DAYS = 3
 
 interface AttendanceItem {
   member_id: number
@@ -42,14 +143,20 @@ interface AttendanceItem {
   ignored: boolean
   paused: boolean
   reason_code: string
+  reason_title?: string
+  reason_color?: string
   reason_label: string
   remaining_days: number
   elapsed_days: number
   deadline_days: number
   has_custom_deadline?: boolean
   custom_deadline_days?: number | null
+  /** 正式队员已取消短周期考勤，按 180 天计 */
+  formal_use_180?: boolean
   reasons: {
     reason_code: string
+    reason_title?: string
+    reason_color?: string
     reason_label: string
     deadline_days: number
     elapsed_days: number
@@ -69,11 +176,44 @@ type AttendanceFilters = {
   inverseMode: boolean
 }
 
-const ATTENDANCE_REASON_OPTIONS = [
+const DEFAULT_ATTENDANCE_REASON_OPTIONS = [
   { code: 'to_phase3', label: '达三期' },
   { code: 'to_exam', label: '准考' },
   { code: 'formal_idle', label: '半年新训' },
 ]
+
+const BADGE_COLOR_CLASS: Record<string, string> = {
+  yellow: 'bg-yellow-600/20 text-yellow-300',
+  orange: 'bg-orange-600/20 text-orange-300',
+  purple: 'bg-purple-600/20 text-purple-300',
+  sky: 'bg-sky-600/20 text-sky-300',
+  green: 'bg-green-600/20 text-green-300',
+  rose: 'bg-rose-600/20 text-rose-300',
+  amber: 'bg-amber-600/20 text-amber-300',
+  slate: 'bg-slate-600/20 text-slate-300',
+}
+
+function attendanceReasonBadgeClass(color?: string, code?: string) {
+  if (color && BADGE_COLOR_CLASS[color]) return BADGE_COLOR_CLASS[color]
+  if (code === 'to_phase3') return BADGE_COLOR_CLASS.yellow
+  if (code === 'to_exam' || code === 'to_formal') return BADGE_COLOR_CLASS.orange
+  if (code === 'formal_idle') return BADGE_COLOR_CLASS.purple
+  return BADGE_COLOR_CLASS.sky
+}
+
+function attendanceReasonTitle(
+  reason: { reason_code: string; reason_title?: string },
+  options: { code: string; label: string }[]
+) {
+  const custom = String(reason.reason_title || '').trim()
+  if (custom) return custom
+  const hit = options.find((o) => o.code === reason.reason_code)
+  if (hit) return hit.label
+  if (reason.reason_code === 'to_formal') return '准考'
+  return reason.reason_code || '考勤'
+}
+
+const FORMAL_MEMBER_STAGES = new Set(['紫夜', '紫夜尖兵'])
 
 function readJson<T>(key: string, fallback: T): T {
   try {
@@ -115,7 +255,15 @@ export default function ReminderList() {
   const [loading, setLoading] = useState(true)
   const [attendanceLoading, setAttendanceLoading] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showRulesSettings, setShowRulesSettings] = useState(false)
   const [timeoutDays, setTimeoutDays] = useState(7)
+  /** 正式队员考勤时间（天）；0 = 关闭，紫夜/尖兵走 180 天考勤催促 */
+  const [formalTimeoutDays, setFormalTimeoutDays] = useState(0)
+  const [trainingWarnDays, setTrainingWarnDays] = useState(3)
+  const [attendanceHelpText, setAttendanceHelpText] = useState(
+    '加入后达目标阶段 → 再达下一目标 → 正式队员闲置再训。规则可在「规则总设置」中修改。请假暂停；留队 / 其他不计。'
+  )
+  const [attendanceReasonOptions, setAttendanceReasonOptions] = useState(DEFAULT_ATTENDANCE_REASON_OPTIONS)
   const [confirmDialog, setConfirmDialog] = useState<{show: boolean, type: string, data?: any}>({show: false, type: ''})
   const [editingItem, setEditingItem] = useState<ReminderItem | null>(null)
 
@@ -207,13 +355,42 @@ export default function ReminderList() {
 
   const loadTimeoutDays = async () => {
     try {
-      const [timeoutRes, kick] = await Promise.all([
+      const [timeoutRes, kick, rulesRes] = await Promise.all([
         reminderAPI.getTimeoutDays(),
         reminderAPI.getKickSettings(),
+        reminderAPI.getRulesConfig().catch(() => null),
       ])
       setTimeoutDays(parseInt(timeoutRes.data.setting_value))
       setKickWeekday(kick.kickWeekday)
       setKickLeadDays(kick.leadDays)
+      setFormalTimeoutDays(kick.formalTimeoutDays ?? 0)
+      if (rulesRes?.data) {
+        setTimeoutDays(rulesRes.data.training?.defaultTimeoutDays ?? 7)
+        setFormalTimeoutDays(rulesRes.data.training?.formalTimeoutDays ?? 0)
+        setTrainingWarnDays(rulesRes.data.training?.warnDays ?? 3)
+        const rules = rulesRes.data.attendance?.rules || []
+        const reasonOpts = rules.map((r: any) => {
+          const code = String(r.reasonCode || r.id)
+          return {
+            code,
+            label: String(r.badge || '').trim()
+              || DEFAULT_ATTENDANCE_REASON_OPTIONS.find((o) => o.code === code)?.label
+              || String(r.title || '').trim()
+              || (r.type === 'training_idle' ? '闲置再训' : '考勤'),
+          }
+        })
+        setAttendanceReasonOptions(reasonOpts.length ? reasonOpts : DEFAULT_ATTENDANCE_REASON_OPTIONS)
+        const bits = rules.filter((r: any) => r.enabled).map((r: any) => {
+          const name = String(r.title || '').trim() || (r.type === 'training_idle' ? '闲置再训' : '晋升期限')
+          if (r.type === 'training_idle') return `${name}${r.deadlineDays}天`
+          return `${name}${r.deadlineDays}天${r.capFromJoinDays ? `（上限${r.capFromJoinDays}）` : ''}`
+        })
+        setAttendanceHelpText(
+          bits.length
+            ? `${bits.join(' → ')}。可在「规则总设置」修改。请假暂停；留队 / 其他不计。剩余 ≤${rulesRes.data.attendance?.warnDays ?? 7} 天进入名单。`
+            : '当前无启用考勤规则。可在「规则总设置」中配置。'
+        )
+      }
       // 以服务端保存的模式为准（多管理员共享）；本地仅作瞬时切换缓存
       if (kick.displayMode === 'kick_cycle' || kick.displayMode === 'remaining') {
         setDisplayMode(kick.displayMode)
@@ -369,8 +546,12 @@ export default function ReminderList() {
   const getFilteredAndSortedItems = () => {
     let filtered = [...items]
 
-    if (!showCustomExtended) {
+    // 踢人周期只看本轮会超期的人；自定义延期 / 请假缓冲（本轮踢不着）一律隐藏
+    if (displayMode === 'kick_cycle' || !showCustomExtended) {
       filtered = filtered.filter(item => !item.is_custom_extended)
+    }
+    if (displayMode === 'kick_cycle') {
+      filtered = filtered.filter(item => !item.is_leave_buffer)
     }
 
     if (searchQuery) {
@@ -529,22 +710,29 @@ export default function ReminderList() {
   const isAllSelected = filteredItems.length > 0 && selectedIds.size === filteredItems.length && filteredItems.every(item => selectedIds.has(item.id))
 
   const [batchTimeoutModal, setBatchTimeoutModal] = useState(false)
-  /** 批量：希望每人还剩几天；null = 恢复全局 */
-  const [batchRemainingDays, setBatchRemainingDays] = useState<number | null>(null)
-  /** 单个：希望还剩几天；null = 恢复全局 */
-  const [remainingDaysInput, setRemainingDaysInput] = useState<number | null>(null)
+  /** 批量：希望退队日 YYYY-MM-DD；空 = 恢复全局 */
+  const [batchQuitDate, setBatchQuitDate] = useState('')
+  /** 单个：希望退队日；空 = 恢复全局 */
+  const [quitDateInput, setQuitDateInput] = useState('')
   const [batchAttendanceTimeoutModal, setBatchAttendanceTimeoutModal] = useState(false)
-  const [batchAttendanceRemainingDays, setBatchAttendanceRemainingDays] = useState<number | null>(null)
+  const [batchAttendanceQuitDate, setBatchAttendanceQuitDate] = useState('')
   const [editingAttendanceItem, setEditingAttendanceItem] = useState<AttendanceItem | null>(null)
-  const [attendanceRemainingDaysInput, setAttendanceRemainingDaysInput] = useState<number | null>(null)
+  const [attendanceQuitDateInput, setAttendanceQuitDateInput] = useState('')
+  /** 退队输入方式：天数 / 日期（训练与考勤弹窗共用偏好） */
+  const [quitInputMode, setQuitInputMode] = useState<QuitInputMode>(() =>
+    localStorage.getItem('reminderQuitInputMode') === 'days' ? 'days' : 'date'
+  )
+  const switchQuitInputMode = (mode: QuitInputMode) => {
+    setQuitInputMode(mode)
+    localStorage.setItem('reminderQuitInputMode', mode)
+  }
 
   const handleBatchUpdateTimeout = () => {
     if (selectedIds.size === 0) return
-    // 默认填入选中项中「距离超时」的中位数，方便一键统一还剩天数
     const selected = items.filter(item => selectedIds.has(item.id))
     const remainings = selected.map(i => i.days_until_timeout).sort((a, b) => a - b)
     const mid = remainings.length ? remainings[Math.floor(remainings.length / 2)] : 3
-    setBatchRemainingDays(Math.max(0, mid))
+    setBatchQuitDate(quitDateFromRemaining(Math.max(0, mid)))
     setBatchTimeoutModal(true)
   }
 
@@ -552,15 +740,18 @@ export default function ReminderList() {
     setBatchTimeoutModal(false)
     try {
       const selected = items.filter(item => selectedIds.has(item.id))
-      if (batchRemainingDays === null) {
+      if (!batchQuitDate) {
         await reminderAPI.batchUpdateTimeout(selected.map(i => i.id), null)
         toast.success(`已为 ${selected.length} 个成员恢复使用全局超时天数设置`)
       } else {
+        const remaining = Math.max(0, daysFromTodayTo(batchQuitDate))
         for (const item of selected) {
-          const customDays = Math.max(1, item.days_without_training + batchRemainingDays)
+          const customDays = Math.max(1, item.days_without_training + remaining)
           await reminderAPI.updateTimeout(item.id, customDays)
         }
-        toast.success(`已为 ${selected.length} 人设置还剩 ${batchRemainingDays} 天（按各自未训天数自动换算）`)
+        toast.success(
+          `已为 ${selected.length} 人设定退队日 ${formatDate(batchQuitDate)}（还剩 ${remaining} 天）`
+        )
       }
       clearSelection()
       await loadItems()
@@ -575,7 +766,7 @@ export default function ReminderList() {
     const selected = attendanceItems.filter(item => selectedAttendanceIds.has(item.member_id))
     const remainings = selected.map(i => i.remaining_days).sort((a, b) => a - b)
     const mid = remainings.length ? remainings[Math.floor(remainings.length / 2)] : 7
-    setBatchAttendanceRemainingDays(Math.max(0, mid))
+    setBatchAttendanceQuitDate(quitDateFromRemaining(Math.max(0, mid)))
     setBatchAttendanceTimeoutModal(true)
   }
 
@@ -583,11 +774,14 @@ export default function ReminderList() {
     setBatchAttendanceTimeoutModal(false)
     try {
       const ids = [...selectedAttendanceIds]
-      await reminderAPI.batchUpdateAttendanceTimeout(ids, batchAttendanceRemainingDays)
+      const remaining = batchAttendanceQuitDate
+        ? Math.max(0, daysFromTodayTo(batchAttendanceQuitDate))
+        : null
+      await reminderAPI.batchUpdateAttendanceTimeout(ids, remaining)
       toast.success(
-        batchAttendanceRemainingDays === null
+        remaining === null
           ? `已为 ${ids.length} 人恢复默认考勤期限`
-          : `已为 ${ids.length} 人设置还剩 ${batchAttendanceRemainingDays} 天`
+          : `已为 ${ids.length} 人设定退队日 ${formatDate(batchAttendanceQuitDate)}（还剩 ${remaining} 天）`
       )
       setSelectedAttendanceIds(new Set())
       await loadAttendance()
@@ -599,21 +793,24 @@ export default function ReminderList() {
 
   const handleEditAttendanceTimeout = (item: AttendanceItem) => {
     setEditingAttendanceItem(item)
-    setAttendanceRemainingDaysInput(Math.max(0, item.remaining_days))
+    setAttendanceQuitDateInput(quitDateFromRemaining(Math.max(0, item.remaining_days)))
   }
 
   const handleSaveAttendanceTimeout = async () => {
     if (!editingAttendanceItem) return
     try {
+      const remaining = attendanceQuitDateInput
+        ? Math.max(0, daysFromTodayTo(attendanceQuitDateInput))
+        : null
       await reminderAPI.updateAttendanceTimeout(
         editingAttendanceItem.member_id,
-        attendanceRemainingDaysInput,
+        remaining,
         editingAttendanceItem.reason_code
       )
       toast.success(
-        attendanceRemainingDaysInput === null || Number.isNaN(attendanceRemainingDaysInput)
+        remaining === null
           ? '已恢复默认考勤期限'
-          : `已设置还剩 ${attendanceRemainingDaysInput} 天`
+          : `已设定退队日 ${formatDate(attendanceQuitDateInput)}（还剩 ${remaining} 天）`
       )
       setEditingAttendanceItem(null)
       await loadAttendance()
@@ -785,22 +982,22 @@ export default function ReminderList() {
 
   const handleEditTimeout = (item: ReminderItem) => {
     setEditingItem(item)
-    // 用当前「距离超时」作为还剩天数初值，方便直接改剩余
-    setRemainingDaysInput(item.days_until_timeout)
+    setQuitDateInput(quitDateFromRemaining(Math.max(0, item.days_until_timeout)))
   }
 
   const handleSaveTimeout = async () => {
     if (!editingItem) return
 
     try {
-      if (remainingDaysInput === null || Number.isNaN(remainingDaysInput)) {
+      if (!quitDateInput) {
         await reminderAPI.updateTimeout(editingItem.id, null)
         toast.success('已恢复使用全局超时天数设置')
       } else {
-        const customDays = Math.max(1, editingItem.days_without_training + remainingDaysInput)
+        const remaining = Math.max(0, daysFromTodayTo(quitDateInput))
+        const customDays = Math.max(1, editingItem.days_without_training + remaining)
         await reminderAPI.updateTimeout(editingItem.id, customDays)
         toast.success(
-          `已设置还剩 ${remainingDaysInput} 天（超时标准 ${customDays} 天 = 未训 ${editingItem.days_without_training} + 剩余 ${remainingDaysInput}）`
+          `已设定退队日 ${formatDate(quitDateInput)}（还剩 ${remaining} 天 · 超时标准 ${customDays} 天）`
         )
       }
       setEditingItem(null)
@@ -917,7 +1114,14 @@ export default function ReminderList() {
                         className="w-full px-3 py-2.5 text-left text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
                       >
                         <Settings size={16} className="text-gray-400 shrink-0" />
-                        催促设置
+                        催促设置（踢人日）
+                      </button>
+                      <button
+                        onClick={() => { setShowRulesSettings(true); setShowMoreMenu(false) }}
+                        className="w-full px-3 py-2.5 text-left text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
+                      >
+                        <Settings size={16} className="text-purple-400 shrink-0" />
+                        规则总设置
                       </button>
                       <div className="border-t border-gray-700 my-1" />
                       <button
@@ -929,16 +1133,25 @@ export default function ReminderList() {
                       </button>
                     </>
                   ) : (
-                    <button
-                      onClick={() => { setShowAllAttendance(v => !v); setShowMoreMenu(false) }}
-                      className="w-full px-3 py-2.5 text-left text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
-                    >
-                      {showAllAttendance ? <Eye size={16} className="text-purple-400 shrink-0" /> : <EyeOff size={16} className="text-gray-400 shrink-0" />}
-                      <span className="flex-1">{showAllAttendance ? '显示全部进度' : '仅预警(≤7天)'}</span>
-                      <span className={`text-xs ${showAllAttendance ? 'text-purple-300' : 'text-gray-500'}`}>
-                        {showAllAttendance ? '开' : '关'}
-                      </span>
-                    </button>
+                    <>
+                      <button
+                        onClick={() => { setShowAllAttendance(v => !v); setShowMoreMenu(false) }}
+                        className="w-full px-3 py-2.5 text-left text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
+                      >
+                        {showAllAttendance ? <Eye size={16} className="text-purple-400 shrink-0" /> : <EyeOff size={16} className="text-gray-400 shrink-0" />}
+                        <span className="flex-1">{showAllAttendance ? '显示全部进度' : '仅预警窗'}</span>
+                        <span className={`text-xs ${showAllAttendance ? 'text-purple-300' : 'text-gray-500'}`}>
+                          {showAllAttendance ? '开' : '关'}
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => { setShowRulesSettings(true); setShowMoreMenu(false) }}
+                        className="w-full px-3 py-2.5 text-left text-sm text-gray-200 hover:bg-gray-700 flex items-center gap-2"
+                      >
+                        <Settings size={16} className="text-purple-400 shrink-0" />
+                        规则总设置
+                      </button>
+                    </>
                   )}
                 </div>
               )}
@@ -1051,7 +1264,7 @@ export default function ReminderList() {
                 <div>
                   <label className="text-sm text-gray-400 mb-2 block">催促原因</label>
                   <div className="flex flex-wrap gap-2">
-                    {ATTENDANCE_REASON_OPTIONS.map(opt => (
+                    {attendanceReasonOptions.map(opt => (
                       <button
                         key={opt.code}
                         onClick={() => toggleAttendanceFilter('reason_code', opt.code)}
@@ -1102,7 +1315,7 @@ export default function ReminderList() {
                 onClick={handleBatchUpdateAttendanceTimeout}
                 className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm transition-colors"
               >
-                批量设置还剩天数
+                批量设置退队日期
               </button>
             </div>
           </div>
@@ -1110,7 +1323,7 @@ export default function ReminderList() {
 
         <div className="student-glass-panel student-glass-panel--static overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-700 text-xs text-gray-500">
-            加入后 60 天内达新训三期 → 再 45 天内达新训准考及以上（总上限 105 天）→ 准考 / 紫夜 / 紫夜尖兵半年需参加新训。请假暂停计时；留队 / 其他不计。剩余 ≤7 天进入名单。
+            {attendanceHelpText}
           </div>
           {attendanceLoading ? (
             <PageSkeleton variant="table" padded={false} />
@@ -1189,7 +1402,17 @@ export default function ReminderList() {
                             {item.paused && <span className="status-badge bg-cyan-600/20 text-cyan-300">请假暂停</span>}
                             {item.ignored && <span className="status-badge bg-gray-600/30 text-gray-400">已忽略</span>}
                             {item.has_custom_deadline && (
-                              <span className="status-badge bg-blue-600/20 text-blue-300" title="已自定义还剩天数">自定义期限</span>
+                              <span
+                                className="status-badge bg-blue-600/20 text-blue-300"
+                                title={`自定义退队日 ${formatDate(quitDateFromRemaining(Math.max(0, item.remaining_days)))}`}
+                              >
+                                退队 {formatDate(quitDateFromRemaining(Math.max(0, item.remaining_days)))}
+                              </span>
+                            )}
+                            {item.formal_use_180 && (
+                              <span className="status-badge bg-orange-600/20 text-orange-300" title="已取消短周期考勤，按 180 天计">
+                                取消考勤·180天
+                              </span>
                             )}
                           </div>
                           {item.qq && <span className="text-xs text-gray-500">QQ {item.qq}</span>}
@@ -1214,14 +1437,8 @@ export default function ReminderList() {
                             return (
                               <div key={r.reason_code} className="text-sm text-gray-300">
                                 <div className="leading-relaxed">
-                                  <span className={`inline-block align-middle text-xs px-1.5 py-0.5 rounded mr-1.5 ${
-                                    r.reason_code === 'to_phase3' ? 'bg-yellow-600/20 text-yellow-300'
-                                      : (r.reason_code === 'to_exam' || r.reason_code === 'to_formal') ? 'bg-orange-600/20 text-orange-300'
-                                      : 'bg-purple-600/20 text-purple-300'
-                                  }`}>
-                                    {r.reason_code === 'to_phase3' ? '达三期'
-                                      : (r.reason_code === 'to_exam' || r.reason_code === 'to_formal') ? '准考'
-                                      : '半年新训'}
+                                  <span className={`inline-block align-middle text-xs px-1.5 py-0.5 rounded mr-1.5 ${attendanceReasonBadgeClass(r.reason_color, r.reason_code)}`}>
+                                    {attendanceReasonTitle(r, attendanceReasonOptions)}
                                   </span>
                                   <span className="align-middle">{r.reason_label}</span>
                                 </div>
@@ -1268,10 +1485,28 @@ export default function ReminderList() {
                           <button
                             onClick={() => handleEditAttendanceTimeout(item)}
                             className="text-purple-400 hover:text-purple-300 transition-colors"
-                            title="设置还剩天数"
+                            title="设置退队日期"
                           >
                             <Edit size={18} />
                           </button>
+                          {item.formal_use_180 && formalTimeoutDays > 0 && (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await reminderAPI.restoreFormalAttendance(item.member_id)
+                                  toast.success('已恢复正式队员考勤（训练催促）')
+                                  await Promise.all([loadAttendance(), loadItems()])
+                                  void refreshBadges()
+                                } catch (e: any) {
+                                  toast.error(e.message || '操作失败')
+                                }
+                              }}
+                              className="text-cyan-400 hover:text-cyan-300 transition-colors text-xs whitespace-nowrap"
+                              title="恢复短周期考勤，改走训练催促"
+                            >
+                              恢复考勤
+                            </button>
+                          )}
                           {item.ignored ? (
                             <button
                               onClick={async () => {
@@ -1331,7 +1566,7 @@ export default function ReminderList() {
                 添加到退队审批
               </button>
               <button onClick={handleBatchUpdateTimeout} className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm transition-colors">
-                批量设置还剩天数
+                批量设置退队日期
               </button>
             </div>
           </div>
@@ -1451,7 +1686,7 @@ export default function ReminderList() {
               )
             ) : (
               <p className="text-sm mt-2 break-keep">
-                当有成员距离超时还剩不超过 {TRAINING_WARN_DAYS} 天时会自动显示在此列表
+                当有成员距离超时还剩不超过 {trainingWarnDays} 天时会自动显示在此列表
                 {!showCustomExtended && '（当前已隐藏自定义延期成员）'}
               </p>
             )}
@@ -1514,8 +1749,22 @@ export default function ReminderList() {
                         {!!item.is_leave_buffer && (
                           <span className="status-badge bg-cyan-600/20 text-cyan-300">请假缓冲</span>
                         )}
-                        {!!item.is_custom_extended && (
-                          <span className="status-badge bg-blue-600/20 text-blue-300" title="已自定义还剩天数，尚未回到预警窗">自定义延期</span>
+                        {!!item.custom_timeout_days && (
+                          <span
+                            className="status-badge bg-blue-600/20 text-blue-300"
+                            title={
+                              item.is_custom_extended
+                                ? '已自定义退队期限，尚未回到预警窗（踢人周期下不列入本轮）'
+                                : '已设置自定义退队期限'
+                            }
+                          >
+                            自定义延期
+                          </span>
+                        )}
+                        {!!item.is_formal_member_attendance && (
+                          <span className="status-badge bg-violet-600/20 text-violet-300" title="正式队员考勤：按设置天数走训练催促">
+                            正式考勤
+                          </span>
                         )}
                       </div>
                     </td>
@@ -1569,23 +1818,50 @@ export default function ReminderList() {
                     </td>
                     <td>
                       {item.custom_timeout_days ? (
-                        <span className="text-purple-400 text-sm">
-                          自定义：{item.custom_timeout_days} 天
-                        </span>
+                        <div className="text-sm leading-snug">
+                          <div className="text-purple-300">
+                            退队日 {formatDate(quitDateFromRemaining(Math.max(0, item.days_until_timeout)))}
+                          </div>
+                          <div className="text-gray-500 text-xs mt-0.5">
+                            还剩 {item.days_until_timeout} 天 · 标准 {item.custom_timeout_days} 天
+                          </div>
+                        </div>
                       ) : (
                         <span className="text-gray-500 text-sm">
-                          全局：{timeoutDays} 天
+                          {item.is_formal_member_attendance
+                            ? `正式队员：${item.formal_timeout_days || formalTimeoutDays || timeoutDays} 天`
+                            : `全局：${timeoutDays} 天`}
                         </span>
                       )}
                     </td>
                     <td>
-                      <button
-                        onClick={() => handleEditTimeout(item)}
-                        className="text-blue-400 hover:text-blue-300 transition-colors"
-                        title="设置还剩天数"
-                      >
-                        <Edit size={18} />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleEditTimeout(item)}
+                          className="text-blue-400 hover:text-blue-300 transition-colors"
+                          title="设置退队日期"
+                        >
+                          <Edit size={18} />
+                        </button>
+                        {formalTimeoutDays > 0 && FORMAL_MEMBER_STAGES.has(item.stage_role) && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                await reminderAPI.cancelFormalAttendance(item.member_id || item.id)
+                                toast.success('已取消考勤，该成员改按 180 天计入考勤催促')
+                                await Promise.all([loadItems(), loadAttendance()])
+                                void refreshBadges()
+                              } catch (e: any) {
+                                toast.error(e.message || '操作失败')
+                              }
+                            }}
+                            className="text-orange-400 hover:text-orange-300 transition-colors text-xs whitespace-nowrap"
+                            title="取消短周期考勤，改走 180 天考勤催促"
+                          >
+                            取消考勤
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1620,7 +1896,26 @@ export default function ReminderList() {
                   className="student-glass-field"
                 />
                 <p className="text-xs text-gray-400 mt-1">
-                  按「累计未训天数」计。例如填 7 = 未训满 7 天即超时。
+                  新训阶段（含准考）按「累计未训天数」计。例如填 7 = 未训满 7 天即超时。
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">
+                  正式队员考勤时间（天）
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="365"
+                  value={formalTimeoutDays}
+                  onChange={(e) => setFormalTimeoutDays(Math.max(0, parseInt(e.target.value) || 0))}
+                  className="student-glass-field"
+                  placeholder="0 = 关闭"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  填 0 或不启用：紫夜 / 紫夜尖兵走考勤催促 180 天。
+                  填写天数后：他们改走训练催促（该天数），特殊职位除外；可对单人点「取消考勤」改回 180 天。
                 </p>
               </div>
 
@@ -1671,8 +1966,18 @@ export default function ReminderList() {
                 <button
                   onClick={async () => {
                     try {
+                      const rulesRes = await reminderAPI.getRulesConfig()
+                      const nextRules = {
+                        ...rulesRes.data,
+                        training: {
+                          ...rulesRes.data.training,
+                          defaultTimeoutDays: timeoutDays,
+                          formalTimeoutDays,
+                          warnDays: trainingWarnDays,
+                        },
+                      }
                       await Promise.all([
-                        reminderAPI.updateTimeoutDays(timeoutDays),
+                        reminderAPI.saveRulesConfig(nextRules),
                         reminderAPI.updateKickSettings({
                           kickWeekday,
                           leadDays: kickLeadDays,
@@ -1680,7 +1985,7 @@ export default function ReminderList() {
                       ])
                       setShowSettings(false)
                       toast.success('催促设置已保存')
-                      await loadItems()
+                      await Promise.all([loadTimeoutDays(), loadItems(), loadAttendance()])
                       void refreshBadges()
                     } catch (error: any) {
                       toast.error('设置失败: ' + error.message)
@@ -1717,44 +2022,44 @@ export default function ReminderList() {
         />
       )}
 
-      {/* 考勤催促：批量设置还剩天数 */}
+      {/* 考勤催促：批量设置退队日期 */}
       {batchAttendanceTimeoutModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
           <div className="relative z-10 glass-modal-frame w-full max-w-md">
             <div className="glass-modal-tilt">
               <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
-                <h2 className="text-xl font-bold text-white mb-4">批量设置还剩天数</h2>
+                <h2 className="text-xl font-bold text-white mb-4">批量设置退队日期</h2>
                 <p className="text-gray-400 text-sm mb-4">
-                  为选中的 <span className="text-purple-400 font-semibold">{selectedAttendanceIds.size}</span> 个成员统一设置考勤「希望还剩几天」
+                  为选中的 <span className="text-purple-400 font-semibold">{selectedAttendanceIds.size}</span> 个成员统一设定希望退队日
                 </p>
                 <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1">希望还剩几天</label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="365"
-                      value={batchAttendanceRemainingDays ?? ''}
-                      onChange={(e) => {
-                        const v = e.target.value
-                        setBatchAttendanceRemainingDays(v === '' ? null : Math.max(0, parseInt(v) || 0))
-                      }}
-                      className="student-glass-field"
-                      placeholder="留空则恢复默认期限"
-                    />
-                    <p className="text-xs text-gray-400 mt-1">
-                      {batchAttendanceRemainingDays === null
-                        ? '将清除自定义期限，恢复规则默认天数'
-                        : `期限将设为「已过天数 + ${batchAttendanceRemainingDays}」`}
-                    </p>
-                  </div>
+                  <QuitDeadlineFields
+                    mode={quitInputMode}
+                    onModeChange={switchQuitInputMode}
+                    quitDate={batchAttendanceQuitDate}
+                    onQuitDateChange={setBatchAttendanceQuitDate}
+                    hint={
+                      !batchAttendanceQuitDate
+                        ? '留空后确定，将恢复规则默认天数'
+                        : `还剩 ${Math.max(0, daysFromTodayTo(batchAttendanceQuitDate))} 天 · 退队日 ${formatDate(batchAttendanceQuitDate)}（按各人已过天数自动换算期限）`
+                    }
+                  />
                   <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-3">
                     <p className="text-blue-300 text-xs">
-                      例：某人已过 50 天，填还剩 10 天 → 其考勤期限变为 60 天。
+                      可按「还剩天数」或「退队日期」设定；系统会换算并写入自定义期限。
                     </p>
                   </div>
-                  <div className="flex gap-3 pt-4">
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setBatchAttendanceQuitDate('')}
+                      className="text-xs text-gray-400 hover:text-white"
+                    >
+                      清空（恢复默认）
+                    </button>
+                  </div>
+                  <div className="flex gap-3 pt-2">
                     <button
                       onClick={confirmBatchUpdateAttendanceTimeout}
                       className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors"
@@ -1775,16 +2080,16 @@ export default function ReminderList() {
         </div>
       )}
 
-      {/* 考勤催促：单个设置还剩天数 */}
+      {/* 考勤催促：单个设置退队日期 */}
       {editingAttendanceItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
           <div className="relative z-10 glass-modal-frame w-full max-w-md">
             <div className="glass-modal-tilt">
               <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
-                <h2 className="text-xl font-bold text-white mb-4">设置还剩天数</h2>
+                <h2 className="text-xl font-bold text-white mb-4">设置退队日期</h2>
                 <p className="text-gray-400 text-sm mb-4">
-                  为 <span className="text-purple-400 font-semibold">{editingAttendanceItem.member_name}</span> 设置希望还剩几天
+                  为 <span className="text-purple-400 font-semibold">{editingAttendanceItem.member_name}</span> 设定希望还剩天数或退队日期
                 </p>
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-3 text-sm">
@@ -1797,27 +2102,25 @@ export default function ReminderList() {
                       <div className="text-white font-mono">{editingAttendanceItem.remaining_days} 天</div>
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1">希望还剩几天</label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="365"
-                      value={attendanceRemainingDaysInput ?? ''}
-                      onChange={(e) => {
-                        const v = e.target.value
-                        setAttendanceRemainingDaysInput(v === '' ? null : parseInt(v))
-                      }}
-                      className="student-glass-field"
-                      placeholder="留空则恢复默认期限"
-                    />
-                    <p className="text-xs text-gray-400 mt-1">
-                      {attendanceRemainingDaysInput === null || Number.isNaN(attendanceRemainingDaysInput)
-                        ? '将清除自定义期限，恢复规则默认天数'
-                        : `期限将设为 ${Math.max(1, editingAttendanceItem.elapsed_days + attendanceRemainingDaysInput)} 天（已过 ${editingAttendanceItem.elapsed_days} + 还剩 ${attendanceRemainingDaysInput}）`}
-                    </p>
-                  </div>
-                  <div className="flex gap-3 pt-4">
+                  <QuitDeadlineFields
+                    mode={quitInputMode}
+                    onModeChange={switchQuitInputMode}
+                    quitDate={attendanceQuitDateInput}
+                    onQuitDateChange={setAttendanceQuitDateInput}
+                    hint={
+                      !attendanceQuitDateInput
+                        ? '留空后保存，将恢复规则默认天数'
+                        : `还剩 ${Math.max(0, daysFromTodayTo(attendanceQuitDateInput))} 天 · 退队日 ${formatDate(attendanceQuitDateInput)} · 期限将设为 ${Math.max(1, editingAttendanceItem.elapsed_days + Math.max(0, daysFromTodayTo(attendanceQuitDateInput)))} 天`
+                    }
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setAttendanceQuitDateInput('')}
+                    className="text-xs text-gray-400 hover:text-white"
+                  >
+                    清空（恢复默认）
+                  </button>
+                  <div className="flex gap-3 pt-2">
                     <button
                       onClick={handleSaveAttendanceTimeout}
                       className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors"
@@ -1838,50 +2141,45 @@ export default function ReminderList() {
         </div>
       )}
 
-      {/* 批量：按「还剩几天」换算每人超时标准 */}
+      {/* 训练催促：批量设置退队日期 */}
       {batchTimeoutModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
           <div className="relative z-10 glass-modal-frame w-full max-w-md">
             <div className="glass-modal-tilt">
           <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
-            <h2 className="text-xl font-bold text-white mb-4">批量设置还剩天数</h2>
+            <h2 className="text-xl font-bold text-white mb-4">批量设置退队日期</h2>
             <p className="text-gray-400 text-sm mb-4">
-              为选中的 <span className="text-purple-400 font-semibold">{selectedIds.size}</span> 个成员统一设置「希望还剩几天」
+              为选中的 <span className="text-purple-400 font-semibold">{selectedIds.size}</span> 个成员统一设定希望退队日
             </p>
             
             <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">
-                  希望还剩几天
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  max="365"
-                  value={batchRemainingDays ?? ''}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    setBatchRemainingDays(v === '' ? null : Math.max(0, parseInt(v) || 0))
-                  }}
-                  className="student-glass-field"
-                  placeholder="留空则恢复全局超时设置"
-                />
-                <p className="text-xs text-gray-400 mt-1">
-                  {batchRemainingDays === null
-                    ? `将恢复使用全局超时天数（${timeoutDays} 天）`
-                    : `系统会按「未训天数 + ${batchRemainingDays}」为每人自动换算超时标准`
-                  }
-                </p>
-              </div>
+              <QuitDeadlineFields
+                mode={quitInputMode}
+                onModeChange={switchQuitInputMode}
+                quitDate={batchQuitDate}
+                onQuitDateChange={setBatchQuitDate}
+                hint={
+                  !batchQuitDate
+                    ? `留空后确定，将恢复全局超时（${timeoutDays} 天）`
+                    : `还剩 ${Math.max(0, daysFromTodayTo(batchQuitDate))} 天 · 退队日 ${formatDate(batchQuitDate)}（按各人未训天数自动换算超时标准）`
+                }
+              />
 
               <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-3">
                 <p className="text-blue-300 text-xs">
-                  例：某人已未训 10 天，填还剩 5 天 → 其超时标准变为 15 天。
+                  可按「还剩天数」或「退队日期」设定；系统按「未训天数 + 还剩天数」写入自定义超时标准。
                 </p>
               </div>
+              <button
+                type="button"
+                onClick={() => setBatchQuitDate('')}
+                className="text-xs text-gray-400 hover:text-white"
+              >
+                清空（恢复全局）
+              </button>
               
-              <div className="flex gap-3 pt-4">
+              <div className="flex gap-3 pt-2">
                 <button
                   onClick={confirmBatchUpdateTimeout}
                   className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors"
@@ -1902,16 +2200,16 @@ export default function ReminderList() {
         </div>
       )}
 
-      {/* 单个成员：按「还剩几天」换算超时标准 */}
+      {/* 训练催促：单个设置退队日期 */}
       {editingItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
           <div className="relative z-10 glass-modal-frame w-full max-w-md">
             <div className="glass-modal-tilt">
           <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full">
-            <h2 className="text-xl font-bold text-white mb-4">设置还剩天数</h2>
+            <h2 className="text-xl font-bold text-white mb-4">设置退队日期</h2>
             <p className="text-gray-400 text-sm mb-4">
-              为 <span className="text-purple-400 font-semibold">{editingItem.member_name}</span> 设置希望还剩几天
+              为 <span className="text-purple-400 font-semibold">{editingItem.member_name}</span> 设定希望还剩天数或退队日期
             </p>
             
             <div className="space-y-4">
@@ -1926,37 +2224,32 @@ export default function ReminderList() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">
-                  希望还剩几天
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  max="365"
-                  value={remainingDaysInput ?? ''}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    setRemainingDaysInput(v === '' ? null : parseInt(v))
-                  }}
-                  className="student-glass-field"
-                  placeholder="留空则恢复全局超时设置"
-                />
-                <p className="text-xs text-gray-400 mt-1">
-                  {remainingDaysInput === null || Number.isNaN(remainingDaysInput)
-                    ? `将恢复使用全局超时天数（${timeoutDays} 天）`
-                    : `超时标准将设为 ${Math.max(1, editingItem.days_without_training + remainingDaysInput)} 天（未训 ${editingItem.days_without_training} + 还剩 ${remainingDaysInput}）`
-                  }
-                </p>
-              </div>
+              <QuitDeadlineFields
+                mode={quitInputMode}
+                onModeChange={switchQuitInputMode}
+                quitDate={quitDateInput}
+                onQuitDateChange={setQuitDateInput}
+                hint={
+                  !quitDateInput
+                    ? `留空后保存，将恢复全局超时（${timeoutDays} 天）`
+                    : `还剩 ${Math.max(0, daysFromTodayTo(quitDateInput))} 天 · 退队日 ${formatDate(quitDateInput)} · 超时标准 ${Math.max(1, editingItem.days_without_training + Math.max(0, daysFromTodayTo(quitDateInput)))} 天`
+                }
+              />
 
               <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-3">
                 <p className="text-blue-300 text-xs">
-                  直接填「还剩几天」即可，系统自动换算自定义超时标准。清空输入框可恢复全局设置。
+                  可按「还剩天数」或「退队日期」设定；系统会换算自定义超时标准。
                 </p>
               </div>
+              <button
+                type="button"
+                onClick={() => setQuitDateInput('')}
+                className="text-xs text-gray-400 hover:text-white"
+              >
+                清空（恢复全局）
+              </button>
               
-              <div className="flex gap-3 pt-4">
+              <div className="flex gap-3 pt-2">
                 <button
                   onClick={handleSaveTimeout}
                   className="flex-1 bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg transition-colors"
@@ -1976,6 +2269,17 @@ export default function ReminderList() {
           </div>
         </div>
       )}
+
+      <ReminderRulesSettings
+        open={showRulesSettings}
+        onClose={() => setShowRulesSettings(false)}
+        onSaved={() => {
+          void loadTimeoutDays()
+          void loadItems()
+          void loadAttendance()
+          void refreshBadges()
+        }}
+      />
     </div>
   )
 }

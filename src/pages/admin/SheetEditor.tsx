@@ -14,6 +14,7 @@ import {
   X,
   History,
   Users,
+  RefreshCw,
 } from 'lucide-react'
 import { sheetAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
@@ -39,6 +40,8 @@ import {
   type WorkbookDocument,
 } from '../../utils/workbookModel'
 import { evaluateWorkbook } from '../../utils/sheetFormulaEngine'
+import { useSheetPresence } from '../../hooks/useSheetPresence'
+import SheetPresenceBar from '../../components/SheetPresenceBar'
 
 export default function SheetEditor() {
   const { id } = useParams()
@@ -76,14 +79,22 @@ export default function SheetEditor() {
     return 'student_readonly'
   }
 
+  const { others, othersEditing } = useSheetPresence({
+    workbookId,
+    enabled: Number.isFinite(workbookId) && workbookId > 0,
+    editing: !isView,
+  })
+
   const scheduleSave = (next: WorkbookDocument) => {
     setDirty(true)
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => {
       sheetAPI
         .update(workbookId, { content: next })
-        .then(() => {
+        .then((res) => {
           setDirty(false)
+          if (res.data?.updated_at) setUpdatedAt(res.data.updated_at)
+          if (res.data?.updated_by != null) setUpdatedBy(res.data.updated_by)
         })
         .catch(() => {})
     }, 1200)
@@ -100,10 +111,10 @@ export default function SheetEditor() {
     setWorkbook((prev) => commitWorkbook(updater(prev)))
   }
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
     if (!workbookId) return
     try {
-      setLoading(true)
+      if (!silent) setLoading(true)
       const res = await sheetAPI.get(workbookId)
       const d = res.data
       setTitle(d.title || '')
@@ -115,17 +126,26 @@ export default function SheetEditor() {
       setUpdatedAt(d.updated_at || null)
       setUpdatedBy(d.updated_by || null)
       setDirty(false)
+      if (silent) toast.success('已刷新')
     } catch (e: any) {
       toast.error(e.message || '加载失败')
-      navigate('/admin/sheets')
+      if (!silent) navigate('/admin/sheets')
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [workbookId, navigate])
 
   useEffect(() => {
     load()
   }, [load])
+
+  const refresh = () => {
+    if (!isView && dirty) {
+      if (!window.confirm('有未保存的本地更改，刷新将丢弃，确定继续？')) return
+    }
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    void load(true)
+  }
 
   const switchMode = (mode: 'view' | 'edit') => {
     if (mode === 'view') setSearchParams({ mode: 'view' })
@@ -279,11 +299,6 @@ export default function SheetEditor() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-gray-500">
-            {!isView && (dirty ? '有未保存更改 · ' : '已同步 · ')}
-            {updatedAt ? formatDateTime(updatedAt) : ''}
-            {updatedBy ? ` · ${updatedBy}` : ''}
-          </span>
           <button
             type="button"
             onClick={() => setShowHistory(true)}
@@ -291,6 +306,14 @@ export default function SheetEditor() {
             title="查看编辑过的人与历史回退"
           >
             <History size={16} /> 历史
+          </button>
+          <button
+            type="button"
+            onClick={refresh}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-gray-200 text-sm"
+            title="从服务器重新加载表格"
+          >
+            <RefreshCw size={16} /> 刷新
           </button>
           {!isView && (
             <button
@@ -329,6 +352,16 @@ export default function SheetEditor() {
             </>
           )}
         </div>
+      </div>
+
+      <div className="shrink-0 rounded-lg border border-white/8 bg-black/20 px-3 py-2">
+        <SheetPresenceBar
+          others={others}
+          othersEditing={othersEditing}
+          updatedAtLabel={updatedAt ? formatDateTime(updatedAt) : undefined}
+          updatedBy={updatedBy}
+          dirty={!isView && dirty}
+        />
       </div>
 
       {description && isView && (

@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs'
 import { pool } from '../config/database.js'
 import { toMySQLDate } from '../utils/date.js'
 import { ensurePhase3ReachedAt, computeAttendanceForMember, ATTENDANCE_WARN_DAYS } from '../utils/attendanceReminder.js'
+import { loadFormalAttendancePolicy } from '../utils/formalAttendancePolicy.js'
 import { TRAINING_WARN_DAYS } from '../utils/reminderQuery.js'
 import { loadReminderConfig, queryTrainingReminders } from '../utils/trainingReminderList.js'
 import { computeStageFromCourseProgress, STAGE_SYNC_SKIP_ROLES } from '../utils/stageFromProgress.js'
@@ -739,18 +740,25 @@ router.get('/reminders/training', requireAssistant, requirePerm('view_assigned_a
       : cfg.displayMode
 
     let rows = []
-    let warnDays = TRAINING_WARN_DAYS
+    let warnDays = cfg.trainingWarnDays ?? TRAINING_WARN_DAYS
     let kickMeta = null
 
     if (mode === 'kick_cycle') {
       kickMeta = cfg.kickInfo
       if (cfg.kickInfo.inWindow) {
         warnDays = cfg.kickInfo.daysUntilKick
-        rows = await queryTrainingReminders(cfg.defaultTimeoutDays, warnDays)
+        rows = await queryTrainingReminders(cfg.defaultTimeoutDays, warnDays, {
+          includeCustomExtended: false,
+          includeLeaveBuffer: false,
+          formalTimeoutDays: cfg.formalTimeoutDays,
+        })
       }
     } else {
-      warnDays = TRAINING_WARN_DAYS
-      rows = await queryTrainingReminders(cfg.defaultTimeoutDays, warnDays)
+      warnDays = cfg.trainingWarnDays ?? TRAINING_WARN_DAYS
+      rows = await queryTrainingReminders(cfg.defaultTimeoutDays, warnDays, {
+        includeCustomExtended: true,
+        formalTimeoutDays: cfg.formalTimeoutDays,
+      })
     }
 
     const data = rows.filter((r) => assignedIds.has(Number(r.member_id || r.id)))
@@ -831,6 +839,8 @@ router.get('/attendance', requireAssistant, requirePerm('view_assigned_attendanc
       console.error('[assistant] load attendance overrides', e.message)
     }
 
+    const { formalTimeoutDays, use180Set, rulesConfig } = await loadFormalAttendancePolicy()
+    const attendanceWarnDays = rulesConfig?.attendance?.warnDays ?? ATTENDANCE_WARN_DAYS
     const items = []
     for (const m of members) {
       const item = computeAttendanceForMember(m, leaveMap.get(m.id) || [], {
@@ -838,13 +848,16 @@ router.get('/attendance', requireAssistant, requirePerm('view_assigned_attendanc
         inRetention: !!m.in_retention,
         showAll,
         overrides: overrideMap.get(m.id) || {},
+        formalTimeoutDays,
+        useFormal180: use180Set.has(Number(m.id)),
+        rulesConfig,
       })
       if (item) items.push({ ...item, avatar: m.avatar })
     }
     items.sort((a, b) => a.remaining_days - b.remaining_days)
 
     const warnItems = showAll
-      ? items.filter((i) => !i.ignored && i.remaining_days <= ATTENDANCE_WARN_DAYS)
+      ? items.filter((i) => !i.ignored && i.remaining_days <= attendanceWarnDays)
       : items
 
     res.json({
@@ -852,7 +865,7 @@ router.get('/attendance', requireAssistant, requirePerm('view_assigned_attendanc
       data: items,
       meta: {
         showAll,
-        warnDays: ATTENDANCE_WARN_DAYS,
+        warnDays: attendanceWarnDays,
         total: items.length,
         warnCount: warnItems.length,
       },

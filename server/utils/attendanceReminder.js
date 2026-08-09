@@ -1,29 +1,22 @@
 /**
- * 考勤催促：
- * - 加入后 60 天内达到新训三期
- * - 达到三期后 45 天内成为新训准考及以上（下调仍按首次达三期计时，总上限 105 天）
- * - 新训准考 / 紫夜 / 紫夜尖兵 / 紫夜助教：半年未参加新训
- * - 请假期间暂停计时；留队 / 状态「其他」不计
+ * 考勤催促：按 reminder_rules_config 规则链计算
+ * - until_stage：从锚点起在 N 天内达到目标阶段
+ * - training_idle：指定阶段自上次训练起的闲置天数
  */
 
+import {
+  formatRuleLabel,
+  loadReminderRulesConfig,
+  resolveRuleBadge,
+  resolveRuleBadgeColor,
+} from './reminderRulesConfig.js'
+
+/** @deprecated 默认常量，实际以配置为准 */
 export const PHASE3_DEADLINE_DAYS = 60
 export const FORMAL_DEADLINE_DAYS = 45
-export const MAX_TRACK_DAYS = PHASE3_DEADLINE_DAYS + FORMAL_DEADLINE_DAYS // 105
-export const FORMAL_IDLE_DAYS = 180 // 半年
+export const MAX_TRACK_DAYS = PHASE3_DEADLINE_DAYS + FORMAL_DEADLINE_DAYS
+export const FORMAL_IDLE_DAYS = 180
 export const ATTENDANCE_WARN_DAYS = 7
-
-const PHASE3_STAGES = new Set([
-  '新训三期', '新训准考', '紫夜', '紫夜尖兵', '紫夜助教',
-  '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师',
-])
-
-const FORMAL_STAGES = new Set(['新训准考', '紫夜', '紫夜尖兵', '紫夜助教'])
-
-/** 新训准考及以上（含干部 / 助教）——达三期后 45 天目标已达成，不再催「升准考」 */
-const EXAM_OR_ABOVE = new Set([
-  '新训准考', '紫夜', '紫夜尖兵', '紫夜助教',
-  '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师',
-])
 
 function toDateOnly(v) {
   if (!v) return null
@@ -43,7 +36,7 @@ function datediff(a, b) {
   return Math.round((da - db) / 86400000)
 }
 
-/** 区间 [rangeStart, rangeEnd] 与请假记录的重叠天数（按 MySQL DATEDIFF 风格，不含末日外延） */
+/** 区间 [rangeStart, rangeEnd] 与请假记录的重叠天数 */
 export function leaveDaysInRange(leaves, rangeStart, rangeEnd, today = new Date()) {
   const rs = toDateOnly(rangeStart)
   const re = toDateOnly(rangeEnd) || toDateOnly(today)
@@ -67,7 +60,6 @@ export function leaveDaysInRange(leaves, rangeStart, rangeEnd, today = new Date(
   return Math.max(0, total)
 }
 
-/** 有效已过天数 = 日历天数 − 请假天数 */
 export function effectiveElapsedDays(fromDate, toDate, leaves) {
   const raw = datediff(toDate, fromDate)
   if (raw <= 0) return 0
@@ -75,26 +67,72 @@ export function effectiveElapsedDays(fromDate, toDate, leaves) {
   return Math.max(0, raw - paused)
 }
 
-export function isPhase3OrAbove(stage) {
-  return PHASE3_STAGES.has(stage)
+function stageInList(stage, list) {
+  return Array.isArray(list) && list.includes(stage)
 }
 
-export function isExamOrAbove(stage) {
-  return EXAM_OR_ABOVE.has(stage)
+/** 供阶段变更时写入 milestone：合并所有规则的 milestoneStages */
+export function getMilestoneStagesFromConfig(config) {
+  const set = new Set()
+  for (const rule of config?.attendance?.rules || []) {
+    if (rule.type !== 'until_stage') continue
+    for (const s of rule.milestoneStages || []) set.add(s)
+  }
+  if (set.size === 0) {
+    ;['新训三期', '新训准考', '紫夜', '紫夜尖兵', '紫夜助教',
+      '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师'].forEach((s) => set.add(s))
+  }
+  return set
 }
 
-/** @deprecated 使用 isExamOrAbove；保留别名避免旧引用报错 */
-export function isFormalOrAbove(stage) {
-  return isExamOrAbove(stage)
+export function isPhase3OrAbove(stage, config = null) {
+  if (config) {
+    const milestones = getMilestoneStagesFromConfig(config)
+    return milestones.has(stage)
+  }
+  return getMilestoneStagesFromConfig(null).has(stage)
 }
 
-export function isFormalMember(stage) {
-  return FORMAL_STAGES.has(stage)
+export function isExamOrAbove(stage, config = null) {
+  if (config) {
+    for (const rule of config.attendance?.rules || []) {
+      if (rule.reasonCode === 'to_exam' || rule.id === 'to_exam') {
+        return stageInList(stage, rule.doneWhenStages)
+      }
+    }
+  }
+  return ['新训准考', '紫夜', '紫夜尖兵', '紫夜助教',
+    '会长', '执行官', '人事', '总教', '尖兵教官', '教官', '工程师'].includes(stage)
+}
+
+export function isFormalOrAbove(stage, config = null) {
+  return isExamOrAbove(stage, config)
+}
+
+export function isFormalMember(stage, config = null) {
+  const stages = config?.training?.formalStages
+  if (Array.isArray(stages) && stages.length) return stages.includes(stage)
+  return stage === '紫夜' || stage === '紫夜尖兵'
+}
+
+function resolveStartDate(rule, joinDate, phase3At, lastTraining) {
+  switch (rule.startAnchor) {
+    case 'phase3_reached_at':
+      // 调用方已确认已达里程碑；缺日期时回退加入日
+      return phase3At || joinDate
+    case 'last_training_date':
+      return lastTraining || joinDate
+    case 'join_date':
+    default:
+      return joinDate
+  }
 }
 
 /**
- * 计算单名成员的考勤催促信息。
- * @returns {null | object}
+ * @param {object} member
+ * @param {object[]} leaves
+ * @param {object} opts
+ * @param {object} opts.rulesConfig loadReminderRulesConfig() 结果
  */
 export function computeAttendanceForMember(member, leaves, opts = {}) {
   const {
@@ -102,8 +140,10 @@ export function computeAttendanceForMember(member, leaves, opts = {}) {
     ignored = false,
     inRetention = false,
     showAll = false,
-    /** @type {Record<string, number>} reason_code -> custom_deadline_days */
     overrides = {},
+    formalTimeoutDays = 0,
+    useFormal180 = false,
+    rulesConfig = null,
   } = opts
 
   if (inRetention) return null
@@ -112,62 +152,87 @@ export function computeAttendanceForMember(member, leaves, opts = {}) {
   const joinDate = toDateOnly(member.join_date)
   if (!joinDate) return null
 
-  const onLeave = member.status === '请假中'
+  const hasActiveLeave = (leaves || []).some(
+    (l) => l.status === '请假中' || l.status === '待结束审批'
+  )
+  const onLeave = member.status === '请假中' || hasActiveLeave
   const stage = member.stage_role
   const phase3At = toDateOnly(member.phase3_reached_at)
   const lastTraining = toDateOnly(member.last_training_date) || joinDate
 
-  /** @type {{ reason_code: string, reason_label: string, deadline_days: number, elapsed_days: number, remaining_days: number, paused: boolean, has_custom_deadline?: boolean }[]} */
+  const warnDays = rulesConfig?.attendance?.warnDays ?? ATTENDANCE_WARN_DAYS
+  const rules = rulesConfig?.attendance?.rules || []
+  const formalStages = rulesConfig?.training?.formalStages || ['紫夜', '紫夜尖兵']
+  const effectiveFormalTimeout = formalTimeoutDays > 0
+    ? formalTimeoutDays
+    : (rulesConfig?.training?.formalTimeoutDays || 0)
+
   const clocks = []
 
-  // 1) 未达三期：60 天内达三期
-  if (!phase3At && !isPhase3OrAbove(stage)) {
-    const elapsed = effectiveElapsedDays(joinDate, today, leaves)
-    clocks.push({
-      reason_code: 'to_phase3',
-      reason_label: '需在加入后 60 天内达到新训三期',
-      deadline_days: PHASE3_DEADLINE_DAYS,
-      elapsed_days: elapsed,
-      remaining_days: PHASE3_DEADLINE_DAYS - elapsed,
-      paused: onLeave,
-    })
-  }
+  for (const rule of rules) {
+    if (!rule.enabled) continue
 
-  // 2) 已达三期但未达准考：45 天（总上限 105）
-  if ((phase3At || isPhase3OrAbove(stage)) && !isExamOrAbove(stage)) {
-    const start = phase3At || joinDate
-    const elapsedFromPhase3 = effectiveElapsedDays(start, today, leaves)
-    const elapsedFromJoin = effectiveElapsedDays(joinDate, today, leaves)
-    const remainExam = FORMAL_DEADLINE_DAYS - elapsedFromPhase3
-    const remainCap = MAX_TRACK_DAYS - elapsedFromJoin
-    const remaining = Math.min(remainExam, remainCap)
+    if (rule.type === 'training_idle') {
+      const activeStages = rule.activeWhenStages?.length ? rule.activeWhenStages : formalStages
+      if (!stageInList(stage, activeStages)) continue
+      // 开启正式队员短周期且未「取消考勤」时，跳过本条（改走训练催促常驻倒计时）
+      if (rule.skipWhenFormalShortCycle !== false) {
+        if (effectiveFormalTimeout > 0 && !useFormal180) continue
+      }
+
+      const elapsed = effectiveElapsedDays(lastTraining, today, leaves)
+      const deadline = rule.deadlineDays
+      clocks.push({
+        reason_code: rule.reasonCode || rule.id,
+        reason_title: resolveRuleBadge(rule),
+        reason_color: resolveRuleBadgeColor(rule),
+        reason_label: formatRuleLabel(rule, { deadline }),
+        deadline_days: deadline,
+        elapsed_days: elapsed,
+        remaining_days: deadline - elapsed,
+        paused: onLeave,
+      })
+      continue
+    }
+
+    // until_stage
+    if (stageInList(stage, rule.doneWhenStages)) continue
+
+    if (rule.startAnchor === 'phase3_reached_at') {
+      const started = !!(phase3At || isPhase3OrAbove(stage, rulesConfig))
+      if (!started) continue
+    }
+
+    const start = resolveStartDate(rule, joinDate, phase3At, lastTraining)
+    if (!start) continue
+
+    const elapsed = effectiveElapsedDays(start, today, leaves)
+    const deadline = rule.deadlineDays
+    let remaining = deadline - elapsed
+
+    if (rule.capFromJoinDays != null) {
+      const elapsedFromJoin = effectiveElapsedDays(joinDate, today, leaves)
+      const remainCap = rule.capFromJoinDays - elapsedFromJoin
+      remaining = Math.min(remaining, remainCap)
+    }
+
     clocks.push({
-      // 兼容旧覆盖表 reason_code=to_formal
-      reason_code: 'to_exam',
-      reason_label: '达到三期后需在 45\u00A0天内成为新训准考及以上（总上限 105\u00A0天）',
-      deadline_days: FORMAL_DEADLINE_DAYS,
-      elapsed_days: elapsedFromPhase3,
+      reason_code: rule.reasonCode || rule.id,
+      reason_title: resolveRuleBadge(rule),
+      reason_color: resolveRuleBadgeColor(rule),
+      reason_label: formatRuleLabel(rule, {
+        deadline,
+        cap: rule.capFromJoinDays,
+      }),
+      deadline_days: deadline,
+      elapsed_days: elapsed,
       remaining_days: remaining,
-      paused: onLeave,
-    })
-  }
-
-  // 3) 新训准考 / 紫夜 / 紫夜尖兵：半年未新训
-  if (isFormalMember(stage)) {
-    const elapsed = effectiveElapsedDays(lastTraining, today, leaves)
-    clocks.push({
-      reason_code: 'formal_idle',
-      reason_label: '准考及以上半年内需至少参加一次新训',
-      deadline_days: FORMAL_IDLE_DAYS,
-      elapsed_days: elapsed,
-      remaining_days: FORMAL_IDLE_DAYS - elapsed,
       paused: onLeave,
     })
   }
 
   if (clocks.length === 0) return null
 
-  // 应用自定义期限：还剩天数 = custom_deadline - elapsed
   for (const clock of clocks) {
     const custom =
       overrides[clock.reason_code] ??
@@ -185,8 +250,7 @@ export function computeAttendanceForMember(member, leaves, opts = {}) {
   const remaining_days = primary.remaining_days
   const hasCustom = clocks.some((c) => c.has_custom_deadline)
 
-  const inWarnWindow = remaining_days <= ATTENDANCE_WARN_DAYS
-  // 有自定义期限的成员始终保留在名单（便于回看/再改），除非已忽略且非 showAll
+  const inWarnWindow = remaining_days <= warnDays
   if (!showAll && !inWarnWindow && !ignored && !hasCustom) return null
   if (ignored && !showAll) return null
   if (onLeave && !showAll) return null
@@ -204,18 +268,23 @@ export function computeAttendanceForMember(member, leaves, opts = {}) {
     ignored,
     paused: onLeave,
     reason_code: primary.reason_code,
+    reason_title: primary.reason_title,
+    reason_color: primary.reason_color,
     reason_label: primary.reason_label,
     remaining_days,
     elapsed_days: primary.elapsed_days,
     deadline_days: primary.deadline_days,
     has_custom_deadline: !!primary.has_custom_deadline,
     custom_deadline_days: primary.has_custom_deadline ? primary.deadline_days : null,
+    formal_use_180: !!useFormal180 && primary.reason_code === 'formal_idle',
     reasons: clocks,
   }
 }
 
-export async function ensurePhase3ReachedAt(pool, memberId, newStage) {
-  if (!isPhase3OrAbove(newStage)) return
+export async function ensurePhase3ReachedAt(pool, memberId, newStage, config = null) {
+  const cfg = config || await loadReminderRulesConfig()
+  const milestones = getMilestoneStagesFromConfig(cfg)
+  if (!milestones.has(newStage)) return
   await pool.query(
     `UPDATE members
      SET phase3_reached_at = COALESCE(phase3_reached_at, CURDATE())

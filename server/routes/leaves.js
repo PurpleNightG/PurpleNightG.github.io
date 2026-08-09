@@ -349,9 +349,10 @@ router.put('/:id', async (req, res) => {
         WHERE id = ?
       `, [reason, start_date, end_date, total_days, finalStatus, id])
 
+      // 待结束审批期间仍视为请假中，避免进入训练/考勤催促名单
       await pool.query(
         'UPDATE members SET status = ? WHERE id = ?',
-        ['正常', existing[0].member_id]
+        ['请假中', existing[0].member_id]
       )
 
       return res.json({
@@ -410,7 +411,8 @@ router.delete('/:id', async (req, res) => {
     await pool.query('DELETE FROM leave_records WHERE id = ?', [id])
     
     const [activeLeaves] = await pool.query(
-      "SELECT COUNT(*) as count FROM leave_records WHERE member_id = ? AND status = '请假中'",
+      `SELECT COUNT(*) as count FROM leave_records
+       WHERE member_id = ? AND status IN ('请假中', '待结束审批')`,
       [existing[0].member_id]
     )
 
@@ -459,6 +461,19 @@ router.put('/:id/end-approval', async (req, res) => {
       WHERE id = ?
     `, [reviewer_name || '管理员', id])
 
+    const memberId = existing[0].member_id
+    const [activeLeaves] = await pool.query(
+      `SELECT COUNT(*) as count FROM leave_records
+       WHERE member_id = ? AND status IN ('请假中', '待结束审批')`,
+      [memberId]
+    )
+    if (activeLeaves[0].count === 0) {
+      await pool.query(
+        'UPDATE members SET status = ? WHERE id = ?',
+        ['正常', memberId]
+      )
+    }
+
     res.json({
       success: true,
       message: '请假结束已确认，成员进入 7 天缓冲期'
@@ -485,24 +500,31 @@ router.post('/auto-update', async (req, res) => {
         WHERE status = '请假中' AND end_date < CURDATE()
       `)
       
+      // 仍有「待结束审批」= 请假尚未最终结束，成员状态保持「请假中」
       for (const leave of expiredLeaves) {
-        const [activeLeaves] = await pool.query(
-          "SELECT COUNT(*) as count FROM leave_records WHERE member_id = ? AND status = '请假中'",
-          [leave.member_id]
+        await pool.query(
+          'UPDATE members SET status = ? WHERE id = ?',
+          ['请假中', leave.member_id]
         )
-        
-        if (activeLeaves[0].count === 0) {
-          await pool.query(
-            'UPDATE members SET status = ? WHERE id = ?',
-            ['正常', leave.member_id]
-          )
-        }
       }
     }
+
+    // 修复历史脏数据：有待结束/请假中记录，但成员状态已被改回「正常」
+    const [repaired] = await pool.query(`
+      UPDATE members m
+      SET m.status = '请假中'
+      WHERE m.status = '正常'
+        AND EXISTS (
+          SELECT 1 FROM leave_records lr
+          WHERE lr.member_id = m.id
+            AND lr.status IN ('请假中', '待结束审批')
+        )
+    `)
     
     res.json({
       success: true,
-      message: `已将 ${expiredLeaves.length} 条过期请假移入结束审批`
+      message: `已将 ${expiredLeaves.length} 条过期请假移入结束审批` +
+        (repaired?.affectedRows ? `，并修复 ${repaired.affectedRows} 名成员请假状态` : '')
     })
   } catch (error) {
     console.error('自动更新请假记录失败:', error)

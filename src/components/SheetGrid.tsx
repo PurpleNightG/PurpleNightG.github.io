@@ -3826,64 +3826,48 @@ export default function SheetGrid({
                           backgroundColor:
                             cell?.bg && cell.bg !== 'transparent' ? cell.bg : undefined,
                           textAlign: cell?.align || 'left',
-                          verticalAlign:
-                            cell?.vAlign === 'middle'
-                              ? 'middle'
-                              : cell?.vAlign === 'bottom'
-                                ? 'bottom'
-                                : 'top',
+                          // 垂直对齐由内部 flex 容器负责；勿对 contentEditable 本身设 flex（Chrome 会复制文本节点）
+                          verticalAlign: 'top',
                         }}
                         onMouseDown={(e) => onCellMouseDown(r, c, e)}
                         onMouseEnter={() => onCellMouseEnter(r, c)}
                         onDoubleClick={() => onCellDoubleClick(r, c)}
                       >
-                        {isEditingHere ? (
-                          <div
-                            ref={editRef}
-                            contentEditable
-                            suppressContentEditableWarning
-                            className="w-full h-full px-2 py-1 outline-none text-gray-100 overflow-auto whitespace-pre-wrap break-words select-text"
-                            style={{
-                              minHeight: height,
-                              maxHeight: height,
-                              textAlign: cell?.align || 'left',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              justifyContent:
-                                cell?.vAlign === 'middle'
-                                  ? 'center'
-                                  : cell?.vAlign === 'bottom'
-                                    ? 'flex-end'
-                                    : 'flex-start',
-                            }}
-                            onInput={() => {
-                              if (!editRef.current) return
-                              const plain = htmlToPlain(editRef.current.innerHTML)
-                              setEditText(plain)
-                            }}
-                            onMouseUp={rememberSelection}
-                            onKeyUp={rememberSelection}
-                            onBlur={onEditBlur}
-                            onKeyDown={onEditKeyDown}
-                            onPaste={onGridPaste}
-                          />
-                        ) : (
-                          <div
-                            className="box-border overflow-hidden"
-                            style={{
-                              height,
-                              maxHeight: height,
-                              display: 'flex',
-                              flexDirection: 'column',
-                              justifyContent:
-                                cell?.vAlign === 'middle'
-                                  ? 'center'
-                                  : cell?.vAlign === 'bottom'
-                                    ? 'flex-end'
-                                    : 'flex-start',
-                            }}
-                            title={cell?.f || undefined}
-                          >
+                        <div
+                          className="box-border overflow-hidden"
+                          style={{
+                            height,
+                            maxHeight: height,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent:
+                              cell?.vAlign === 'middle'
+                                ? 'center'
+                                : cell?.vAlign === 'bottom'
+                                  ? 'flex-end'
+                                  : 'flex-start',
+                          }}
+                          title={!isEditingHere ? cell?.f || undefined : undefined}
+                        >
+                          {isEditingHere ? (
+                            <div
+                              ref={editRef}
+                              contentEditable
+                              suppressContentEditableWarning
+                              className="w-full px-2 py-1 outline-none text-gray-100 overflow-auto whitespace-pre-wrap break-words select-text max-h-full"
+                              style={{ textAlign: cell?.align || 'left' }}
+                              onInput={() => {
+                                if (!editRef.current) return
+                                const plain = htmlToPlain(editRef.current.innerHTML)
+                                setEditText(plain)
+                              }}
+                              onMouseUp={rememberSelection}
+                              onKeyUp={rememberSelection}
+                              onBlur={onEditBlur}
+                              onKeyDown={onEditKeyDown}
+                              onPaste={onGridPaste}
+                            />
+                          ) : (
                             <div
                               className={`w-full px-2 py-1 break-words select-none [&_a]:text-blue-300 ${
                                 cell?.f ? 'text-sky-200' : 'text-gray-100'
@@ -3891,8 +3875,8 @@ export default function SheetGrid({
                               style={{ textAlign: cell?.align || 'left' }}
                               dangerouslySetInnerHTML={{ __html: cellToHtml(cell) || '&nbsp;' }}
                             />
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </td>
                     )
                   })}

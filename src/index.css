@@ -728,6 +728,12 @@
   will-change: auto;
 }
 
+/* 仅保留指针倾斜 / 高光，关闭会“抬升偏移”的 hover 阴影与描边变化 */
+.student-glass-panel--tilt-only:hover {
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 16px 40px -24px rgba(0, 0, 0, 0.7);
+}
+
 /*
  * 模态框毛玻璃：适度模糊；倾斜请加在 .glass-modal-tilt 上，
  * 勿与 backdrop-filter 同元素，否则会留下未倾斜的残影。
@@ -1271,6 +1277,74 @@ body {
 .sidebar-scrollbar {
   scrollbar-width: thin;
   scrollbar-color: rgba(148, 163, 184, 0.28) transparent;
+}
+
+/* 催促规则总设置：勿给毛玻璃祖先加 transform/opacity，否则遮罩模糊会失效 */
+@keyframes reminderRulesBackdropIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes reminderRulesContentIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.reminder-rules-backdrop-enter {
+  animation: reminderRulesBackdropIn 0.22s ease-out both;
+}
+
+.reminder-rules-content-enter {
+  animation: reminderRulesContentIn 0.28s ease-out both;
+}
+
+/* 展开区高度过渡（grid 0fr→1fr，比 max-height 更顺） */
+.reminder-rules-expand {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.reminder-rules-expand.is-open {
+  grid-template-rows: 1fr;
+}
+
+.reminder-rules-expand-inner {
+  overflow: hidden;
+  min-height: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease 0.04s;
+}
+
+.reminder-rules-expand.is-open .reminder-rules-expand-inner {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.reminder-rules-stage-chip {
+  transition: background-color 0.18s ease, color 0.18s ease, transform 0.18s ease, border-color 0.18s ease;
+}
+
+.reminder-rules-stage-chip:active {
+  transform: scale(0.96);
+}
+
+.reminder-rules-card {
+  transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.reminder-rules-card:hover {
+  border-color: rgba(167, 139, 250, 0.35);
+}
+
+.reminder-rules-card.is-open {
+  border-color: rgba(167, 139, 250, 0.45);
+  box-shadow: 0 0 0 1px rgba(124, 58, 237, 0.12);
+}
+
+.reminder-rules-tab-panel {
+  animation: reminderRulesContentIn 0.22s ease-out both;
 }
 
 /* Custom thin scrollbar for modals */

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { getAdminSecurityHeaders } from '../utils/deviceIdentity'
 
 const API = (import.meta as any).env?.VITE_API_URL || 'http://localhost:3000/api'
@@ -13,6 +13,7 @@ interface Badges {
 }
 
 interface BadgeContextValue extends Badges {
+  /** 强制绕过服务端短缓存，审批等写操作后应调用 */
   refreshBadges: () => Promise<void>
 }
 
@@ -37,17 +38,25 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
       return defaultBadges
     }
   })
+  const seqRef = useRef(0)
 
-  const fetchBadges = useCallback(async () => {
+  const fetchBadges = useCallback(async (opts?: { fresh?: boolean }) => {
+    const seq = ++seqRef.current
     try {
       const token = localStorage.getItem('token') || sessionStorage.getItem('token')
       if (!token) return
       const sec = await getAdminSecurityHeaders().catch(() => ({} as Record<string, string>))
-      const res = await fetch(`${API}/badges`, {
-        headers: { Authorization: `Bearer ${token}`, ...sec },
+      const qs = opts?.fresh ? '?fresh=1' : ''
+      const res = await fetch(`${API}/badges${qs}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          ...(opts?.fresh ? { 'X-Badge-Fresh': '1' } : {}),
+          ...sec,
+        },
         cache: 'no-store',
       })
       const data = await res.json()
+      if (seq !== seqRef.current) return
       if (data.success) {
         const next = {
           ...defaultBadges,
@@ -65,12 +74,15 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  const refreshBadges = useCallback(() => fetchBadges({ fresh: true }), [fetchBadges])
+
   useEffect(() => {
-    fetchBadges()
-    const id = setInterval(fetchBadges, 60_000)
-    const onFocus = () => { void fetchBadges() }
+    // 首屏强制新鲜，避免 sessionStorage / 服务端短缓存导致刷新仍显示旧数字
+    void fetchBadges({ fresh: true })
+    const id = setInterval(() => { void fetchBadges() }, 60_000)
+    const onFocus = () => { void fetchBadges({ fresh: true }) }
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') void fetchBadges()
+      if (document.visibilityState === 'visible') void fetchBadges({ fresh: true })
     }
     window.addEventListener('focus', onFocus)
     document.addEventListener('visibilitychange', onVisibility)
@@ -82,8 +94,8 @@ export function BadgeProvider({ children }: { children: React.ReactNode }) {
   }, [fetchBadges])
 
   const value = useMemo(
-    () => ({ ...badges, refreshBadges: fetchBadges }),
-    [badges, fetchBadges]
+    () => ({ ...badges, refreshBadges }),
+    [badges, refreshBadges]
   )
 
   return <BadgeContext.Provider value={value}>{children}</BadgeContext.Provider>

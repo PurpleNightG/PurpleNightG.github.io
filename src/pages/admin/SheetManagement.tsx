@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import PageSkeleton from '../../components/Skeleton'
@@ -17,12 +17,18 @@ import {
   X,
   Search,
   Filter,
+  Pin,
+  GripVertical,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from 'lucide-react'
 import { sheetAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
-import { formatDateTime } from '../../utils/dateFormat'
+import { formatDate, formatDateTime } from '../../utils/dateFormat'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import StyledSelect from '../../components/StyledSelect'
+import DateInput from '../../components/DateInput'
 import SheetAssigneePicker, {
   ACCESS_MODE_OPTIONS,
   type AccessMode,
@@ -34,10 +40,59 @@ interface WorkbookItem {
   description: string
   access_mode: AccessMode
   status: 'draft' | 'published' | 'archived'
+  is_pinned?: boolean
+  sort_order?: number
   updated_by?: string | null
   updated_at?: string
   created_at?: string
   assignee_count?: number
+}
+
+type SortMode = 'manual' | 'updated_desc' | 'updated_asc' | 'created_desc' | 'created_asc'
+
+const SORT_OPTIONS: { value: SortMode; label: string }[] = [
+  { value: 'manual', label: '自定义（置顶 + 手动）' },
+  { value: 'updated_desc', label: '最近编辑优先' },
+  { value: 'updated_asc', label: '最早编辑优先' },
+  { value: 'created_desc', label: '最近创建优先' },
+  { value: 'created_asc', label: '最早创建优先' },
+]
+
+function toDayKey(iso?: string | null) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+function timeOf(iso?: string | null) {
+  if (!iso) return 0
+  const t = new Date(iso).getTime()
+  return Number.isFinite(t) ? t : 0
+}
+
+function sortWorkbookList(items: WorkbookItem[], mode: SortMode) {
+  const arr = [...items]
+  if (mode === 'manual') {
+    return arr.sort((a, b) => {
+      const ap = a.is_pinned ? 1 : 0
+      const bp = b.is_pinned ? 1 : 0
+      if (ap !== bp) return bp - ap
+      const ao = a.sort_order ?? 0
+      const bo = b.sort_order ?? 0
+      if (ao !== bo) return ao - bo
+      return timeOf(b.updated_at) - timeOf(a.updated_at)
+    })
+  }
+  return arr.sort((a, b) => {
+    if (mode === 'updated_desc') return timeOf(b.updated_at) - timeOf(a.updated_at)
+    if (mode === 'updated_asc') return timeOf(a.updated_at) - timeOf(b.updated_at)
+    if (mode === 'created_desc') return timeOf(b.created_at) - timeOf(a.created_at)
+    return timeOf(a.created_at) - timeOf(b.created_at)
+  })
 }
 
 const MODE_LABEL: Record<AccessMode, string> = {
@@ -87,26 +142,129 @@ export default function SheetManagement() {
   const [showFilters, setShowFilters] = useState(false)
   const [statusFilter, setStatusFilter] = useState<'all' | WorkbookItem['status']>('all')
   const [modeFilter, setModeFilter] = useState<'all' | AccessMode>('all')
+  const [createdFrom, setCreatedFrom] = useState('')
+  const [createdTo, setCreatedTo] = useState('')
+  const [sortMode, setSortMode] = useState<SortMode>('manual')
+  const [reordering, setReordering] = useState(false)
+  const [pinBusyId, setPinBusyId] = useState<number | null>(null)
+  const dragIdRef = useRef<number | null>(null)
 
   const filteredList = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
-    return list.filter((item) => {
+    const filtered = list.filter((item) => {
       if (statusFilter !== 'all' && item.status !== statusFilter) return false
       if (modeFilter !== 'all' && item.access_mode !== modeFilter) return false
+      const day = toDayKey(item.created_at)
+      if (createdFrom && (!day || day < createdFrom)) return false
+      if (createdTo && (!day || day > createdTo)) return false
       if (!q) return true
       const hay = [item.title, item.description, item.updated_by || '', String(item.id)]
         .join(' ')
         .toLowerCase()
       return hay.includes(q)
     })
-  }, [list, searchQuery, statusFilter, modeFilter])
+    return sortWorkbookList(filtered, sortMode)
+  }, [list, searchQuery, statusFilter, modeFilter, createdFrom, createdTo, sortMode])
 
   const activeFilterCount =
-    (statusFilter !== 'all' ? 1 : 0) + (modeFilter !== 'all' ? 1 : 0)
+    (statusFilter !== 'all' ? 1 : 0) +
+    (modeFilter !== 'all' ? 1 : 0) +
+    (createdFrom ? 1 : 0) +
+    (createdTo ? 1 : 0)
 
   const clearFilters = () => {
     setStatusFilter('all')
     setModeFilter('all')
+    setCreatedFrom('')
+    setCreatedTo('')
+  }
+
+  const persistManualOrder = async (ordered: WorkbookItem[]) => {
+    const ids = ordered.map((x) => x.id)
+    setList((prev) => {
+      const map = new Map(ordered.map((x, i) => [x.id, i]))
+      return sortWorkbookList(
+        prev.map((x) =>
+          map.has(x.id) ? { ...x, sort_order: map.get(x.id)! } : x
+        ),
+        'manual'
+      )
+    })
+    try {
+      setReordering(true)
+      await sheetAPI.reorder(ids)
+    } catch (e: any) {
+      toast.error(e.message || '保存排序失败')
+      load()
+    } finally {
+      setReordering(false)
+    }
+  }
+
+  const canMoveItem = (id: number, dir: -1 | 1) => {
+    const ordered = sortWorkbookList(list, 'manual')
+    const idx = ordered.findIndex((x) => x.id === id)
+    const j = idx + dir
+    if (idx < 0 || j < 0 || j >= ordered.length) return false
+    return !!ordered[idx].is_pinned === !!ordered[j].is_pinned
+  }
+
+  const moveItem = async (id: number, dir: -1 | 1) => {
+    if (sortMode !== 'manual' || reordering) return
+    if (!canMoveItem(id, dir)) {
+      toast.info('置顶与非置顶请分别排序')
+      return
+    }
+    const ordered = sortWorkbookList(list, 'manual')
+    const idx = ordered.findIndex((x) => x.id === id)
+    const j = idx + dir
+    const next = [...ordered]
+    ;[next[idx], next[j]] = [next[j], next[idx]]
+    await persistManualOrder(next)
+  }
+
+  const onDragStart = (id: number) => {
+    if (sortMode !== 'manual') return
+    dragIdRef.current = id
+  }
+
+  const onDropOn = async (targetId: number) => {
+    if (sortMode !== 'manual' || reordering) return
+    const fromId = dragIdRef.current
+    dragIdRef.current = null
+    if (fromId == null || fromId === targetId) return
+    const ordered = sortWorkbookList(list, 'manual')
+    const fromIdx = ordered.findIndex((x) => x.id === fromId)
+    const toIdx = ordered.findIndex((x) => x.id === targetId)
+    if (fromIdx < 0 || toIdx < 0) return
+    if (!!ordered[fromIdx].is_pinned !== !!ordered[toIdx].is_pinned) {
+      toast.info('置顶与非置顶请分别排序')
+      return
+    }
+    const next = [...ordered]
+    const [moved] = next.splice(fromIdx, 1)
+    next.splice(toIdx, 0, moved)
+    await persistManualOrder(next)
+  }
+
+  const togglePin = async (item: WorkbookItem) => {
+    try {
+      setPinBusyId(item.id)
+      const res = await sheetAPI.pin(item.id, !item.is_pinned)
+      const pinned = !!res.data?.is_pinned
+      setList((prev) =>
+        sortWorkbookList(
+          prev.map((x) => (x.id === item.id ? { ...x, is_pinned: pinned } : x)),
+          sortMode === 'manual' ? 'manual' : sortMode
+        )
+      )
+      toast.success(pinned ? '已置顶' : '已取消置顶')
+      if (sortMode !== 'manual') setSortMode('manual')
+    } catch (e: any) {
+      toast.error(e.message || '置顶失败')
+    } finally {
+      setPinBusyId(null)
+    }
   }
 
   const openCreate = () => {
@@ -220,152 +378,213 @@ export default function SheetManagement() {
 
   return (
     <div className="p-4 sm:p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Table2 className="text-purple-400" size={26} />
-            表格文档
-          </h1>
-          {!loading && (
-            <span className="text-sm text-gray-400 tabular-nums">
-              {searchQuery.trim() || activeFilterCount > 0
-                ? `显示 ${filteredList.length} / ${list.length}`
-                : `共 ${list.length} 份`}
-            </span>
-          )}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <div className="relative">
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="搜索标题、说明、更新人…"
-              className="bg-gray-700 border border-gray-600 rounded-lg pl-10 pr-10 py-2 text-white placeholder-gray-400 w-full sm:w-64 focus:outline-none focus:border-purple-500 transition-colors"
-            />
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
-              >
-                <X size={18} />
-              </button>
-            )}
+      <header className="mb-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-white flex items-center gap-2.5">
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/15 border border-emerald-400/20">
+                <Table2 className="text-emerald-300" size={22} />
+              </span>
+              表格文档
+            </h1>
+            <p className="text-sm text-gray-400 mt-2">
+              管理共享表格 · 支持置顶与手动排序
+              {!loading && (
+                <span className="text-gray-500">
+                  {' '}
+                  ·{' '}
+                  {searchQuery.trim() || activeFilterCount > 0
+                    ? `显示 ${filteredList.length} / ${list.length}`
+                    : `共 ${list.length} 份`}
+                </span>
+              )}
+            </p>
           </div>
           <button
             type="button"
-            onClick={() => setShowFilters((v) => !v)}
-            className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
-              showFilters || activeFilterCount > 0
-                ? 'bg-purple-600 text-white'
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-            }`}
-          >
-            <Filter size={18} />
-            筛选{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
-          </button>
-          <button
-            type="button"
             onClick={openCreate}
-            className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+            className="self-start lg:self-auto bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-xl flex items-center gap-2 transition-colors shadow-lg shadow-emerald-900/20"
           >
             <Plus size={18} />
             新建表格
           </button>
         </div>
-      </div>
+      </header>
 
-      {showFilters && (
-        <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-white font-semibold text-sm">筛选条件</h3>
-            {activeFilterCount > 0 && (
+      <div className="student-glass-panel student-glass-panel--tilt-only p-3 sm:p-4 mb-4 space-y-3">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2.5">
+          <div className="relative flex-1 min-w-[12rem]">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="搜索标题、说明、更新人…"
+              className="w-full bg-black/25 border border-white/10 rounded-xl pl-10 pr-10 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500/50 transition-colors"
+            />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
+            {searchQuery && (
               <button
                 type="button"
-                onClick={clearFilters}
-                className="text-sm text-gray-400 hover:text-white transition-colors"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
               >
-                清空筛选
+                <X size={16} />
               </button>
             )}
           </div>
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div>
-              <div className="text-xs text-gray-400 mb-2">状态</div>
-              <div className="flex flex-wrap gap-2">
-                {(
-                  [
-                    ['all', '全部'],
-                    ['draft', '草稿'],
-                    ['published', '已发布'],
-                    ['archived', '已归档'],
-                  ] as const
-                ).map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setStatusFilter(value)}
-                    className={`px-3 py-1.5 rounded-lg text-xs transition-colors ${
-                      statusFilter === value
-                        ? 'bg-purple-600 text-white'
-                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <div className="text-xs text-gray-400 mb-2">权限</div>
-              <div className="flex flex-wrap gap-2">
-                {(
-                  [
-                    ['all', '全部'],
-                    ['shared', '共享编辑'],
-                    ['student_readonly', '学员只读'],
-                    ['assigned', '指定学员'],
-                  ] as const
-                ).map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setModeFilter(value)}
-                    className={`px-3 py-1.5 rounded-lg text-xs transition-colors ${
-                      modeFilter === value
-                        ? 'bg-purple-600 text-white'
-                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
+          <div className="flex items-center gap-2 min-w-[12rem] sm:min-w-[14rem]">
+            <ArrowUpDown size={14} className="text-gray-500 shrink-0 hidden sm:block" />
+            <StyledSelect
+              value={sortMode}
+              onChange={(v) => setSortMode(v as SortMode)}
+              options={SORT_OPTIONS}
+              size="sm"
+              className="flex-1"
+              dropdownMinWidth={200}
+            />
           </div>
+          <button
+            type="button"
+            onClick={() => setShowFilters((v) => !v)}
+            className={`px-3.5 py-2 rounded-xl flex items-center gap-2 text-sm transition-colors border ${
+              showFilters || activeFilterCount > 0
+                ? 'bg-emerald-600/90 border-emerald-400/30 text-white'
+                : 'bg-black/25 border-white/10 text-gray-300 hover:bg-white/5'
+            }`}
+          >
+            <Filter size={16} />
+            筛选{activeFilterCount > 0 ? ` ${activeFilterCount}` : ''}
+          </button>
         </div>
-      )}
+
+        {showFilters && (
+          <div className="rounded-xl border border-white/8 bg-black/20 p-3.5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-white/90 font-medium text-sm">筛选条件</h3>
+              {activeFilterCount > 0 && (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="text-xs text-gray-400 hover:text-white transition-colors"
+                >
+                  清空筛选
+                </button>
+              )}
+            </div>
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div>
+                <div className="text-xs text-gray-500 mb-2">状态</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {(
+                    [
+                      ['all', '全部'],
+                      ['draft', '草稿'],
+                      ['published', '已发布'],
+                      ['archived', '已归档'],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setStatusFilter(value)}
+                      className={`px-2.5 py-1 rounded-lg text-xs transition-colors ${
+                        statusFilter === value
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-white/5 text-gray-300 hover:bg-white/10'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-gray-500 mb-2">权限</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {(
+                    [
+                      ['all', '全部'],
+                      ['shared', '共享编辑'],
+                      ['student_readonly', '学员只读'],
+                      ['assigned', '指定学员'],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setModeFilter(value)}
+                      className={`px-2.5 py-1 rounded-lg text-xs transition-colors ${
+                        modeFilter === value
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-white/5 text-gray-300 hover:bg-white/10'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="sm:col-span-2">
+                <div className="text-xs text-gray-500 mb-2">创建日期</div>
+                <div className="flex flex-wrap items-end gap-2">
+                  <DateInput
+                    label="起始"
+                    value={createdFrom}
+                    onChange={setCreatedFrom}
+                    max={createdTo || undefined}
+                    size="sm"
+                    className="min-w-[9.5rem]"
+                  />
+                  <span className="text-gray-500 text-sm pb-2">至</span>
+                  <DateInput
+                    label="结束"
+                    value={createdTo}
+                    onChange={setCreatedTo}
+                    min={createdFrom || undefined}
+                    size="sm"
+                    className="min-w-[9.5rem]"
+                  />
+                  {(createdFrom || createdTo) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCreatedFrom('')
+                        setCreatedTo('')
+                      }}
+                      className="text-xs text-gray-400 hover:text-white pb-2.5"
+                    >
+                      清除日期
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+            {sortMode === 'manual' && (
+              <p className="text-[11px] text-gray-500 leading-relaxed">
+                自定义排序：右侧可拖拽或上下调整；置顶与非置顶分区排序。学员端同步此顺序。
+              </p>
+            )}
+          </div>
+        )}
+      </div>
 
       {loading ? (
         <PageSkeleton variant="table" padded={false} />
       ) : list.length === 0 ? (
-        <div className="student-glass-panel student-glass-panel--static py-16 px-6 text-center">
+        <div className="student-glass-panel student-glass-panel--tilt-only py-16 px-6 text-center">
           <FileSpreadsheet className="mx-auto text-gray-600 mb-3" size={36} />
           <p className="text-gray-400 text-sm">还没有表格</p>
           <button
             type="button"
             onClick={openCreate}
-            className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm"
+            className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm"
           >
             <Plus size={16} />
             新建第一份表格
           </button>
         </div>
       ) : filteredList.length === 0 ? (
-        <div className="student-glass-panel student-glass-panel--static py-14 px-6 text-center">
+        <div className="student-glass-panel student-glass-panel--tilt-only py-14 px-6 text-center">
           <Search className="mx-auto text-gray-600 mb-3" size={32} />
           <p className="text-gray-400 text-sm">没有符合条件的表格</p>
           <button
@@ -374,31 +593,52 @@ export default function SheetManagement() {
               setSearchQuery('')
               clearFilters()
             }}
-            className="mt-3 text-xs text-purple-300 hover:text-purple-200"
+            className="mt-3 text-xs text-emerald-300 hover:text-emerald-200"
           >
             清空搜索与筛选
           </button>
         </div>
       ) : (
-        <ul className="student-glass-panel student-glass-panel--static overflow-hidden divide-y divide-white/[0.06]">
+        <ul className="space-y-2">
           {filteredList.map((item) => (
-            <li key={item.id} className="group">
+            <li
+              key={item.id}
+              className="student-glass-panel student-glass-panel--tilt-only overflow-hidden"
+              draggable={sortMode === 'manual' && !reordering}
+              onDragStart={() => onDragStart(item.id)}
+              onDragOver={(e) => {
+                if (sortMode === 'manual') e.preventDefault()
+              }}
+              onDrop={(e) => {
+                e.preventDefault()
+                void onDropOn(item.id)
+              }}
+            >
               <div className="flex">
                 <div
-                  className={`w-0.5 shrink-0 ${
-                    item.status === 'published' ? 'bg-emerald-500/70' : 'bg-transparent'
+                  className={`w-1 shrink-0 ${
+                    item.is_pinned
+                      ? 'bg-amber-400/80'
+                      : item.status === 'published'
+                        ? 'bg-emerald-500/70'
+                        : 'bg-white/10'
                   }`}
                 />
-                <div className="flex-1 min-w-0 px-3.5 sm:px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-3 hover:bg-white/[0.02] transition-colors">
+                <div className="flex-1 min-w-0 px-3.5 sm:px-4 py-3.5 flex flex-col sm:flex-row sm:items-center gap-3">
                   <button
                     type="button"
                     onClick={() => navigate(`/admin/sheets/${item.id}`)}
                     className="flex-1 min-w-0 text-left"
                   >
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium text-white group-hover:text-emerald-100 transition-colors truncate">
+                      <span className="font-medium text-white truncate">
                         {item.title}
                       </span>
+                      {item.is_pinned && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded shrink-0 bg-amber-500/20 text-amber-200 inline-flex items-center gap-0.5">
+                          <Pin size={10} /> 置顶
+                        </span>
+                      )}
                       <span
                         className={`text-[10px] px-1.5 py-0.5 rounded shrink-0 ${
                           item.status === 'published'
@@ -423,13 +663,33 @@ export default function SheetManagement() {
                     {item.description && (
                       <p className="text-sm text-gray-400 mt-1 line-clamp-1">{item.description}</p>
                     )}
-                    <div className="text-[11px] text-gray-500 mt-1">
-                      更新 {formatDateTime(item.updated_at)}
-                      {item.updated_by ? ` · ${item.updated_by}` : ''}
+                    <div className="text-[11px] text-gray-500 mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                      <span>创建 {formatDate(item.created_at)}</span>
+                      <span>
+                        更新 {formatDateTime(item.updated_at)}
+                        {item.updated_by ? ` · ${item.updated_by}` : ''}
+                      </span>
                     </div>
                   </button>
 
-                  <div className="flex items-center gap-0.5 shrink-0 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 transition-opacity">
+                  <div className="flex items-center justify-end gap-0.5 shrink-0 border-t border-white/[0.06] sm:border-t-0 pt-2 sm:pt-0">
+                    <button
+                      type="button"
+                      disabled={pinBusyId === item.id}
+                      onClick={() => void togglePin(item)}
+                      title={item.is_pinned ? '取消置顶' : '置顶'}
+                      className={`inline-flex items-center justify-center h-8 w-8 rounded-lg ${
+                        item.is_pinned
+                          ? 'text-amber-300 hover:bg-amber-500/20'
+                          : 'text-gray-400 hover:bg-white/8 hover:text-amber-200'
+                      }`}
+                    >
+                      {pinBusyId === item.id ? (
+                        <Loader2 size={15} className="animate-spin" />
+                      ) : (
+                        <Pin size={15} className={item.is_pinned ? 'fill-current' : ''} />
+                      )}
+                    </button>
                     <button
                       type="button"
                       onClick={() => navigate(`/admin/sheets/${item.id}?mode=view`)}
@@ -462,6 +722,35 @@ export default function SheetManagement() {
                     >
                       <Trash2 size={15} />
                     </button>
+                    {sortMode === 'manual' && (
+                      <>
+                        <span className="w-px h-5 bg-white/10 mx-1" />
+                        <button
+                          type="button"
+                          disabled={reordering || !canMoveItem(item.id, -1)}
+                          onClick={() => void moveItem(item.id, -1)}
+                          title="上移"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-white/8 disabled:opacity-25"
+                        >
+                          <ArrowUp size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={reordering || !canMoveItem(item.id, 1)}
+                          onClick={() => void moveItem(item.id, 1)}
+                          title="下移"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-white/8 disabled:opacity-25"
+                        >
+                          <ArrowDown size={14} />
+                        </button>
+                        <span
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 cursor-grab active:cursor-grabbing hover:bg-white/8"
+                          title="拖拽排序"
+                        >
+                          <GripVertical size={15} />
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>

@@ -4,6 +4,13 @@ export const TRAINING_STAGES = ['未新训', '新训初期', '新训一期', '�
 /** 训练催促：剩余 N 天起进入名单（原先为 7） */
 export const TRAINING_WARN_DAYS = 3
 
+/** 成员仍有未最终结束的请假（请假中 / 待结束审批）——不应进训练催促 */
+export const ACTIVE_LEAVE_EXISTS = `
+  SELECT 1 FROM leave_records al
+  WHERE al.member_id = m.id
+    AND al.status IN ('请假中', '待结束审批')
+`
+
 /** 成员处于请假结束缓冲期内（审批通过后 7 天内） */
 export const LEAVE_BUFFER_EXISTS = `
   SELECT 1 FROM leave_records lr
@@ -51,11 +58,17 @@ export function buildGlobalThresholdSql(warnDays = TRAINING_WARN_DAYS) {
 }
 
 /**
- * 进入训练催促名单：有效超时已进预警，或有自定义超时且按全局标准仍在预警窗内
- * 占位符 4 次：per_member×2 + global×2
+ * 进入训练催促名单。
+ * - includeCustomExtended=true（倒计时模式）：有效超时已进预警，或有自定义延期但仍按全局标准落在预警窗（方便管理查看延期的人）
+ * - includeCustomExtended=false（踢人周期）：只按成员有效超时（含自定义）判断本轮是否会超期，不拉入「延期中」的人
+ * 占位符：includeCustomExtended 时 4 次，否则 2 次
  */
-export function buildTrainingReminderEligibleSql(warnDays = TRAINING_WARN_DAYS) {
+export function buildTrainingReminderEligibleSql(warnDays = TRAINING_WARN_DAYS, opts = {}) {
+  const includeCustomExtended = opts.includeCustomExtended !== false
   const per = buildPerMemberThresholdSql(warnDays)
+  if (!includeCustomExtended) {
+    return `(${per})`
+  }
   const global = buildGlobalThresholdSql(warnDays)
   return `
   (
@@ -66,7 +79,6 @@ export function buildTrainingReminderEligibleSql(warnDays = TRAINING_WARN_DAYS) 
     )
   )
 `
-
 }
 
 /** 是否为「自定义延期」（占位符 2 次） */

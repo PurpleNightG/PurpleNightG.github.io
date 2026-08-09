@@ -1,6 +1,11 @@
 import express from 'express'
 import { pool } from '../config/database.js'
 import { requireAdmin, requireStudent } from '../utils/authGate.js'
+import {
+  leaveSheetPresence,
+  listSheetPresence,
+  touchSheetPresence,
+} from '../utils/sheetPresence.js'
 
 const router = express.Router()
 
@@ -93,6 +98,8 @@ async function ensureSheetTables() {
       access_mode ENUM('shared', 'student_readonly', 'assigned') NOT NULL DEFAULT 'student_readonly'
         COMMENT 'shared=全员可改; student_readonly=学员只读; assigned=指定学员可填',
       status ENUM('draft', 'published', 'archived') NOT NULL DEFAULT 'draft',
+      is_pinned TINYINT(1) NOT NULL DEFAULT 0 COMMENT '管理端置顶',
+      sort_order INT NOT NULL DEFAULT 0 COMMENT '手动排序，越小越靠前',
       content_json LONGTEXT NOT NULL,
       created_by VARCHAR(100) NULL,
       updated_by VARCHAR(100) NULL,
@@ -132,7 +139,28 @@ async function ensureSheetTables() {
       INDEX idx_wb_assignee_member (member_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='指定可填写学员'
   `)
+  // 置顶 / 手动排序（已有库用 ALTER 补齐）
+  for (const sql of [
+    `ALTER TABLE workbooks ADD COLUMN is_pinned TINYINT(1) NOT NULL DEFAULT 0 COMMENT '管理端置顶' AFTER status`,
+    `ALTER TABLE workbooks ADD COLUMN sort_order INT NOT NULL DEFAULT 0 COMMENT '手动排序，越小越靠前' AFTER is_pinned`,
+    `ALTER TABLE workbooks ADD INDEX idx_workbook_pin_sort (is_pinned, sort_order)`,
+  ]) {
+    try {
+      await pool.query(sql)
+    } catch {
+      /* 列/索引已存在 */
+    }
+  }
   tablesReady = true
+}
+
+const LIST_ORDER_SQL = `w.is_pinned DESC, w.sort_order ASC, w.updated_at DESC`
+
+async function nextWorkbookSortOrder() {
+  const [[row]] = await pool.query(
+    `SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM workbooks WHERE status != 'archived'`
+  )
+  return Number(row?.n) || 1
 }
 
 router.use(async (req, res, next) => {
@@ -227,24 +255,140 @@ async function listRevisions(workbookId) {
      LIMIT ?`,
     [workbookId, MAX_REVISIONS]
   )
+
+  const studentIds = [
+    ...new Set(
+      rows
+        .filter((r) => r.edited_by_type === 'student' && r.edited_by_id)
+        .map((r) => Number(r.edited_by_id))
+        .filter((id) => Number.isFinite(id) && id > 0)
+    ),
+  ]
+  const adminIds = [
+    ...new Set(
+      rows
+        .filter((r) => r.edited_by_type === 'admin' && r.edited_by_id)
+        .map((r) => Number(r.edited_by_id))
+        .filter((id) => Number.isFinite(id) && id > 0)
+    ),
+  ]
+  const nameKeys = [
+    ...new Set(
+      rows
+        .map((r) => String(r.edited_by || '').replace(/（回退前）$/, '').trim())
+        .filter(Boolean)
+    ),
+  ]
+
+  const memberById = new Map()
+  const memberByName = new Map()
+  if (studentIds.length) {
+    const [ms] = await pool.query(
+      `SELECT id, nickname, avatar, qq FROM members WHERE id IN (${studentIds.map(() => '?').join(',')})`,
+      studentIds
+    )
+    for (const m of ms) {
+      memberById.set(Number(m.id), m)
+      if (m.nickname) memberByName.set(String(m.nickname), m)
+    }
+  }
+  if (nameKeys.length) {
+    const [ms] = await pool.query(
+      `SELECT id, nickname, avatar, qq FROM members WHERE nickname IN (${nameKeys.map(() => '?').join(',')})`,
+      nameKeys
+    )
+    for (const m of ms) {
+      if (!memberById.has(Number(m.id))) memberById.set(Number(m.id), m)
+      if (m.nickname) memberByName.set(String(m.nickname), m)
+    }
+  }
+
+  const adminById = new Map()
+  const adminByName = new Map()
+  if (adminIds.length) {
+    const [as_] = await pool.query(
+      `SELECT id, username, name, avatar FROM admins WHERE id IN (${adminIds.map(() => '?').join(',')})`,
+      adminIds
+    )
+    for (const a of as_) {
+      adminById.set(Number(a.id), a)
+      if (a.username) adminByName.set(String(a.username), a)
+      if (a.name) adminByName.set(String(a.name), a)
+    }
+  }
+  if (nameKeys.length) {
+    const [as_] = await pool.query(
+      `SELECT id, username, name, avatar FROM admins
+       WHERE username IN (${nameKeys.map(() => '?').join(',')})
+          OR name IN (${nameKeys.map(() => '?').join(',')})`,
+      [...nameKeys, ...nameKeys]
+    )
+    for (const a of as_) {
+      if (!adminById.has(Number(a.id))) adminById.set(Number(a.id), a)
+      if (a.username) adminByName.set(String(a.username), a)
+      if (a.name) adminByName.set(String(a.name), a)
+    }
+  }
+
+  const resolveProfile = (r) => {
+    const rawName = String(r.edited_by || '').trim()
+    const baseName = rawName.replace(/（回退前）$/, '').trim()
+    if (r.edited_by_type === 'student') {
+      const m =
+        (r.edited_by_id && memberById.get(Number(r.edited_by_id))) ||
+        memberByName.get(baseName) ||
+        null
+      return {
+        avatar: m?.avatar || null,
+        qq: m?.qq || null,
+        display_name: rawName || '未知',
+      }
+    }
+    const a =
+      (r.edited_by_id && adminById.get(Number(r.edited_by_id))) ||
+      adminByName.get(baseName) ||
+      null
+    return {
+      avatar: a?.avatar || null,
+      qq: null,
+      display_name: rawName || '未知',
+    }
+  }
+
   const editorsMap = new Map()
   for (const r of rows) {
-    const name = r.edited_by || '未知'
-    const prev = editorsMap.get(name) || { name, count: 0, last_at: null, type: r.edited_by_type }
+    const profile = resolveProfile(r)
+    const name = profile.display_name
+    const prev = editorsMap.get(name) || {
+      name,
+      count: 0,
+      last_at: null,
+      type: r.edited_by_type,
+      avatar: profile.avatar,
+      qq: profile.qq,
+    }
     prev.count += 1
     if (!prev.last_at || new Date(r.created_at) > new Date(prev.last_at)) {
       prev.last_at = r.created_at
       prev.type = r.edited_by_type
+      prev.avatar = profile.avatar
+      prev.qq = profile.qq
     }
     editorsMap.set(name, prev)
   }
   return {
-    revisions: rows.map((r) => ({
-      id: r.id,
-      edited_by: r.edited_by || '未知',
-      edited_by_type: r.edited_by_type,
-      created_at: r.created_at,
-    })),
+    revisions: rows.map((r) => {
+      const profile = resolveProfile(r)
+      return {
+        id: r.id,
+        edited_by: profile.display_name,
+        edited_by_type: r.edited_by_type,
+        edited_by_id: r.edited_by_id,
+        avatar: profile.avatar,
+        qq: profile.qq,
+        created_at: r.created_at,
+      }
+    }),
     editors: Array.from(editorsMap.values()).sort(
       (a, b) => new Date(b.last_at).getTime() - new Date(a.last_at).getTime()
     ),
@@ -258,6 +402,8 @@ function serializeRow(row, { includeContent = false } = {}) {
     description: row.description || '',
     access_mode: row.access_mode,
     status: row.status,
+    is_pinned: !!Number(row.is_pinned),
+    sort_order: Number(row.sort_order) || 0,
     created_by: row.created_by,
     updated_by: row.updated_by,
     created_at: row.created_at,
@@ -329,12 +475,13 @@ router.get('/student/list', requireStudent, async (req, res) => {
   try {
     const studentId = req.student.id
     const [rows] = await pool.query(
-      `SELECT w.id, w.title, w.description, w.access_mode, w.status, w.updated_by, w.updated_at, w.created_at
+      `SELECT w.id, w.title, w.description, w.access_mode, w.status, w.is_pinned, w.sort_order,
+              w.updated_by, w.updated_at, w.created_at
        FROM workbooks w
        LEFT JOIN workbook_assignees a ON a.workbook_id = w.id AND a.member_id = ?
        WHERE w.status = 'published'
          AND (w.access_mode != 'assigned' OR a.member_id IS NOT NULL)
-       ORDER BY w.updated_at DESC`,
+       ORDER BY ${LIST_ORDER_SQL}`,
       [studentId]
     )
     const data = []
@@ -404,7 +551,18 @@ router.put('/student/:id', requireStudent, async (req, res) => {
       nickname,
       req.params.id,
     ])
-    res.json({ success: true, message: '已保存' })
+    const [[fresh]] = await pool.query(
+      `SELECT updated_at, updated_by FROM workbooks WHERE id = ?`,
+      [req.params.id]
+    )
+    res.json({
+      success: true,
+      message: '已保存',
+      data: {
+        updated_at: fresh?.updated_at || null,
+        updated_by: fresh?.updated_by || null,
+      },
+    })
   } catch (error) {
     console.error('[sheets] student save', error)
     res.status(500).json({ success: false, message: '保存失败' })
@@ -450,17 +608,63 @@ router.post('/student/:id/revisions/:revId/restore', requireStudent, async (_req
   return res.status(403).json({ success: false, message: '学员不可回退表格，请联系管理员' })
 })
 
+/** 学员：表格在场心跳（内存，不写库） */
+router.post('/student/:id/presence', requireStudent, async (req, res) => {
+  try {
+    const [[row]] = await pool.query('SELECT id, status, access_mode FROM workbooks WHERE id = ?', [
+      req.params.id,
+    ])
+    if (!row || row.status !== 'published') {
+      return res.status(404).json({ success: false, message: '表格不存在或未发布' })
+    }
+    if (!(await studentCanViewWorkbook(row, req.student.id))) {
+      return res.status(403).json({ success: false, message: '你没有权限查看该表格' })
+    }
+    const canEdit = await studentCanEditWorkbook(row, req.student.id)
+    const editing = canEdit && !!req.body?.editing
+    const sessionId = req.body?.session_id || req.body?.sessionId || ''
+    const name =
+      req.student.nickname || req.student.name || req.student.username || `学员${req.student.id}`
+    const presence = touchSheetPresence(row.id, {
+      sessionId,
+      userId: req.student.id,
+      role: 'student',
+      name,
+      editing,
+    })
+    res.json({ success: true, data: { presence, self_editing: editing } })
+  } catch (error) {
+    console.error('[sheets] student presence', error)
+    res.status(500).json({ success: false, message: '同步在场状态失败' })
+  }
+})
+
+router.delete('/student/:id/presence', requireStudent, async (req, res) => {
+  try {
+    const sessionId = req.body?.session_id || req.body?.sessionId || req.query?.session_id || ''
+    const presence = leaveSheetPresence(req.params.id, {
+      sessionId,
+      userId: req.student.id,
+      role: 'student',
+      name: '',
+    })
+    res.json({ success: true, data: { presence } })
+  } catch (error) {
+    res.status(500).json({ success: false, message: '离开失败' })
+  }
+})
+
 // ─── 管理端 ───────────────────────────────────────────────
 
 router.get('/', requireAdmin, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT w.id, w.title, w.description, w.access_mode, w.status, w.created_by, w.updated_by,
-              w.created_at, w.updated_at,
+      `SELECT w.id, w.title, w.description, w.access_mode, w.status, w.is_pinned, w.sort_order,
+              w.created_by, w.updated_by, w.created_at, w.updated_at,
               (SELECT COUNT(*) FROM workbook_assignees a WHERE a.workbook_id = w.id) AS assignee_count
        FROM workbooks w
        WHERE w.status != 'archived'
-       ORDER BY w.updated_at DESC`
+       ORDER BY ${LIST_ORDER_SQL}`
     )
     res.json({
       success: true,
@@ -469,6 +673,38 @@ router.get('/', requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('[sheets] list', error)
     res.status(500).json({ success: false, message: '获取表格列表失败' })
+  }
+})
+
+/** 批量保存手动排序（ids 从前到后） */
+router.put('/reorder', requireAdmin, async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body?.ids)
+      ? req.body.ids.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+      : []
+    if (ids.length === 0) {
+      return res.status(400).json({ success: false, message: '请提供排序列表' })
+    }
+    const conn = await pool.getConnection()
+    try {
+      await conn.beginTransaction()
+      for (let i = 0; i < ids.length; i++) {
+        await conn.query(
+          `UPDATE workbooks SET sort_order = ? WHERE id = ? AND status != 'archived'`,
+          [i, ids[i]]
+        )
+      }
+      await conn.commit()
+    } catch (e) {
+      await conn.rollback()
+      throw e
+    } finally {
+      conn.release()
+    }
+    res.json({ success: true, message: '排序已保存' })
+  } catch (error) {
+    console.error('[sheets] reorder', error)
+    res.status(500).json({ success: false, message: '保存排序失败' })
   }
 })
 
@@ -488,14 +724,17 @@ router.post('/', requireAdmin, async (req, res) => {
     const mode = normalizeAccessMode(access_mode)
     const st = ['draft', 'published', 'archived'].includes(status) ? status : 'draft'
     const contentJson = JSON.stringify(parseContent(content || DEFAULT_CONTENT()))
+    const sortOrder = await nextWorkbookSortOrder()
     const [result] = await pool.query(
-      `INSERT INTO workbooks (title, description, access_mode, status, content_json, created_by, updated_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO workbooks
+        (title, description, access_mode, status, is_pinned, sort_order, content_json, created_by, updated_by)
+       VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)`,
       [
         title.trim(),
         description || '',
         mode,
         st,
+        sortOrder,
         contentJson,
         req.admin.username || null,
         req.admin.username || null,
@@ -531,14 +770,17 @@ router.post('/:id/copy', requireAdmin, async (req, res) => {
     const mode = access_mode !== undefined ? normalizeAccessMode(access_mode) : 'assigned'
     const st = ['draft', 'published', 'archived'].includes(status) ? status : 'draft'
     const nextDesc = description !== undefined ? description || '' : row.description || ''
+    const sortOrder = await nextWorkbookSortOrder()
     const [result] = await pool.query(
-      `INSERT INTO workbooks (title, description, access_mode, status, content_json, created_by, updated_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO workbooks
+        (title, description, access_mode, status, is_pinned, sort_order, content_json, created_by, updated_by)
+       VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)`,
       [
         nextTitle,
         nextDesc,
         mode,
         st,
+        sortOrder,
         row.content_json,
         req.admin.username || null,
         req.admin.username || null,
@@ -558,6 +800,77 @@ router.post('/:id/copy', requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('[sheets] copy', error)
     res.status(500).json({ success: false, message: '复制失败' })
+  }
+})
+
+/** 管理端：表格在场心跳（内存，不写库） */
+router.post('/:id/presence', requireAdmin, async (req, res) => {
+  try {
+    const [[row]] = await pool.query(`SELECT id, status FROM workbooks WHERE id = ?`, [req.params.id])
+    if (!row || row.status === 'archived') {
+      return res.status(404).json({ success: false, message: '表格不存在' })
+    }
+    const editing = !!req.body?.editing
+    const sessionId = req.body?.session_id || req.body?.sessionId || ''
+    const name = req.admin.username || req.admin.name || `管理员${req.admin.id}`
+    const presence = touchSheetPresence(row.id, {
+      sessionId,
+      userId: req.admin.id,
+      role: 'admin',
+      name,
+      editing,
+    })
+    res.json({ success: true, data: { presence, self_editing: editing } })
+  } catch (error) {
+    console.error('[sheets] admin presence', error)
+    res.status(500).json({ success: false, message: '同步在场状态失败' })
+  }
+})
+
+router.delete('/:id/presence', requireAdmin, async (req, res) => {
+  try {
+    const sessionId = req.body?.session_id || req.body?.sessionId || req.query?.session_id || ''
+    const presence = leaveSheetPresence(req.params.id, {
+      sessionId,
+      userId: req.admin.id,
+      role: 'admin',
+      name: '',
+    })
+    res.json({ success: true, data: { presence } })
+  } catch (error) {
+    res.status(500).json({ success: false, message: '离开失败' })
+  }
+})
+
+router.get('/:id/presence', requireAdmin, async (req, res) => {
+  try {
+    res.json({ success: true, data: { presence: listSheetPresence(req.params.id) } })
+  } catch (error) {
+    res.status(500).json({ success: false, message: '获取在场状态失败' })
+  }
+})
+
+/** 置顶 / 取消置顶 */
+router.post('/:id/pin', requireAdmin, async (req, res) => {
+  try {
+    const [[row]] = await pool.query(
+      `SELECT id, status, is_pinned FROM workbooks WHERE id = ?`,
+      [req.params.id]
+    )
+    if (!row || row.status === 'archived') {
+      return res.status(404).json({ success: false, message: '表格不存在' })
+    }
+    const next =
+      req.body?.pinned !== undefined ? !!req.body.pinned : !Number(row.is_pinned)
+    await pool.query(`UPDATE workbooks SET is_pinned = ? WHERE id = ?`, [next ? 1 : 0, row.id])
+    res.json({
+      success: true,
+      message: next ? '已置顶' : '已取消置顶',
+      data: { id: row.id, is_pinned: next },
+    })
+  } catch (error) {
+    console.error('[sheets] pin', error)
+    res.status(500).json({ success: false, message: '置顶操作失败' })
   }
 })
 
@@ -692,7 +1005,18 @@ router.put('/:id', requireAdmin, async (req, res) => {
         await setAssignees(row.id, [])
       }
     }
-    res.json({ success: true, message: '已保存' })
+    const [[fresh]] = await pool.query(
+      `SELECT updated_at, updated_by FROM workbooks WHERE id = ?`,
+      [req.params.id]
+    )
+    res.json({
+      success: true,
+      message: '已保存',
+      data: {
+        updated_at: fresh?.updated_at || null,
+        updated_by: fresh?.updated_by || null,
+      },
+    })
   } catch (error) {
     console.error('[sheets] update', error)
     res.status(500).json({ success: false, message: '保存失败' })

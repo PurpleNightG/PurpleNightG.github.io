@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { Eye, History, Loader2, RotateCcw, Users, X } from 'lucide-react'
 import { formatDateTime } from '../utils/dateFormat'
 import ConfirmDialog from './ConfirmDialog'
+import MemberAvatar from './MemberAvatar'
 import SheetGrid from './SheetGrid'
 import SheetTabBar from './SheetTabBar'
 import {
@@ -16,6 +17,8 @@ export type SheetRevision = {
   id: number
   edited_by: string
   edited_by_type: 'admin' | 'student'
+  avatar?: string | null
+  qq?: string | number | null
   created_at: string
 }
 
@@ -24,6 +27,8 @@ export type SheetEditorSummary = {
   count: number
   last_at: string
   type: 'admin' | 'student'
+  avatar?: string | null
+  qq?: string | number | null
 }
 
 type Props = {
@@ -136,11 +141,18 @@ export default function SheetHistoryPanel({
                   {editors.map((e) => (
                     <li
                       key={e.name}
-                      className="text-xs px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 text-gray-200"
+                      className="text-xs pl-1.5 pr-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-gray-200 inline-flex items-center gap-1.5"
                       title={`最近 ${formatDateTime(e.last_at)} · ${e.count} 次`}
                     >
+                      <MemberAvatar
+                        avatar={e.avatar}
+                        qq={e.qq}
+                        name={e.name}
+                        size="sm"
+                        className="!w-5 !h-5 !text-[10px]"
+                      />
                       <span className="font-medium text-white">{e.name}</span>
-                      <span className="text-gray-500 ml-1.5">
+                      <span className="text-gray-500">
                         {e.type === 'admin' ? '管理' : '学员'} · {e.count}次
                       </span>
                     </li>
@@ -168,6 +180,13 @@ export default function SheetHistoryPanel({
                       key={r.id}
                       className="rounded-xl border border-white/10 bg-black/20 p-3 flex items-start gap-2"
                     >
+                      <MemberAvatar
+                        avatar={r.avatar}
+                        qq={r.qq}
+                        name={r.edited_by}
+                        size="sm"
+                        className="mt-0.5"
+                      />
                       <div className="flex-1 min-w-0">
                         <div className="text-sm text-white font-medium truncate">{r.edited_by}</div>
                         <div className="text-[11px] text-gray-500 mt-0.5">
@@ -223,12 +242,20 @@ export default function SheetHistoryPanel({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-white/10 shrink-0">
-              <div className="min-w-0">
-                <div className="text-white font-medium truncate">
-                  预览 · {preview.rev.edited_by}
-                </div>
-                <div className="text-[11px] text-gray-500">
-                  {formatDateTime(preview.rev.created_at)} · 只读预览，不会改动当前表格
+              <div className="min-w-0 flex items-center gap-2.5">
+                <MemberAvatar
+                  avatar={preview.rev.avatar}
+                  qq={preview.rev.qq}
+                  name={preview.rev.edited_by}
+                  size="sm"
+                />
+                <div className="min-w-0">
+                  <div className="text-white font-medium truncate">
+                    预览 · {preview.rev.edited_by}
+                  </div>
+                  <div className="text-[11px] text-gray-500">
+                    {formatDateTime(preview.rev.created_at)} · 只读预览，不会改动当前表格
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-2">

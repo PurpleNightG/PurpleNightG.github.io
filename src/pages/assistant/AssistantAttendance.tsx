@@ -41,6 +41,8 @@ interface AttendanceItem {
   ignored: boolean
   paused: boolean
   reason_code: string
+  reason_title?: string
+  reason_color?: string
   reason_label: string
   remaining_days: number
   elapsed_days: number
@@ -48,12 +50,42 @@ interface AttendanceItem {
   has_custom_deadline?: boolean
   reasons: {
     reason_code: string
+    reason_title?: string
+    reason_color?: string
     reason_label: string
     deadline_days: number
     elapsed_days: number
     remaining_days: number
     paused: boolean
   }[]
+}
+
+const BADGE_COLOR_CLASS: Record<string, string> = {
+  yellow: 'bg-yellow-600/20 text-yellow-300',
+  orange: 'bg-orange-600/20 text-orange-300',
+  purple: 'bg-purple-600/20 text-purple-300',
+  sky: 'bg-sky-600/20 text-sky-300',
+  green: 'bg-green-600/20 text-green-300',
+  rose: 'bg-rose-600/20 text-rose-300',
+  amber: 'bg-amber-600/20 text-amber-300',
+  slate: 'bg-slate-600/20 text-slate-300',
+}
+
+function reasonBadgeClass(color?: string, code?: string) {
+  if (color && BADGE_COLOR_CLASS[color]) return BADGE_COLOR_CLASS[color]
+  if (code === 'to_phase3') return BADGE_COLOR_CLASS.yellow
+  if (code === 'to_exam' || code === 'to_formal') return BADGE_COLOR_CLASS.orange
+  if (code === 'formal_idle') return BADGE_COLOR_CLASS.purple
+  return BADGE_COLOR_CLASS.sky
+}
+
+function reasonTitle(r: { reason_code: string; reason_title?: string }) {
+  const t = String(r.reason_title || '').trim()
+  if (t) return t
+  if (r.reason_code === 'to_phase3') return '达三期'
+  if (r.reason_code === 'to_exam' || r.reason_code === 'to_formal') return '准考'
+  if (r.reason_code === 'formal_idle') return '半年新训'
+  return r.reason_code || '考勤'
 }
 
 export default function AssistantAttendance() {
@@ -164,7 +196,9 @@ export default function AssistantAttendance() {
 
   const filteredTraining = useMemo(() => {
     let list = [...training]
-    if (!showCustomExtended) list = list.filter((i) => !i.is_custom_extended)
+    if (displayMode === 'kick_cycle' || !showCustomExtended) {
+      list = list.filter((i) => !i.is_custom_extended)
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
       list = list.filter(
@@ -184,7 +218,7 @@ export default function AssistantAttendance() {
       })
     }
     return list
-  }, [training, searchQuery, stageFilter, sortConfig, showCustomExtended])
+  }, [training, searchQuery, stageFilter, sortConfig, showCustomExtended, displayMode])
 
   const filteredAttendance = useMemo(() => {
     let list = [...attendance]
@@ -469,8 +503,13 @@ export default function AssistantAttendance() {
                           {!!item.is_leave_buffer && (
                             <span className="student-glass-badge bg-cyan-600/20 text-cyan-300">请假缓冲</span>
                           )}
-                          {!!item.is_custom_extended && (
-                            <span className="student-glass-badge bg-blue-600/20 text-blue-300">自定义延期</span>
+                          {!!item.custom_timeout_days && (
+                            <span
+                              className="student-glass-badge bg-blue-600/20 text-blue-300"
+                              title={item.is_custom_extended ? '已自定义退队期限，尚未回到预警窗' : '已设置自定义退队期限'}
+                            >
+                              自定义延期
+                            </span>
                           )}
                         </div>
                       </td>
@@ -603,14 +642,8 @@ export default function AssistantAttendance() {
                             return (
                               <div key={r.reason_code} className="text-sm text-gray-300">
                                 <div className="leading-relaxed">
-                                  <span className={`inline-block align-middle text-xs px-1.5 py-0.5 rounded mr-1.5 ${
-                                    r.reason_code === 'to_phase3' ? 'bg-yellow-600/20 text-yellow-300'
-                                      : (r.reason_code === 'to_exam' || r.reason_code === 'to_formal') ? 'bg-orange-600/20 text-orange-300'
-                                      : 'bg-purple-600/20 text-purple-300'
-                                  }`}>
-                                    {r.reason_code === 'to_phase3' ? '达三期'
-                                      : (r.reason_code === 'to_exam' || r.reason_code === 'to_formal') ? '准考'
-                                      : '半年新训'}
+                                  <span className={`inline-block align-middle text-xs px-1.5 py-0.5 rounded mr-1.5 ${reasonBadgeClass(r.reason_color, r.reason_code)}`}>
+                                    {reasonTitle(r)}
                                   </span>
                                   <span className="align-middle">{r.reason_label}</span>
                                 </div>

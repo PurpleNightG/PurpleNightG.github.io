@@ -49,6 +49,9 @@ interface TrainingReminderInfo {
   is_leave_buffer?: number | boolean
   is_custom_extended?: number | boolean
   buffer_remaining_days?: number | null
+  /** 正式队员短周期考勤：常驻倒计时，并非「已进催促名单」 */
+  is_formal_member_attendance?: number | boolean
+  formal_timeout_days?: number | null
 }
 
 interface Course {
@@ -699,13 +702,47 @@ export default function StudentHome() {
 
   const renderTrainingFloatCard = () => {
     if (!trainingReminder) return null
+    // 正式队员：常驻考勤倒计时；新训：仅预警窗内的催促名单提示
+    const isFormalResident = !!trainingReminder.is_formal_member_attendance
+    const overdue = trainingReminder.days_until_timeout < 0
+    const dueToday = trainingReminder.days_until_timeout === 0
     const tone = trainingReminder.is_leave_buffer
       ? 'student-float-panel--cyan'
-      : trainingReminder.days_until_timeout < 0
+      : overdue
         ? 'student-float-panel--red'
-        : 'student-float-panel--amber'
-    const iconTone = trainingReminder.is_leave_buffer ? 'text-cyan-300' : trainingReminder.days_until_timeout < 0 ? 'text-red-300' : 'text-amber-300'
-    const iconBg = trainingReminder.is_leave_buffer ? 'bg-cyan-400/15 ring-cyan-300/20' : trainingReminder.days_until_timeout < 0 ? 'bg-red-400/15 ring-red-300/20' : 'bg-amber-400/15 ring-amber-300/20'
+        : isFormalResident && trainingReminder.days_until_timeout > 3
+          ? 'student-float-panel--purple'
+          : 'student-float-panel--amber'
+    const iconTone = trainingReminder.is_leave_buffer
+      ? 'text-cyan-300'
+      : overdue
+        ? 'text-red-300'
+        : isFormalResident && trainingReminder.days_until_timeout > 3
+          ? 'text-purple-300'
+          : 'text-amber-300'
+    const iconBg = trainingReminder.is_leave_buffer
+      ? 'bg-cyan-400/15 ring-cyan-300/20'
+      : overdue
+        ? 'bg-red-400/15 ring-red-300/20'
+        : isFormalResident && trainingReminder.days_until_timeout > 3
+          ? 'bg-purple-400/15 ring-purple-300/20'
+          : 'bg-amber-400/15 ring-amber-300/20'
+
+    const formalBody = trainingReminder.is_leave_buffer
+      ? `请假缓冲期内，请尽快恢复训练（缓冲还剩 ${trainingReminder.buffer_remaining_days ?? trainingReminder.days_until_timeout} 天）`
+      : trainingReminder.is_custom_extended
+        ? '已设定自定义期限，请在退队日前参加新训。'
+        : overdue
+          ? '已超过正式队员考勤期限，请尽快参加新训。'
+          : dueToday
+            ? '今天为正式队员考勤截止日，请尽快参加新训。'
+            : '正式队员考勤倒计时：请在剩余天数内至少参加一次新训。'
+
+    const traineeBody = trainingReminder.is_leave_buffer
+      ? `请假缓冲期内，请尽快恢复训练（缓冲还剩 ${trainingReminder.buffer_remaining_days ?? trainingReminder.days_until_timeout} 天）`
+      : trainingReminder.is_custom_extended
+        ? '你已进入训练催促名单并获延期，请在期限内参加新训。'
+        : '你已进入训练催促名单，请尽快参加新训，避免超时处理。'
 
     return (
       <div className={`student-float-panel ${tone} p-5`}>
@@ -714,23 +751,31 @@ export default function StudentHome() {
             <Bell className={iconTone} size={18} />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-[11px] uppercase tracking-[0.14em] text-white/45 mb-0.5">Reminder</div>
-            <h3 className="text-white font-semibold leading-tight">训练催促</h3>
+            <div className="text-[11px] uppercase tracking-[0.14em] text-white/45 mb-0.5">
+              {isFormalResident ? 'Attendance' : 'Reminder'}
+            </div>
+            <h3 className="text-white font-semibold leading-tight">
+              {isFormalResident ? '正式队员考勤' : '训练催促'}
+            </h3>
           </div>
         </div>
 
         <div className="mb-3">
           {trainingReminder.is_leave_buffer ? (
             <span className="inline-flex items-center rounded-lg bg-cyan-500/15 text-cyan-200 text-xs px-2.5 py-1">请假缓冲</span>
-          ) : trainingReminder.is_custom_extended ? (
+          ) : trainingReminder.is_custom_extended && !isFormalResident ? (
             <span className="inline-flex items-center rounded-lg bg-blue-500/15 text-blue-200 text-xs px-2.5 py-1">已延期</span>
           ) : trainingReminder.days_until_timeout > 0 ? (
             <div className="flex items-baseline gap-1.5">
-              <span className="text-3xl font-semibold tabular-nums tracking-tight text-amber-200">{trainingReminder.days_until_timeout}</span>
-              <span className="text-sm text-amber-100/70">天剩余</span>
+              <span className={`text-3xl font-semibold tabular-nums tracking-tight ${
+                isFormalResident && trainingReminder.days_until_timeout > 3 ? 'text-purple-200' : 'text-amber-200'
+              }`}>{trainingReminder.days_until_timeout}</span>
+              <span className={`text-sm ${
+                isFormalResident && trainingReminder.days_until_timeout > 3 ? 'text-purple-100/70' : 'text-amber-100/70'
+              }`}>天剩余</span>
             </div>
-          ) : trainingReminder.days_until_timeout === 0 ? (
-            <span className="text-lg font-semibold text-orange-300">今天超时</span>
+          ) : dueToday ? (
+            <span className="text-lg font-semibold text-orange-300">今天到期</span>
           ) : (
             <div className="flex items-baseline gap-1.5">
               <span className="text-3xl font-semibold tabular-nums tracking-tight text-red-300">{Math.abs(trainingReminder.days_until_timeout)}</span>
@@ -740,11 +785,7 @@ export default function StudentHome() {
         </div>
 
         <p className="text-sm text-white/70 mb-4 break-keep leading-relaxed">
-          {trainingReminder.is_leave_buffer
-            ? `请假缓冲期内，请尽快恢复训练（缓冲还剩 ${trainingReminder.buffer_remaining_days ?? trainingReminder.days_until_timeout} 天）`
-            : trainingReminder.is_custom_extended
-              ? '你已进入训练催促名单并获延期，请在期限内参加新训。'
-              : '你已进入训练催促名单，请尽快参加新训，避免超时处理。'}
+          {isFormalResident ? formalBody : traineeBody}
         </p>
 
         <div className="flex flex-wrap gap-2 text-[11px] text-white/55 tabular-nums">

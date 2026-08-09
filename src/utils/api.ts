@@ -439,22 +439,52 @@ export const reminderAPI = {
     method: 'PUT',
     body: JSON.stringify({ value: days }),
   }),
+  getFormalTimeoutDays: () => request('/settings/reminder_formal_timeout_days'),
+  updateFormalTimeoutDays: (days: number) => request('/settings/reminder_formal_timeout_days', {
+    method: 'PUT',
+    body: JSON.stringify({ value: days }),
+  }),
+  getRulesConfig: () => request('/reminders/rules-config'),
+  saveRulesConfig: async (config: unknown) => {
+    const result = await request('/reminders/rules-config', {
+      method: 'PUT',
+      body: JSON.stringify({ config }),
+    })
+    clearCache('/reminders')
+    clearCache('/settings')
+    return result
+  },
+  /** 正式队员取消短周期考勤 → 180 天 */
+  cancelFormalAttendance: async (memberId: number) => {
+    const result = await request(`/reminders/formal/${memberId}/use-180`, { method: 'POST' })
+    clearCache('/reminders')
+    return result
+  },
+  /** 恢复正式队员短周期考勤 */
+  restoreFormalAttendance: async (memberId: number) => {
+    const result = await request(`/reminders/formal/${memberId}/use-180`, { method: 'DELETE' })
+    clearCache('/reminders')
+    return result
+  },
   getKickSettings: async () => {
-    const [weekday, lead, mode] = await Promise.all([
+    const [weekday, lead, mode, formal] = await Promise.all([
       request('/settings/reminder_kick_weekday'),
       request('/settings/reminder_kick_lead_days'),
       request('/settings/reminder_display_mode'),
+      request('/settings/reminder_formal_timeout_days').catch(() => ({ data: { setting_value: '0' } })),
     ])
     return {
       kickWeekday: parseInt(weekday.data?.setting_value, 10) || 1,
       leadDays: parseInt(lead.data?.setting_value, 10) || 3,
       displayMode: (mode.data?.setting_value === 'kick_cycle' ? 'kick_cycle' : 'remaining') as 'remaining' | 'kick_cycle',
+      formalTimeoutDays: Math.max(0, parseInt(formal.data?.setting_value, 10) || 0),
     }
   },
   updateKickSettings: async (opts: {
     kickWeekday?: number
     leadDays?: number
     displayMode?: 'remaining' | 'kick_cycle'
+    formalTimeoutDays?: number
   }) => {
     const tasks: Promise<unknown>[] = []
     if (opts.kickWeekday != null) {
@@ -473,6 +503,12 @@ export const reminderAPI = {
       tasks.push(request('/settings/reminder_display_mode', {
         method: 'PUT',
         body: JSON.stringify({ value: opts.displayMode }),
+      }))
+    }
+    if (opts.formalTimeoutDays != null) {
+      tasks.push(request('/settings/reminder_formal_timeout_days', {
+        method: 'PUT',
+        body: JSON.stringify({ value: Math.max(0, opts.formalTimeoutDays) }),
       }))
     }
     await Promise.all(tasks)
@@ -1371,6 +1407,49 @@ export const sheetAPI = {
     const result = await request(`/sheets/${id}`, { method: 'DELETE' })
     clearCache('/sheets')
     return result
+  },
+  pin: async (id: number, pinned?: boolean) => {
+    const result = await request(`/sheets/${id}/pin`, {
+      method: 'POST',
+      body: JSON.stringify(pinned === undefined ? {} : { pinned }),
+    })
+    clearCache('/sheets')
+    return result
+  },
+  reorder: async (ids: number[]) => {
+    const result = await request('/sheets/reorder', {
+      method: 'PUT',
+      body: JSON.stringify({ ids }),
+    })
+    clearCache('/sheets')
+    return result
+  },
+  presence: async (id: number, data: { session_id: string; editing?: boolean }) => {
+    return request(`/sheets/${id}/presence`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+  leavePresence: async (id: number, sessionId: string) => {
+    return request(`/sheets/${id}/presence?session_id=${encodeURIComponent(sessionId)}`, {
+      method: 'DELETE',
+    })
+  },
+  studentPresence: async (id: number, data: { session_id: string; editing?: boolean }) => {
+    return request(`/sheets/student/${id}/presence`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${getStudentAuthToken()}` },
+      body: JSON.stringify(data),
+    })
+  },
+  studentLeavePresence: async (id: number, sessionId: string) => {
+    return request(
+      `/sheets/student/${id}/presence?session_id=${encodeURIComponent(sessionId)}`,
+      {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${getStudentAuthToken()}` },
+      }
+    )
   },
   copy: async (
     id: number,
