@@ -105,7 +105,8 @@ app.use(cors({
         origin.includes('vercel.app') ||
         origin.includes('koyeb.app') ||
         origin.includes('eu.org') ||
-        origin.includes('edgeone')) {
+        origin.includes('edgeone') ||
+        origin.includes('pages.dev')) {
       callback(null, true)
     } else {
       console.log('❌ CORS阻止的请求来源:', origin)
