@@ -1752,3 +1752,135 @@ export const assistantAPI = {
     request(`/assistant/admin/assignments-by-assistant/${id}`),
 }
 
+/** 学员签到 */
+export const checkinAPI = {
+  adminToday: () => request('/checkins/admin/today'),
+  adminRegenerate: () => request('/checkins/admin/today/regenerate', { method: 'POST' }),
+  adminStop: () => request('/checkins/admin/today/stop', { method: 'POST' }),
+  adminDay: (date: string) => request(`/checkins/admin/days/${encodeURIComponent(date)}`),
+  adminHistory: (limit = 30) => request(`/checkins/admin/history?limit=${limit}`),
+  adminActivity: (days = 14) => request(`/checkins/admin/activity-summary?days=${days}`),
+  adminCancelRecord: (id: number | string) =>
+    request(`/checkins/admin/records/${id}/cancel`, { method: 'POST' }),
+  assistantToday: () => request('/checkins/assistant/today', { headers: studentAuthHeaders() }),
+  assistantDay: (date: string) =>
+    request(`/checkins/assistant/days/${encodeURIComponent(date)}`, { headers: studentAuthHeaders() }),
+  assistantHistory: (limit = 30) =>
+    request(`/checkins/assistant/history?limit=${limit}`, { headers: studentAuthHeaders() }),
+  studentToday: () => request('/checkins/student/today', { headers: studentAuthHeaders() }),
+  studentSubmit: async (code: string) => {
+    const { getClientPublicIp } = await import('./deviceIdentity')
+    const clientPublicIp = await getClientPublicIp().catch(() => undefined)
+    return request('/checkins/student/submit', {
+      method: 'POST',
+      headers: {
+        ...studentAuthHeaders(),
+        ...(clientPublicIp ? { 'X-Client-Public-Ip': clientPublicIp } : {}),
+      },
+      body: JSON.stringify({
+        code,
+        ...(clientPublicIp ? { clientPublicIp } : {}),
+      }),
+    })
+  },
+}
+
+/** 管理端 AI */
+export const adminAiAPI = {
+  status: () => request('/admin-ai/status'),
+  chat: (message: string, history: { role: string; content: string }[] = []) =>
+    request('/admin-ai/chat', {
+      method: 'POST',
+      body: JSON.stringify({ message, history }),
+    }),
+  /**
+   * SSE 流式对话。回调：onStatus / onDelta / onDone / onError
+   */
+  chatStream: async (
+    message: string,
+    history: { role: string; content: string }[] = [],
+    handlers: {
+      onStatus?: (text: string) => void
+      onDelta?: (text: string) => void
+      onDone?: (payload: { reply?: string; tools?: any[]; model?: string }) => void
+      onError?: (message: string) => void
+      signal?: AbortSignal
+    } = {}
+  ) => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+    }
+    const token = resolveRequestToken(headers)
+    if (token) headers.Authorization = `Bearer ${token}`
+    if (token && token === getAdminToken()) {
+      try {
+        Object.assign(headers, await getAdminSecurityHeaders())
+      } catch {
+        /* ignore */
+      }
+    }
+
+    const response = await fetch(`${API_BASE_URL}/admin-ai/chat-stream`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ message, history }),
+      signal: handlers.signal,
+    })
+
+    if (!response.ok) {
+      let msg = 'AI 请求失败'
+      try {
+        const data = await response.json()
+        msg = data?.message || msg
+      } catch {
+        /* ignore */
+      }
+      throw new Error(msg)
+    }
+
+    if (!response.body) {
+      throw new Error('浏览器不支持流式响应')
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const parts = buffer.split('\n\n')
+      buffer = parts.pop() || ''
+      for (const part of parts) {
+        const line = part
+          .split('\n')
+          .map((l) => l.trim())
+          .find((l) => l.startsWith('data:'))
+        if (!line) continue
+        let data: any
+        try {
+          data = JSON.parse(line.slice(5).trim())
+        } catch {
+          continue
+        }
+        if (data.type === 'status') handlers.onStatus?.(String(data.text || ''))
+        else if (data.type === 'delta') handlers.onDelta?.(String(data.text || ''))
+        else if (data.type === 'done') handlers.onDone?.(data)
+        else if (data.type === 'error') {
+          handlers.onError?.(String(data.message || 'AI 请求失败'))
+          throw new Error(data.message || 'AI 请求失败')
+        }
+      }
+    }
+  },
+  activityReport: (days = 14, refresh = false) =>
+    request(
+      `/admin-ai/activity-report?days=${days}${refresh ? '&refresh=1' : ''}`
+    ),
+  /** 单张问卷结果总结：服务端按问卷缓存，无手动刷新 */
+  surveyReport: (surveyId: number) =>
+    request(`/admin-ai/survey-report?survey_id=${Number(surveyId)}`),
+}
+

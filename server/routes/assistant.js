@@ -328,13 +328,25 @@ router.put('/students/:id/last-training-date', requireAssistant, async (req, res
       return res.status(403).json({ success: false, message: '只能管理自己的学员或当日临时学员' })
     }
     const [[member]] = await pool.query(
-      'SELECT id, status FROM members WHERE id = ?',
+      'SELECT id, status, last_training_date FROM members WHERE id = ?',
       [studentId]
     )
     if (!member || member.status === '已退队') {
       return res.status(404).json({ success: false, message: '学员不存在' })
     }
+    const previousLastTrainingDate = toMySQLDate(member.last_training_date)
     await pool.query('UPDATE members SET last_training_date = ? WHERE id = ?', [date, studentId])
+    try {
+      const { syncProxyCheckinFromTrainingDate } = await import('../utils/checkinService.js')
+      await syncProxyCheckinFromTrainingDate(studentId, date, {
+        type: 'assistant',
+        id: req.assistant.id,
+        name: req.assistant.nickname || '助教',
+        previousLastTrainingDate,
+      })
+    } catch (e) {
+      console.warn('[assistant] sync checkin proxy', e.message)
+    }
     res.json({ success: true, message: '已更新最后新训日期', data: { last_training_date: date } })
   } catch (error) {
     console.error('更新最后新训日期失败:', error)
@@ -1794,6 +1806,29 @@ router.put('/admin/member-edits/:id/review', requireAdmin, async (req, res) => {
 
     vals.push(row.student_member_id)
     await pool.query(`UPDATE members SET ${sets.join(', ')} WHERE id = ?`, vals)
+
+    if (Object.prototype.hasOwnProperty.call(changes, 'last_training_date')) {
+      const trainDate = toMySQLDate(resolveTo(changes.last_training_date))
+      const rawLtd = changes.last_training_date
+      const previousLastTrainingDate =
+        rawLtd && typeof rawLtd === 'object' && !Array.isArray(rawLtd)
+          ? toMySQLDate(rawLtd.from)
+          : null
+      if (trainDate) {
+        try {
+          const { syncProxyCheckinFromTrainingDate } = await import('../utils/checkinService.js')
+          await syncProxyCheckinFromTrainingDate(row.student_member_id, trainDate, {
+            type: 'admin',
+            id: req.admin.id,
+            name: req.admin.name || req.admin.username || '管理员',
+            previousLastTrainingDate,
+          })
+        } catch (e) {
+          console.warn('[assistant] approve edit sync checkin', e.message)
+        }
+      }
+    }
+
     await pool.query(
       `UPDATE pending_member_edits
        SET status = '已通过', reviewed_by_admin_id = ?, reviewed_at = NOW()

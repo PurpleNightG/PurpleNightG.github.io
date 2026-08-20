@@ -174,6 +174,26 @@ export const getTodayDateString = (): string => {
 }
 
 /**
+ * 将库内 DATETIME（上海墙钟、无时区）解析为 Date，避免把 19:00 当成 UTC。
+ */
+export function parseShanghaiDateTime(value: string | Date | null | undefined): Date | null {
+  if (value == null || value === '') return null
+  const s = String(value).trim()
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/)
+  if (!m) {
+    const d = value instanceof Date ? value : new Date(s)
+    return Number.isNaN(d.getTime()) ? null : d
+  }
+  const y = Number(m[1])
+  const mo = Number(m[2])
+  const d = Number(m[3])
+  const h = Number(m[4])
+  const mi = Number(m[5])
+  const se = Number(m[6] || 0)
+  return new Date(Date.UTC(y, mo - 1, d, h - 8, mi, se))
+}
+
+/**
  * 计算两个日期之间的天数差
  * @param startDate - 开始日期
  * @param endDate - 结束日期

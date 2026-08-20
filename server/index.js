@@ -35,6 +35,8 @@ import opinionBoxRoutes from './routes/opinionBox.js'
 import accountSecurityRoutes from './routes/accountSecurity.js'
 import assistantRoutes from './routes/assistant.js'
 import securityRoutes from './routes/security.js'
+import checkinsRoutes from './routes/checkins.js'
+import adminAiRoutes from './routes/adminAi.js'
 import { requireAdmin, identityGateMiddleware } from './utils/authGate.js'
 import { adminAuditMiddleware, ensureAuditLogTable } from './utils/adminAudit.js'
 import { ensureAdminRoleColumns } from './utils/adminRoles.js'
@@ -135,6 +137,7 @@ const BADGE_MUTATION_PREFIXES = [
   '/api/quit',
   '/api/retention',
   '/api/members',
+  '/api/checkins',
 ]
 app.use((req, res, next) => {
   const method = req.method
@@ -244,6 +247,8 @@ app.use('/api/opinion-box', opinionBoxRoutes)
 app.use('/api/account-security', accountSecurityRoutes)
 app.use('/api/assistant', assistantRoutes)
 app.use('/api/security', ...adminGuard, securityRoutes)
+app.use('/api/checkins', checkinsRoutes)
+app.use('/api/admin-ai', ...adminGuard, adminAiRoutes)
 
 // 健康检查
 app.get('/api/health', (req, res) => {

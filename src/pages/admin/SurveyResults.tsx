@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { surveyAPI } from '../../utils/api'
+import ReactMarkdown from 'react-markdown'
+import { adminAiAPI, surveyAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
 import { formatDateTime } from '../../utils/dateFormat'
 import PageSkeleton from '../../components/Skeleton'
@@ -16,10 +17,47 @@ import {
   Trash2,
   ChevronDown,
   ChevronRight,
+  Sparkles,
 } from 'lucide-react'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import MemberNameCell from '../../components/MemberNameCell'
 import { isFieldVisible, NOT_ATTENDED } from '../../utils/surveyHelpers'
+
+/** 按问卷缓存会话请求；持久化在服务端，无手动刷新 */
+const surveyResultNarrativeCache = new Map<
+  number,
+  {
+    text: string
+    updatedAt: string | null
+    inflight: Promise<{ text: string; updatedAt: string | null; fromCache: boolean }> | null
+  }
+>()
+
+async function fetchSurveyResultNarrative(surveyId: number): Promise<{
+  text: string
+  updatedAt: string | null
+  fromCache: boolean
+}> {
+  const existing = surveyResultNarrativeCache.get(surveyId)
+  if (existing?.inflight) return existing.inflight
+  const entry = existing || { text: '', updatedAt: null, inflight: null }
+  const inflight = adminAiAPI
+    .surveyReport(surveyId)
+    .then((res) => {
+      const text =
+        res.data?.narrative || JSON.stringify(res.data?.facts || {}, null, 2)
+      const updatedAt = res.data?.updated_at ? String(res.data.updated_at) : null
+      const fromCache = !!res.data?.from_cache
+      surveyResultNarrativeCache.set(surveyId, { text, updatedAt, inflight: null })
+      return { text, updatedAt, fromCache }
+    })
+    .catch((err) => {
+      surveyResultNarrativeCache.set(surveyId, { ...entry, inflight: null })
+      throw err
+    })
+  surveyResultNarrativeCache.set(surveyId, { ...entry, inflight })
+  return inflight
+}
 
 interface RankItem {
   subject_id: string
@@ -310,6 +348,40 @@ export default function SurveyResults() {
   const [collapsedResponses, setCollapsedResponses] = useState<Record<number, boolean>>({})
   /** 答卷明细：默认隐藏门禁未过的题目 */
   const [hideGateSkipped, setHideGateSkipped] = useState(true)
+  const [summary, setSummary] = useState('')
+  const [summaryBusy, setSummaryBusy] = useState(false)
+  const [summaryUpdatedAt, setSummaryUpdatedAt] = useState<string | null>(null)
+  const summaryReqId = useRef(0)
+
+  const loadSummary = useCallback(async (surveyId: number) => {
+    const reqId = ++summaryReqId.current
+    setSummaryBusy(true)
+    setSummary('')
+    setSummaryUpdatedAt(null)
+    try {
+      const { text, updatedAt, fromCache } = await fetchSurveyResultNarrative(surveyId)
+      if (reqId !== summaryReqId.current) return
+      setSummaryUpdatedAt(updatedAt)
+      const full = String(text || '')
+      if (fromCache) {
+        setSummary(full)
+        return
+      }
+      setSummary('')
+      for (let i = 0; i < full.length; i += 1) {
+        if (reqId !== summaryReqId.current) return
+        setSummary(full.slice(0, i + 1))
+        const ch = full[i]
+        const delay = /[。！？；：\n]/.test(ch) ? 70 : /[，、]/.test(ch) ? 40 : 18
+        await new Promise((r) => setTimeout(r, delay))
+      }
+    } catch (e: any) {
+      if (reqId !== summaryReqId.current) return
+      toast.error(e?.message || '生成结果总结失败')
+    } finally {
+      if (reqId === summaryReqId.current) setSummaryBusy(false)
+    }
+  }, [])
 
   const reload = async () => {
     const res = await surveyAPI.results(Number(id))
@@ -330,6 +402,12 @@ export default function SurveyResults() {
     }
     load()
   }, [id, navigate])
+
+  useEffect(() => {
+    const surveyId = Number(id)
+    if (!Number.isFinite(surveyId) || surveyId <= 0) return
+    void loadSummary(surveyId)
+  }, [id, loadSummary])
 
   const confirmDeleteResponse = async () => {
     if (deleteResponseId == null || !id) return
@@ -438,6 +516,50 @@ export default function SurveyResults() {
               <span className="px-2 py-1 rounded bg-gray-800 text-gray-400">
                 {formatDateTime(survey.start_at)} ~ {formatDateTime(survey.end_at)}
               </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className={`ai-aurora-shell relative ${summaryBusy ? 'is-thinking' : ''}`}>
+        <div className="ai-aurora-inner !py-3 !px-4">
+          <div className="flex items-start justify-between gap-3 mb-1.5">
+            <div className="flex items-center gap-2 min-w-0">
+              <Sparkles size={16} className="text-sky-300 shrink-0" />
+              <div className="min-w-0">
+                <div className="ai-aurora-title text-sm font-semibold tracking-wide">AI 结果总结</div>
+                <div className="text-[11px] text-gray-500 mt-0.5">
+                  {summaryUpdatedAt
+                    ? `本问卷 · 已保存 ${new Date(summaryUpdatedAt).toLocaleString('zh-CN', {
+                        month: 'numeric',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}`
+                    : '基于答卷自动分析 · 不可手动刷新'}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div>
+            {summaryBusy && !summary ? (
+              <div className="text-sm text-gray-500 py-0.5 inline-flex items-center gap-2">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />
+                正在生成…
+              </div>
+            ) : summary ? (
+              summaryBusy ? (
+                <p className="text-sm text-gray-200/95 leading-relaxed whitespace-pre-wrap">
+                  {summary}
+                  <span className="inline-block w-1.5 h-[1.05em] ml-0.5 align-[-0.1em] bg-fuchsia-300/90 animate-pulse" />
+                </p>
+              ) : (
+                <div className="admin-ai-md admin-ai-md--card">
+                  <ReactMarkdown>{summary}</ReactMarkdown>
+                </div>
+              )
+            ) : (
+              <div className="text-sm text-gray-500 py-0.5">暂无总结</div>
             )}
           </div>
         </div>

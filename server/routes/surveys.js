@@ -9,6 +9,7 @@ import {
   buildSatisfactionSummary,
 } from '../utils/surveyHelpers.js'
 import { requireAdmin, requireStudent } from '../utils/authGate.js'
+import { parseShanghaiDateTime } from '../utils/date.js'
 
 const router = express.Router()
 
@@ -123,12 +124,12 @@ const FULL_MESSAGE = '此表格填写人数已达上限'
 
 function isWithinWindow(survey, now = new Date()) {
   if (survey.start_at) {
-    const start = new Date(String(survey.start_at).replace(' ', 'T'))
-    if (!Number.isNaN(start.getTime()) && now < start) return { ok: false, message: '填表尚未开始' }
+    const start = parseShanghaiDateTime(survey.start_at)
+    if (start && now < start) return { ok: false, message: '填表尚未开始' }
   }
   if (survey.end_at) {
-    const end = new Date(String(survey.end_at).replace(' ', 'T'))
-    if (!Number.isNaN(end.getTime()) && now > end) return { ok: false, message: '填表已结束' }
+    const end = parseShanghaiDateTime(survey.end_at)
+    if (end && now > end) return { ok: false, message: '填表已结束' }
   }
   return { ok: true }
 }
@@ -757,7 +758,7 @@ router.get('/:id/results', requireAdmin, async (req, res) => {
   }
 })
 
-/** 学员端：公开结果（仅统计聚合；实名答卷不返回身份） */
+/** 学员端：公开结果（实名表含填写者；匿名表仅统计） */
 router.get('/:id/public-results', requireStudent, async (req, res) => {
   try {
     const memberId = req.student.id
@@ -779,7 +780,10 @@ router.get('/:id/public-results', requireStudent, async (req, res) => {
       return res.status(403).json({ success: false, message: '不在投放范围内' })
     }
 
-    const data = await buildSurveyResultsPayload(row, { includeIdentities: false })
+    // 实名公开：返回填写者；匿名：不暴露身份
+    const data = await buildSurveyResultsPayload(row, {
+      includeIdentities: !row.is_anonymous,
+    })
     res.json({ success: true, data })
   } catch (error) {
     console.error('[surveys] public-results', error)
@@ -911,7 +915,7 @@ async function buildSurveyResultsPayload(row, { includeIdentities }) {
     claim_count: survey.is_anonymous ? Number(claimStats?.claimed || 0) : null,
     stats,
     satisfaction_ranking,
-    // 学员公开结果只返回统计，不返回原始答卷明细（避免隐私问题）
+    // 实名：返回答卷+填写者；匿名：不返回明细（仅统计）
     responses: includeIdentities ? responses : undefined,
   }
 }

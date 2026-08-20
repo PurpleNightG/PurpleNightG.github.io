@@ -35,7 +35,7 @@ async function requireStudentSelf(req, res, memberId) {
   return auth
 }
 
-async function ensureAttendanceOverrideTable() {
+export async function ensureAttendanceOverrideTable() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS attendance_reminder_overrides (
       id INT PRIMARY KEY AUTO_INCREMENT,
@@ -49,7 +49,7 @@ async function ensureAttendanceOverrideTable() {
   `)
 }
 
-async function loadAttendanceContext() {
+export async function loadAttendanceContext() {
   const [members] = await pool.query(`
     SELECT
       m.id, m.nickname, m.qq, m.stage_role, m.status,
@@ -105,7 +105,7 @@ async function loadAttendanceContext() {
   }
 }
 
-function buildAttendanceList(ctx, { showAll = false, memberId = null } = {}) {
+export function buildAttendanceList(ctx, { showAll = false, memberId = null } = {}) {
   const {
     members,
     leaveMap,
@@ -165,7 +165,7 @@ router.put('/rules-config', async (req, res) => {
   }
 })
 
-// 考勤催促名单
+// 进度催促名单（升期/闲置规则链）
 router.get('/attendance', async (req, res) => {
   try {
     const showAll = req.query.showAll === '1' || req.query.showAll === 'true'
@@ -182,8 +182,8 @@ router.get('/attendance', async (req, res) => {
       },
     })
   } catch (error) {
-    console.error('获取考勤催促失败:', error)
-    res.status(500).json({ success: false, message: '获取考勤催促失败' })
+    console.error('获取进度催促失败:', error)
+    res.status(500).json({ success: false, message: '获取进度催促失败' })
   }
 })
 
@@ -199,8 +199,8 @@ router.get('/attendance/me/:memberId', async (req, res) => {
     const data = buildAttendanceList(ctx, { showAll: true, memberId })
     res.json({ success: true, data: data[0] || null })
   } catch (error) {
-    console.error('获取学员考勤催促失败:', error)
-    res.status(500).json({ success: false, message: '获取考勤催促失败' })
+    console.error('获取学员进度催促失败:', error)
+    res.status(500).json({ success: false, message: '获取进度催促失败' })
   }
 })
 
@@ -249,7 +249,7 @@ router.post('/attendance/ignore/:memberId', async (req, res) => {
     )
     res.json({ success: true, message: '已忽略该成员的考勤倒计时' })
   } catch (error) {
-    console.error('忽略考勤催促失败:', error)
+    console.error('忽略进度催促失败:', error)
     res.status(500).json({ success: false, message: '忽略失败' })
   }
 })
@@ -261,12 +261,12 @@ router.delete('/attendance/ignore/:memberId', async (req, res) => {
     await pool.query('DELETE FROM attendance_reminder_ignores WHERE member_id = ?', [memberId])
     res.json({ success: true, message: '已恢复该成员的考勤倒计时' })
   } catch (error) {
-    console.error('取消忽略考勤催促失败:', error)
+    console.error('取消忽略进度催促失败:', error)
     res.status(500).json({ success: false, message: '取消忽略失败' })
   }
 })
 
-/** 正式队员取消短周期考勤 → 改用 180 天考勤催促 */
+/** 正式队员取消短周期考勤 → 改用 180 天进度催促 */
 router.post('/formal/:memberId/use-180', async (req, res) => {
   try {
     const memberId = parseInt(req.params.memberId, 10)
@@ -294,7 +294,7 @@ router.post('/formal/:memberId/use-180', async (req, res) => {
        ON DUPLICATE KEY UPDATE note = VALUES(note)`,
       [memberId]
     )
-    res.json({ success: true, message: '已取消考勤，该成员改按 180 天计入考勤催促' })
+    res.json({ success: true, message: '已取消考勤，该成员改按 180 天计入进度催促' })
   } catch (error) {
     console.error('正式队员取消考勤失败:', error)
     res.status(500).json({ success: false, message: '操作失败' })

@@ -485,7 +485,7 @@ router.put('/:id', async (req, res) => {
     
     // 检查成员是否存在
     const [existing] = await pool.query(
-      'SELECT id, stage_role FROM members WHERE id = ?',
+      'SELECT id, stage_role, last_training_date FROM members WHERE id = ?',
       [id]
     )
     
@@ -495,6 +495,8 @@ router.put('/:id', async (req, res) => {
         message: '成员不存在'
       })
     }
+
+    const prevTrainingDate = toMySQLDate(existing[0].last_training_date)
 
     const hasPhase3Field = Object.prototype.hasOwnProperty.call(req.body, 'phase3_reached_at')
     
@@ -575,6 +577,25 @@ router.put('/:id', async (req, res) => {
           screen_share_assistant: false,
         })]
       )
+    }
+
+    // 若设置的最后新训日存在签到任务，记入该日「管理代签」
+    {
+      const trainDate = toMySQLDate(last_training_date)
+      if (trainDate) {
+        try {
+          const { syncProxyCheckinFromTrainingDate } = await import('../utils/checkinService.js')
+          const actor = req.admin || req.user || {}
+          await syncProxyCheckinFromTrainingDate(id, trainDate, {
+            type: 'admin',
+            id: actor.id,
+            name: actor.name || actor.username || '管理员',
+            previousLastTrainingDate: prevTrainingDate,
+          })
+        } catch (e) {
+          console.warn('[members] sync checkin proxy', e.message)
+        }
+      }
     }
     
     res.json({

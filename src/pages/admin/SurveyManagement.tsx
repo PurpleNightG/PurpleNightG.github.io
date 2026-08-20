@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { surveyAPI, memberAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
-import { formatDateTime } from '../../utils/dateFormat'
+import { formatDateTime, parseShanghaiDateTime } from '../../utils/dateFormat'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import MemberAvatar from '../../components/MemberAvatar'
 import PageSkeleton from '../../components/Skeleton'
@@ -163,8 +163,8 @@ const emptyForm = (): Omit<Survey, 'id'> => ({
 function isExpired(s: { end_at?: string | null; status?: string }) {
   if (s.status === 'closed') return true
   if (!s.end_at) return false
-  const end = new Date(String(s.end_at).replace(' ', 'T'))
-  return !Number.isNaN(end.getTime()) && end < new Date()
+  const end = parseShanghaiDateTime(s.end_at)
+  return !!end && end < new Date()
 }
 
 /** 页面式题目预览（编辑/填写共用样式） */

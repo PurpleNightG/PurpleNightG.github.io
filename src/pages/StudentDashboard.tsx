@@ -19,6 +19,7 @@ import StudentSheets from './StudentSheets'
 import StudentSheetView from './StudentSheetView'
 import StudentOpinionBox from './StudentOpinionBox'
 import AccountSecurity from './AccountSecurity'
+import StudentCheckin from './StudentCheckin'
 
 function StudentDashboardContent() {
   const [isMobile, setIsMobile] = useState(false)
@@ -83,6 +84,7 @@ function StudentDashboardContent() {
             <Route path="assessment-report" element={<StudentAssessmentReport />} />
             <Route path="blackpoints" element={<StudentBlackPoints />} />
             <Route path="leave" element={<StudentLeave />} />
+            <Route path="checkin" element={<StudentCheckin />} />
             <Route path="videos" element={<PublicVideos />} />
             <Route path="surveys" element={<StudentSurveys />} />
             <Route path="surveys/:id/results" element={<StudentSurveyResults />} />

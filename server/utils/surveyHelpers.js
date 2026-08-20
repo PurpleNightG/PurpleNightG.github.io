@@ -239,3 +239,325 @@ export function buildSatisfactionSummary(subjects, fields, responses) {
 
   return list
 }
+
+function bumpCount(map, key, n = 1) {
+  if (!key) return
+  map[key] = (map[key] || 0) + n
+}
+
+function topEntries(map, limit = 6) {
+  return Object.entries(map)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([label, count]) => ({ label, count }))
+}
+
+function formatTop(top, limit = 5) {
+  return (top || [])
+    .slice(0, limit)
+    .map((t) => `${t.label}×${t.count}`)
+    .join('，')
+}
+
+function trimAnswerText(raw, maxLen = 220) {
+  const s = String(raw || '').replace(/\s+/g, ' ').trim()
+  if (!s) return ''
+  return s.length > maxLen ? `${s.slice(0, maxLen)}…` : s
+}
+
+/**
+ * 管理端 AI 问卷总结文案：覆盖均分、选项分布、开放题/建议原文
+ */
+export function buildSurveyAiSummary({
+  title,
+  windowStatus,
+  windowMessage,
+  status,
+  isAnonymous,
+  fillRateHint,
+  claimCount = null,
+  submittedClaims = null,
+  respondents = [],
+  subjects = [],
+  fields = [],
+  answersList = [],
+  satisfaction = null,
+}) {
+  const isSatisfaction = Array.isArray(subjects) && subjects.length > 0
+  const lines = [
+    `【${title}】填写情况总结`,
+    `状态：${windowStatus}${windowMessage ? `（${windowMessage}）` : ''}；发布状态 ${status}`,
+    `答卷：${fillRateHint}` +
+      (isAnonymous
+        ? `；匿名领取 ${claimCount ?? 0}，已提交 ${submittedClaims ?? 0}`
+        : `；实名已填 ${respondents.length} 人`),
+  ]
+
+  const ranked = Array.isArray(satisfaction)
+    ? satisfaction.filter((s) => s.avg_score != null)
+    : []
+
+  if (isSatisfaction) {
+    lines.push('')
+    lines.push('一、满意度均分（全员）')
+    lines.push(`评价对象 ${subjects.length} 人；有均分 ${ranked.length} 人`)
+    const all = Array.isArray(satisfaction) ? satisfaction : []
+    if (!all.length) {
+      lines.push('暂无有效评分。')
+    } else {
+      all.forEach((s, i) => {
+        const avg = s.avg_score != null ? Number(s.avg_score).toFixed(2) : '—'
+        lines.push(
+          `${i + 1}. ${s.name} 均分 ${avg}` +
+            `（上过 ${s.attended ?? 0} / 未上过 ${s.not_attended ?? 0}；有效评分 ${s.sample_size ?? 0} 人）` +
+            (s.reliability_note ? `；${s.reliability_note}` : '')
+        )
+      })
+    }
+  }
+
+  // 选项/评分/矩阵：全局题逐题；按人题按「题目标签」汇总（避免每人×每题爆炸）
+  const choiceBlocks = []
+  const globalChoiceFields = fields.filter(
+    (f) =>
+      f.scope === 'global' &&
+      ['single', 'multi', 'rating', 'matrix'].includes(f.type)
+  )
+  const subjectChoiceTemplates = new Map()
+  for (const f of fields) {
+    if (f.scope === 'global' || f.type === 'subject_gate') continue
+    if (!['single', 'multi', 'rating', 'matrix'].includes(f.type)) continue
+    const tid = f.template_id || f.id
+    if (!subjectChoiceTemplates.has(tid)) {
+      subjectChoiceTemplates.set(tid, { label: f.label, type: f.type, fields: [] })
+    }
+    subjectChoiceTemplates.get(tid).fields.push(f)
+  }
+
+  for (const field of globalChoiceFields.slice(0, 20)) {
+    const counts = {}
+    const rowLabels = Object.fromEntries((field.rows || []).map((r) => [r.id, r.label || r.id]))
+    for (const ans of answersList) {
+      const val = ans?.[field.id]
+      if (val == null || val === '') continue
+      if (field.type === 'matrix' && typeof val === 'object' && !Array.isArray(val)) {
+        for (const [rowId, col] of Object.entries(val)) {
+          bumpCount(counts, `${rowLabels[rowId] || rowId} · ${col}`)
+        }
+      } else if (Array.isArray(val)) {
+        for (const v of val) bumpCount(counts, String(v))
+      } else {
+        bumpCount(counts, String(val))
+      }
+    }
+    const top = topEntries(counts, 8)
+    if (top.length) {
+      choiceBlocks.push({ title: `全局 · ${field.label}`, top })
+    }
+  }
+
+  for (const [, tpl] of [...subjectChoiceTemplates.entries()].slice(0, 12)) {
+    if (tpl.type === 'rating') {
+      const perSubject = []
+      for (const field of tpl.fields) {
+        const nums = []
+        for (const ans of answersList) {
+          if (!isFieldVisible(field, ans)) continue
+          const s = extractScoreValue(ans?.[field.id])
+          if (s != null) nums.push(s)
+        }
+        if (!nums.length) continue
+        const avg = Math.round((nums.reduce((a, b) => a + b, 0) / nums.length) * 100) / 100
+        perSubject.push({
+          name: field.subject_name || '未知',
+          avg,
+          n: nums.length,
+        })
+      }
+      perSubject.sort((a, b) => b.avg - a.avg)
+      if (perSubject.length) {
+        choiceBlocks.push({
+          title: `按人评分 · ${tpl.label}`,
+          line: perSubject
+            .map((p) => `${p.name} ${p.avg.toFixed(2)}(n=${p.n})`)
+            .join('；'),
+        })
+      }
+      continue
+    }
+
+    const counts = {}
+    for (const field of tpl.fields) {
+      const rowLabels = Object.fromEntries((field.rows || []).map((r) => [r.id, r.label || r.id]))
+      for (const ans of answersList) {
+        if (!isFieldVisible(field, ans)) continue
+        const val = ans?.[field.id]
+        if (val == null || val === '') continue
+        const prefix = field.subject_name ? `${field.subject_name}·` : ''
+        if (field.type === 'matrix' && typeof val === 'object' && !Array.isArray(val)) {
+          for (const [rowId, col] of Object.entries(val)) {
+            bumpCount(counts, `${prefix}${rowLabels[rowId] || rowId} · ${col}`)
+          }
+        } else if (Array.isArray(val)) {
+          for (const v of val) bumpCount(counts, `${prefix}${v}`)
+        } else {
+          bumpCount(counts, `${prefix}${val}`)
+        }
+      }
+    }
+    const top = topEntries(counts, 10)
+    if (top.length) {
+      choiceBlocks.push({ title: `按人 · ${tpl.label}`, top })
+    }
+  }
+
+  // 非满意度普通问卷：直接扫前若干题
+  if (!isSatisfaction && !choiceBlocks.length) {
+    for (const field of fields.slice(0, 16)) {
+      if (!['single', 'multi', 'rating', 'matrix', 'subject_gate'].includes(field.type)) continue
+      const counts = {}
+      const rowLabels = Object.fromEntries((field.rows || []).map((r) => [r.id, r.label || r.id]))
+      for (const ans of answersList) {
+        const val = ans?.[field.id]
+        if (val == null || val === '') continue
+        if (field.type === 'matrix' && typeof val === 'object' && !Array.isArray(val)) {
+          for (const [rowId, col] of Object.entries(val)) {
+            bumpCount(counts, `${rowLabels[rowId] || rowId} · ${col}`)
+          }
+        } else if (Array.isArray(val)) {
+          for (const v of val) bumpCount(counts, String(v))
+        } else {
+          bumpCount(counts, String(val))
+        }
+      }
+      const top = topEntries(counts, 6)
+      if (top.length) {
+        choiceBlocks.push({
+          title: field.subject_name ? `${field.subject_name} · ${field.label}` : field.label,
+          top,
+        })
+      }
+    }
+  }
+
+  if (choiceBlocks.length) {
+    lines.push('')
+    lines.push(isSatisfaction ? '二、其他题目分布' : '一、选项/评分分布')
+    for (const block of choiceBlocks.slice(0, 16)) {
+      if (block.line) {
+        lines.push(`- ${block.title}：${block.line}`)
+      } else {
+        lines.push(`- ${block.title}：${formatTop(block.top) || '无'}`)
+      }
+    }
+  }
+
+  // 开放题 / 建议：按「题目标签 + 对象」分组，保留原文
+  const textGroups = new Map()
+  for (const field of fields) {
+    if (field.type !== 'text' && field.type !== 'textarea') continue
+    const groupKey = `${field.template_id || field.id}::${field.subject_id || 'global'}`
+    if (!textGroups.has(groupKey)) {
+      const title =
+        field.scope === 'global' || !field.subject_name
+          ? `全局 · ${field.label}`
+          : `对 ${field.subject_name} · ${field.label}`
+      textGroups.set(groupKey, { title, samples: [] })
+    }
+    const group = textGroups.get(groupKey)
+    for (const ans of answersList) {
+      if (!isFieldVisible(field, ans)) continue
+      const text = trimAnswerText(ans?.[field.id])
+      if (!text) continue
+      group.samples.push(text)
+    }
+  }
+
+  const textSections = [...textGroups.values()]
+    .map((g) => {
+      const freq = {}
+      for (const s of g.samples) bumpCount(freq, s)
+      const uniq = topEntries(freq, 20).map((t) =>
+        t.count > 1 ? `${t.label}（×${t.count}）` : t.label
+      )
+      return { title: g.title, items: uniq, total: g.samples.length }
+    })
+    .filter((g) => g.items.length)
+    .sort((a, b) => {
+      // 建议/意见类靠前
+      const score = (t) => (/建议|意见|反馈|想说|补充|其他/.test(t) ? 0 : 1)
+      return score(a.title) - score(b.title) || b.total - a.total
+    })
+
+  if (textSections.length) {
+    lines.push('')
+    lines.push(isSatisfaction ? '三、开放题与建议（原文摘录）' : '二、开放题（原文摘录）')
+    let budget = 60
+    for (const sec of textSections.slice(0, 20)) {
+      if (budget <= 0) {
+        lines.push('（其余开放题过多，已省略）')
+        break
+      }
+      const take = Math.min(sec.items.length, Math.max(3, Math.min(12, budget)))
+      lines.push(`【${sec.title}】共 ${sec.total} 条，摘录 ${take} 条：`)
+      sec.items.slice(0, take).forEach((t, i) => {
+        lines.push(`${i + 1}. ${t}`)
+      })
+      budget -= take
+    }
+  } else {
+    lines.push('')
+    lines.push(isSatisfaction ? '三、开放题与建议' : '二、开放题')
+    lines.push('暂无文本类回答（或题目中未设置建议/开放题）。')
+  }
+
+  if (!isAnonymous && respondents.length) {
+    lines.push('')
+    lines.push(isSatisfaction ? '四、填写者' : '三、填写者')
+    lines.push(
+      respondents
+        .slice(0, 20)
+        .map((r) => r.nickname)
+        .join('、') + (respondents.length > 20 ? ' …' : '')
+    )
+  }
+
+  return {
+    summary_text: lines.join('\n'),
+    analysis_payload: {
+      meta: {
+        title,
+        window_status: windowStatus,
+        window_message: windowMessage || null,
+        status,
+        is_anonymous: !!isAnonymous,
+        fill: fillRateHint,
+        claim_count: claimCount,
+        submitted_claims: submittedClaims,
+        respondent_count: respondents.length,
+        subject_count: subjects.length || 0,
+      },
+      satisfaction_ranking: (Array.isArray(satisfaction) ? satisfaction : []).map((s) => ({
+        name: s.name,
+        avg_score: s.avg_score,
+        attended: s.attended,
+        not_attended: s.not_attended,
+        sample_size: s.sample_size,
+        note: s.reliability_note || null,
+      })),
+      question_distributions: choiceBlocks.slice(0, 16).map((b) =>
+        b.line
+          ? { title: b.title, summary: b.line }
+          : { title: b.title, top: (b.top || []).slice(0, 8) }
+      ),
+      open_ended_feedback: textSections.slice(0, 20).map((s) => ({
+        title: s.title,
+        total: s.total,
+        samples: s.items.slice(0, 15),
+      })),
+    },
+    choice_blocks: choiceBlocks.slice(0, 16),
+    text_section_count: textSections.length,
+    text_answer_count: textSections.reduce((n, s) => n + s.total, 0),
+  }
+}

@@ -257,7 +257,7 @@ export default function ReminderList() {
   const [showSettings, setShowSettings] = useState(false)
   const [showRulesSettings, setShowRulesSettings] = useState(false)
   const [timeoutDays, setTimeoutDays] = useState(7)
-  /** 正式队员考勤时间（天）；0 = 关闭，紫夜/尖兵走 180 天考勤催促 */
+  /** 正式队员考勤时间（天）；0 = 关闭，紫夜/尖兵走 180 天进度催促 */
   const [formalTimeoutDays, setFormalTimeoutDays] = useState(0)
   const [trainingWarnDays, setTrainingWarnDays] = useState(3)
   const [attendanceHelpText, setAttendanceHelpText] = useState(
@@ -440,7 +440,7 @@ export default function ReminderList() {
       )
       void refreshBadges()
     } catch (error: any) {
-      toast.error(error.message || '加载考勤催促失败')
+      toast.error(error.message || '加载进度催促失败')
     } finally {
       setAttendanceLoading(false)
     }
@@ -1182,7 +1182,7 @@ export default function ReminderList() {
                 activeTab === 'attendance' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
               }`}
             >
-              考勤催促
+              进度催促
               {attendanceWarnCount > 0 && (
                 <span className={`ml-1.5 inline-flex min-w-4 h-4 px-1 rounded-full text-xs items-center justify-center ${
                   activeTab === 'attendance' ? 'bg-white/20 text-white' : 'bg-red-500 text-white'
@@ -1328,7 +1328,7 @@ export default function ReminderList() {
           {attendanceLoading ? (
             <PageSkeleton variant="table" padded={false} />
           ) : filteredAttendance.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">当前没有考勤催促对象</div>
+            <div className="p-8 text-center text-gray-500">当前没有进度催促对象</div>
           ) : (
             <div className="admin-table-container">
               <table className="admin-table">
@@ -1848,7 +1848,7 @@ export default function ReminderList() {
                             onClick={async () => {
                               try {
                                 await reminderAPI.cancelFormalAttendance(item.member_id || item.id)
-                                toast.success('已取消考勤，该成员改按 180 天计入考勤催促')
+                                toast.success('已取消考勤，该成员改按 180 天计入进度催促')
                                 await Promise.all([loadItems(), loadAttendance()])
                                 void refreshBadges()
                               } catch (e: any) {
@@ -1856,7 +1856,7 @@ export default function ReminderList() {
                               }
                             }}
                             className="text-orange-400 hover:text-orange-300 transition-colors text-xs whitespace-nowrap"
-                            title="取消短周期考勤，改走 180 天考勤催促"
+                            title="取消短周期考勤，改走 180 天进度催促"
                           >
                             取消考勤
                           </button>
@@ -1914,7 +1914,7 @@ export default function ReminderList() {
                   placeholder="0 = 关闭"
                 />
                 <p className="text-xs text-gray-400 mt-1">
-                  填 0 或不启用：紫夜 / 紫夜尖兵走考勤催促 180 天。
+                  填 0 或不启用：紫夜 / 紫夜尖兵走进度催促 180 天。
                   填写天数后：他们改走训练催促（该天数），特殊职位除外；可对单人点「取消考勤」改回 180 天。
                 </p>
               </div>
@@ -2022,7 +2022,7 @@ export default function ReminderList() {
         />
       )}
 
-      {/* 考勤催促：批量设置退队日期 */}
+      {/* 进度催促：批量设置退队日期 */}
       {batchAttendanceTimeoutModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />
@@ -2080,7 +2080,7 @@ export default function ReminderList() {
         </div>
       )}
 
-      {/* 考勤催促：单个设置退队日期 */}
+      {/* 进度催促：单个设置退队日期 */}
       {editingAttendanceItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 glass-modal-backdrop" aria-hidden />

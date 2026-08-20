@@ -199,7 +199,7 @@ export default function AdminHome() {
           (m: any) => Number(m.is_ziye_assistant) === 1 || m.stage_role === '紫夜助教'
         ).length,
         blackPoints: blackPointsData.filter((b: any) => b.status === '生效中').length,
-        // 与侧栏 /badges 一致：训练催促 + 考勤催促（随本页统计一并返回，避免 badges 晚到数字闪现）
+        // 与侧栏 /badges 一致：训练催促 + 进度催促（随本页统计一并返回，避免 badges 晚到数字闪现）
         reminders: remindersData.length + attendanceData.length,
       })
 

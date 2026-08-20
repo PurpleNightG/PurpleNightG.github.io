@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Smartphone } from 'lucide-react'
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import ProtectedRoute from '../components/ProtectedRoute'
 import { AdminSidebar } from '../components/ui/sidebar'
 import { BadgeProvider } from '../contexts/BadgeContext'
@@ -34,6 +34,8 @@ import OpinionBoxManagement from './admin/OpinionBoxManagement'
 import AssistantManagement from './admin/AssistantManagement'
 import AccountSecurity from './AccountSecurity'
 import AdminSecurityCenter from './admin/AdminSecurityCenter'
+import CheckinTask from './admin/CheckinTask'
+import AdminAiFloat from '../components/AdminAiFloat'
 
 function AdminDashboardContent() {
   const [isMobile, setIsMobile] = useState(false)
@@ -82,6 +84,7 @@ function AdminDashboardContent() {
           <Routes>
             <Route path="/" element={<AdminHome />} />
             <Route path="/members/list" element={<MemberList />} />
+            <Route path="/members/checkin" element={<CheckinTask mode="admin" />} />
             <Route path="/members/assistants" element={<AssistantManagement />} />
             <Route path="/members/leave" element={<LeaveRecords />} />
             <Route path="/members/violations" element={<BlackPointRecords />} />
@@ -99,6 +102,7 @@ function AdminDashboardContent() {
             <Route path="/anticheat/dll-whitelist" element={<AntiCheatDllWhitelist />} />
             <Route path="/anticheat/settings" element={<AntiCheatSettings />} />
             <Route path="/leave-team/reminders" element={<ReminderList />} />
+            <Route path="/leave-team/checkin" element={<Navigate to="/admin/members/checkin" replace />} />
             <Route path="/leave-team/approval" element={<QuitApproval />} />
             <Route path="/leave-team/retention" element={<RetentionManagement />} />
             <Route path="/docs" element={<DocManagement />} />
@@ -107,10 +111,12 @@ function AdminDashboardContent() {
             <Route path="/surveys" element={<SurveyManagement />} />
             <Route path="/surveys/:id/results" element={<SurveyResults />} />
             <Route path="/opinion-box" element={<OpinionBoxManagement />} />
+            <Route path="/ai" element={<Navigate to="/admin/members/checkin" replace />} />
             <Route path="/account-security" element={<AccountSecurity />} />
             <Route path="/security" element={<AdminSecurityCenter />} />
           </Routes>
         </main>
+        <AdminAiFloat />
       </div>
     </BadgeProvider>
   )

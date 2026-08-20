@@ -6,7 +6,7 @@ import { useStudentGlassPointer } from '../hooks/useStudentGlassPointer'
 import { assistantAPI } from '../utils/api'
 import { NavItem, AnimatedMenuToggle } from '../components/ui/sidebar'
 import {
-  Home, Users, BookOpen, Calendar, ClipboardList, GraduationCap, AlertCircle, CalendarDays,
+  Home, Users, BookOpen, Calendar, ClipboardList, GraduationCap, AlertCircle, CalendarDays, KeyRound,
 } from 'lucide-react'
 import AssistantHome from './assistant/AssistantHome'
 import AssistantStudents from './assistant/AssistantStudents'
@@ -16,6 +16,7 @@ import AssistantAttendance from './assistant/AssistantAttendance'
 import AssistantRequests from './assistant/AssistantRequests'
 import AssistantBlackPoints from './assistant/AssistantBlackPoints'
 import AssistantLeaves from './assistant/AssistantLeaves'
+import AssistantCheckin from './assistant/AssistantCheckin'
 
 function AssistantNav({ onNavigate }: { onNavigate?: () => void }) {
   return (
@@ -25,6 +26,7 @@ function AssistantNav({ onNavigate }: { onNavigate?: () => void }) {
       <NavItem path="/assistant/roster" icon={<GraduationCap size={20} />} label="新训花名册" />
       <NavItem path="/assistant/progress" icon={<BookOpen size={20} />} label="进度分配" />
       <NavItem path="/assistant/attendance" icon={<Calendar size={20} />} label="催促名单" />
+      <NavItem path="/assistant/checkin" icon={<KeyRound size={20} />} label="签到任务" />
       <NavItem path="/assistant/black-points" icon={<AlertCircle size={20} />} label="登记黑点" />
       <NavItem path="/assistant/leaves" icon={<CalendarDays size={20} />} label="登记请假" />
       <NavItem path="/assistant/requests" icon={<ClipboardList size={20} />} label="我的申请" />
@@ -139,6 +141,7 @@ function AssistantShell() {
           <Route path="/roster" element={<AssistantRoster />} />
           <Route path="/progress" element={<AssistantProgress />} />
           <Route path="/attendance" element={<AssistantAttendance />} />
+          <Route path="/checkin" element={<AssistantCheckin />} />
           <Route path="/black-points" element={<AssistantBlackPoints />} />
           <Route path="/leaves" element={<AssistantLeaves />} />
           <Route path="/quit" element={<Navigate to="/assistant/students" replace />} />

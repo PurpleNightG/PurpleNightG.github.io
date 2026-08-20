@@ -76,7 +76,7 @@ function ruleBadgeText(rule: AttendanceRule): string {
   if (KNOWN_RULE_BADGES[rule.id]) return KNOWN_RULE_BADGES[rule.id]
   const title = String(rule.title || '').trim()
   if (title) return title.slice(0, 16)
-  return rule.type === 'training_idle' ? '闲置再训' : '考勤'
+  return rule.type === 'training_idle' ? '闲置再训' : '进度'
 }
 
 function ruleBadgeColor(rule: AttendanceRule): BadgeColor {
@@ -372,7 +372,7 @@ export default function ReminderRulesSettings({ open, onClose, onSaved }: Props)
           <div className="student-glass-panel student-glass-panel--static student-glass-modal p-6 w-full flex-1 min-h-0 flex flex-col">
             <div className="flex items-start justify-between gap-3 mb-4 shrink-0 reminder-rules-content-enter">
               <div>
-                <h2 className="text-xl font-bold text-white">催促 / 考勤规则总设置</h2>
+                <h2 className="text-xl font-bold text-white">催促规则总设置</h2>
                 <p className="text-xs text-gray-400 mt-1">
                   用中文配置天数与阶段即可；说明文案会自动生成。
                 </p>
@@ -401,7 +401,7 @@ export default function ReminderRulesSettings({ open, onClose, onSaved }: Props)
                 onClick={() => setTab('attendance')}
                 className={`px-4 py-1.5 transition-colors duration-200 ${tab === 'attendance' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-300 hover:text-white'}`}
               >
-                考勤规则
+                进度催促规则
               </button>
             </div>
 
@@ -448,10 +448,10 @@ export default function ReminderRulesSettings({ open, onClose, onSaved }: Props)
                           onChange={(e) => updateTraining({ formalTimeoutDays: Math.max(0, parseInt(e.target.value, 10) || 0) })}
                           className="student-glass-field"
                         />
-                        <p className="text-[11px] text-gray-500 mt-1">填 0 表示关闭：正式队员改走考勤里的「闲置再训」。填写后学员端常驻显示倒计时。</p>
+                        <p className="text-[11px] text-gray-500 mt-1">填 0 表示关闭：正式队员改走进度催促里的「闲置再训」。填写后学员端常驻显示倒计时。</p>
                       </div>
                       <div>
-                        <label className="block text-sm text-gray-300 mb-1">考勤催促提前几天提醒</label>
+                        <label className="block text-sm text-gray-300 mb-1">进度催促提前几天提醒</label>
                         <input
                           type="number"
                           min={0}
@@ -835,7 +835,7 @@ export default function ReminderRulesSettings({ open, onClose, onSaved }: Props)
       {confirmReset && (
         <ConfirmDialog
           title="恢复默认规则？"
-          message="将载入系统默认的训练与考勤规则，覆盖当前弹窗里未保存的修改。需要再点「保存」才会真正生效到服务器。"
+          message="将载入系统默认的训练与进度催促规则，覆盖当前弹窗里未保存的修改。需要再点「保存」才会真正生效到服务器。"
           confirmText="恢复默认"
           cancelText="再想想"
           type="warning"

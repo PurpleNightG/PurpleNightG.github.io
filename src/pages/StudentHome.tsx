@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { memberAPI, progressAPI, reminderAPI } from '../utils/api'
+import { memberAPI, progressAPI, reminderAPI, checkinAPI } from '../utils/api'
 import { Trophy, TrendingUp, CheckCircle, Target, BookOpen, Video, Lock, Clock, AlertTriangle, KeyRound, FileText, UserCheck, ClipboardList, ChevronRight, Bell } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import UserDropdown from '../components/UserDropdown'
@@ -119,6 +119,11 @@ export default function StudentHome() {
   const [onDutyInstructors, setOnDutyInstructors] = useState<{ username: string; nickname: string; clocked_in_at: string }[]>([])
   const [attendanceInfo, setAttendanceInfo] = useState<AttendanceInfo | null>(null)
   const [trainingReminder, setTrainingReminder] = useState<TrainingReminderInfo | null>(null)
+  const [checkinHint, setCheckinHint] = useState<{
+    hasTask: boolean
+    checked: boolean
+    stopped: boolean
+  } | null>(null)
   const [trainingPos, setTrainingPos] = useState<{ x: number; y: number } | null>(null)
   const [attendancePos, setAttendancePos] = useState<{ x: number; y: number } | null>(null)
   const floatDragRef = useRef<{
@@ -194,6 +199,7 @@ export default function StudentHome() {
     loadOnDutyInstructors()
     loadAttendanceInfo()
     loadTrainingReminder()
+    loadCheckinHint()
   }, [])
 
   const loadAttendanceInfo = async () => {
@@ -219,6 +225,20 @@ export default function StudentHome() {
       setTrainingReminder(res.data || null)
     } catch {
       // 未进入训练催促时静默
+    }
+  }
+
+  const loadCheckinHint = async () => {
+    try {
+      const res = await checkinAPI.studentToday()
+      const day = res.data?.day
+      setCheckinHint({
+        hasTask: !!day,
+        checked: !!res.data?.checked,
+        stopped: day?.status === 'stopped',
+      })
+    } catch {
+      setCheckinHint(null)
     }
   }
 
@@ -989,6 +1009,27 @@ export default function StudentHome() {
               </div>
               <span className="inline-flex items-center gap-1 text-amber-100 font-semibold text-sm group-hover:translate-x-0.5 transition-transform">
                 立即填写 <ChevronRight size={18} />
+              </span>
+            </div>
+          </button>
+        )}
+
+        {checkinHint?.hasTask && !checkinHint.checked && !checkinHint.stopped && (
+          <button
+            type="button"
+            onClick={() => navigate('/student/checkin')}
+            className="w-full mb-6 text-left rounded-xl border border-violet-400/40 bg-gradient-to-r from-violet-600/25 via-fuchsia-500/20 to-indigo-500/15 p-5 hover:border-violet-300/70 transition-colors group backdrop-blur-md"
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-violet-500/30 flex items-center justify-center shrink-0">
+                <KeyRound className="text-violet-200" size={26} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-violet-100 font-bold text-lg">今日新训签到进行中</div>
+                <p className="text-violet-100/70 text-sm mt-0.5">输入教官公布的 4 位签到码完成签到</p>
+              </div>
+              <span className="inline-flex items-center gap-1 text-violet-100 font-semibold text-sm group-hover:translate-x-0.5 transition-transform">
+                去签到 <ChevronRight size={18} />
               </span>
             </div>
           </button>

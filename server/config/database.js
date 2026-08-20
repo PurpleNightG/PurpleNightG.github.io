@@ -656,6 +656,14 @@ async function runMigrations() {
     console.log('✅ course_meta_options 难度默认值已初始化')
   }
 
+  try {
+    const { ensureCheckinTables } = await import('../utils/checkinService.js')
+    await ensureCheckinTables()
+    console.log('✅ 学员签到相关表就绪')
+  } catch (e) {
+    console.warn('签到表迁移跳过/失败:', e.message)
+  }
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS workbooks (
       id INT PRIMARY KEY AUTO_INCREMENT,

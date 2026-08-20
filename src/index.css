@@ -1998,6 +1998,331 @@ select::-ms-expand {
   animation: shimmer 2s infinite;
 }
 
+/* AI 活跃度：单框炫彩流光边（尺寸用 vmax，避免内容变高后边框“跳一下”） */
+@keyframes ai-aurora-spin-centered {
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+@keyframes ai-aurora-shimmer {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+@keyframes ai-aurora-loading-scroll {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+.ai-aurora-shell {
+  /* 不用写 position：悬浮面板必须保持 fixed；页面内卡片自行加 relative */
+  border-radius: 1rem;
+  padding: 1.5px;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.ai-aurora-shell::before,
+.ai-aurora-shell::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 120vmax;
+  height: 120vmax;
+  background: conic-gradient(
+    from 0deg,
+    #38bdf8,
+    #818cf8,
+    #e879f9,
+    #fb7185,
+    #fbbf24,
+    #34d399,
+    #38bdf8
+  );
+  transform: translate(-50%, -50%);
+  animation: ai-aurora-spin-centered 5s linear infinite;
+  z-index: 0;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.ai-aurora-shell::after {
+  filter: blur(22px);
+  opacity: 0.5;
+}
+
+/* 思考中：边框改成横向滚动流光（像加载条），与完成后的旋转流光明显区分 */
+.ai-aurora-shell.is-thinking {
+  background-image: linear-gradient(
+    90deg,
+    #38bdf8 0%,
+    #818cf8 18%,
+    #e879f9 36%,
+    #fb7185 54%,
+    #fbbf24 72%,
+    #34d399 90%,
+    #38bdf8 100%
+  );
+  background-size: 220% 100%;
+  animation: ai-aurora-loading-scroll 1.05s linear infinite;
+}
+
+.ai-aurora-shell.is-thinking::before,
+.ai-aurora-shell.is-thinking::after {
+  opacity: 0;
+  animation: none;
+}
+
+.ai-aurora-inner {
+  position: relative;
+  z-index: 1;
+  border-radius: calc(1rem - 1.5px);
+  background:
+    linear-gradient(145deg, rgba(28, 28, 40, 0.97) 0%, rgba(14, 14, 22, 0.98) 100%);
+  padding: 1rem 1.15rem 1.1rem;
+}
+
+.ai-aurora-title {
+  background: linear-gradient(90deg, #7dd3fc, #c4b5fd, #f9a8d4, #7dd3fc);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ai-aurora-shimmer 4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-aurora-shell::before,
+  .ai-aurora-shell::after,
+  .ai-aurora-shell.is-thinking,
+  .ai-aurora-title {
+    animation: none;
+  }
+}
+
+/* 管理端悬浮 AI 圆钮 + 面板入场 */
+@keyframes ai-aurora-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes admin-ai-fab-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+}
+
+@keyframes admin-ai-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes admin-ai-msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.admin-ai-fab {
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+
+.admin-ai-fab:hover,
+.admin-ai-fab:active,
+.admin-ai-fab:focus {
+  cursor: pointer;
+}
+
+.admin-ai-fab-ring {
+  position: absolute;
+  inset: -3px;
+  border-radius: 9999px;
+  background: conic-gradient(
+    from 0deg,
+    #38bdf8,
+    #818cf8,
+    #e879f9,
+    #fb7185,
+    #fbbf24,
+    #34d399,
+    #38bdf8
+  );
+  animation: ai-aurora-spin 3.5s linear infinite;
+  filter: blur(0.2px);
+}
+
+.admin-ai-fab-ring::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: inherit;
+  background: inherit;
+  filter: blur(10px);
+  opacity: 0.55;
+  animation: admin-ai-fab-pulse 2.4s ease-in-out infinite;
+  z-index: -1;
+}
+
+.admin-ai-fab.is-open .admin-ai-fab-ring {
+  animation-duration: 2.2s;
+}
+
+.admin-ai-fab-core {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(145deg, #7c3aed 0%, #c026d3 55%, #db2777 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.admin-ai-panel {
+  position: fixed !important;
+  z-index: 12001;
+  animation: admin-ai-panel-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.admin-ai-msg-enter {
+  animation: admin-ai-msg-in 0.28s ease-out both;
+}
+
+/* 智能助手回复：紧凑 Markdown */
+.admin-ai-md {
+  font-size: 12px;
+  line-height: 1.55;
+  word-break: break-word;
+}
+
+.admin-ai-md > *:first-child {
+  margin-top: 0;
+}
+
+.admin-ai-md > *:last-child {
+  margin-bottom: 0;
+}
+
+.admin-ai-md p {
+  margin: 0.4em 0;
+}
+
+.admin-ai-md ul,
+.admin-ai-md ol {
+  margin: 0.35em 0;
+  padding-left: 1.15em;
+}
+
+.admin-ai-md li {
+  margin: 0.12em 0;
+}
+
+.admin-ai-md strong {
+  color: #f5f3ff;
+  font-weight: 600;
+}
+
+.admin-ai-md em {
+  color: #e9d5ff;
+}
+
+.admin-ai-md code {
+  font-size: 11px;
+  padding: 0.1em 0.35em;
+  border-radius: 0.25rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e0e7ff;
+}
+
+.admin-ai-md pre {
+  margin: 0.4em 0;
+  padding: 0.5em 0.65em;
+  border-radius: 0.5rem;
+  background: rgba(0, 0, 0, 0.35);
+  overflow-x: auto;
+}
+
+.admin-ai-md pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.admin-ai-md a {
+  color: #c4b5fd;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.admin-ai-md h1,
+.admin-ai-md h2,
+.admin-ai-md h3,
+.admin-ai-md h4 {
+  margin: 0.5em 0 0.25em;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+}
+
+/* 签到页活跃度卡片：正文略大 */
+.admin-ai-md--card {
+  font-size: 14px;
+  line-height: 1.65;
+  color: rgba(229, 231, 235, 0.95);
+}
+
+.admin-ai-md--card h1,
+.admin-ai-md--card h2,
+.admin-ai-md--card h3,
+.admin-ai-md--card h4 {
+  font-size: 14px;
+}
+
+.admin-ai-md--card code {
+  font-size: 13px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-ai-fab-ring,
+  .admin-ai-fab-ring::after,
+  .admin-ai-panel,
+  .admin-ai-msg-enter {
+    animation: none;
+  }
+}
+
 /* 问卷星式编辑器：强制浅色，避免继承全站深色 color-scheme */
 .survey-editor-light {
   color-scheme: light;

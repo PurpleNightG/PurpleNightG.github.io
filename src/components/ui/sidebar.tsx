@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useBadges } from "../../contexts/BadgeContext";
 import { useSurveyPending } from "../../contexts/SurveyPendingContext";
 import { motion, AnimatePresence } from "framer-motion";
-import { Home, Users, BookOpen, FileCheck, UserMinus, ChevronDown, FileText, Video, Monitor, AlertTriangle, Calendar, BookMarked, ClipboardList, Mailbox, Shield, GraduationCap, Table2, ShieldAlert } from "lucide-react";
+import { Home, Users, BookOpen, FileCheck, UserMinus, ChevronDown, FileText, Video, Monitor, AlertTriangle, Calendar, BookMarked, ClipboardList, Mailbox, Shield, GraduationCap, Table2, ShieldAlert, KeyRound } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { assistantAPI } from "../../utils/api";
 
@@ -318,6 +318,7 @@ const AdminNav = ({ expandedMenus, toggleMenu }: AdminNavProps) => {
       isExpanded={expandedMenus.includes("成员管理")} onToggle={() => toggleMenu("成员管理")}
       badge={membersBadge}>
       <SubNavItem path="/admin/members/list" label="成员列表" />
+      <SubNavItem path="/admin/members/checkin" label="签到任务" />
       <SubNavItem path="/admin/members/assistants" label="助教管理" badge={badges.assistantPending} />
       <SubNavItem path="/admin/members/leave" label="请假记录" badge={leaveBadge} />
       <SubNavItem path="/admin/members/violations" label="黑点记录" />
@@ -455,6 +456,7 @@ const StudentSidebarLogo = () => (
 
 const studentMenuItems = [
   { path: '/student', icon: <Home size={20} />, label: '首页' },
+  { path: '/student/checkin', icon: <KeyRound size={20} />, label: '新训签到' },
   { path: '/student/progress', icon: <BookOpen size={20} />, label: '课程进度' },
   { path: '/student/classmates', icon: <Users size={20} />, label: '同期学员' },
   { path: '/student/apply-assessment', icon: <FileCheck size={20} />, label: '申请考核' },
