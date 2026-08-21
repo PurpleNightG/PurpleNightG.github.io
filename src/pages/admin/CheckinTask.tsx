@@ -411,9 +411,11 @@ export default function CheckinTaskPage({ mode }: Props) {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2 text-sm">
-                  <span className={`px-2 py-0.5 rounded ${statusBadge.className}`}>
-                    {statusBadge.label}
-                  </span>
+                  {statusBadge && (
+                    <span className={`px-2 py-0.5 rounded ${statusBadge.className}`}>
+                      {statusBadge.label}
+                    </span>
+                  )}
                   <span className="px-2 py-0.5 rounded bg-purple-600/20 text-purple-200 inline-flex items-center gap-1">
                     <Users size={14} />
                     已签 {checkedCount} 人
