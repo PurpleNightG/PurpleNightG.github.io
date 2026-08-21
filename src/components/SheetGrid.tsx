@@ -15,13 +15,17 @@ import {
   Combine,
   Split,
   Plus,
-  Minus,
   ChevronDown,
   ArrowLeftRight,
   ArrowUpDown,
   ListFilter,
   ArrowDownAZ,
   ArrowUpZA,
+  ArrowUp,
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  Trash2,
   Check,
   Square,
   Grid2X2,
@@ -37,6 +41,7 @@ import {
 } from 'lucide-react'
 import { toast } from '../utils/toast'
 import ThemeCheckbox from './ThemeCheckbox'
+import ConfirmDialog from './ConfirmDialog'
 import { HyperFormula } from 'hyperformula'
 
 export type CellAlign = 'left' | 'center' | 'right'
@@ -294,6 +299,129 @@ function cellKey(r: number, c: number) {
   return `${r},${c}`
 }
 
+function remapMergesForRows(
+  merges: MergeRange[],
+  at: number,
+  delta: number,
+  mode: 'insert' | 'delete',
+  delEnd?: number
+): MergeRange[] {
+  const next: MergeRange[] = []
+  for (const m of merges) {
+    if (mode === 'insert') {
+      if (m.r >= at) next.push({ ...m, r: m.r + delta })
+      else if (m.r + m.rs - 1 >= at) next.push({ ...m, rs: m.rs + delta })
+      else next.push({ ...m })
+      continue
+    }
+    // delete rows [at, delEnd]
+    const end = delEnd ?? at
+    const mEnd = m.r + m.rs - 1
+    if (mEnd < at) {
+      next.push({ ...m })
+      continue
+    }
+    if (m.r > end) {
+      next.push({ ...m, r: m.r - (end - at + 1) })
+      continue
+    }
+    // overlap delete range
+    const keepTop = Math.max(0, at - m.r)
+    const keepBottom = Math.max(0, mEnd - end)
+    const rs = keepTop + keepBottom
+    if (rs <= 0) continue
+    if (rs === 1 && m.cs === 1) continue
+    next.push({ r: m.r, c: m.c, rs, cs: m.cs })
+  }
+  return next.filter((m) => m.rs >= 1 && m.cs >= 1 && !(m.rs === 1 && m.cs === 1))
+}
+
+function remapMergesForCols(
+  merges: MergeRange[],
+  at: number,
+  delta: number,
+  mode: 'insert' | 'delete',
+  delEnd?: number
+): MergeRange[] {
+  const next: MergeRange[] = []
+  for (const m of merges) {
+    if (mode === 'insert') {
+      if (m.c >= at) next.push({ ...m, c: m.c + delta })
+      else if (m.c + m.cs - 1 >= at) next.push({ ...m, cs: m.cs + delta })
+      else next.push({ ...m })
+      continue
+    }
+    const end = delEnd ?? at
+    const mEnd = m.c + m.cs - 1
+    if (mEnd < at) {
+      next.push({ ...m })
+      continue
+    }
+    if (m.c > end) {
+      next.push({ ...m, c: m.c - (end - at + 1) })
+      continue
+    }
+    const keepLeft = Math.max(0, at - m.c)
+    const keepRight = Math.max(0, mEnd - end)
+    const cs = keepLeft + keepRight
+    if (cs <= 0) continue
+    if (m.rs === 1 && cs === 1) continue
+    next.push({ r: m.r, c: m.c, rs: m.rs, cs })
+  }
+  return next.filter((m) => m.rs >= 1 && m.cs >= 1 && !(m.rs === 1 && m.cs === 1))
+}
+
+
+function remapMergesShiftRowsDown(merges: MergeRange[], r0: number, r1: number): MergeRange[] {
+  const count = r1 - r0 + 1
+  const next: MergeRange[] = []
+  for (const m of merges) {
+    const mEnd = m.r + m.rs - 1
+    if (mEnd < r0) {
+      next.push({ ...m, r: m.r + count })
+      continue
+    }
+    if (m.r > r1) {
+      next.push({ ...m })
+      continue
+    }
+    const keepTop = Math.max(0, r0 - m.r)
+    const keepBottom = Math.max(0, mEnd - r1)
+    if (keepTop > 0 && !(keepTop === 1 && m.cs === 1)) {
+      next.push({ r: m.r + count, c: m.c, rs: keepTop, cs: m.cs })
+    }
+    if (keepBottom > 0 && !(keepBottom === 1 && m.cs === 1)) {
+      next.push({ r: r1 + 1, c: m.c, rs: keepBottom, cs: m.cs })
+    }
+  }
+  return next.filter((m) => m.rs >= 1 && m.cs >= 1 && !(m.rs === 1 && m.cs === 1))
+}
+
+function remapMergesShiftColsRight(merges: MergeRange[], c0: number, c1: number): MergeRange[] {
+  const count = c1 - c0 + 1
+  const next: MergeRange[] = []
+  for (const m of merges) {
+    const mEnd = m.c + m.cs - 1
+    if (mEnd < c0) {
+      next.push({ ...m, c: m.c + count })
+      continue
+    }
+    if (m.c > c1) {
+      next.push({ ...m })
+      continue
+    }
+    const keepLeft = Math.max(0, c0 - m.c)
+    const keepRight = Math.max(0, mEnd - c1)
+    if (keepLeft > 0 && !(m.rs === 1 && keepLeft === 1)) {
+      next.push({ r: m.r, c: m.c + count, rs: m.rs, cs: keepLeft })
+    }
+    if (keepRight > 0 && !(m.rs === 1 && keepRight === 1)) {
+      next.push({ r: m.r, c: c1 + 1, rs: m.rs, cs: keepRight })
+    }
+  }
+  return next.filter((m) => m.rs >= 1 && m.cs >= 1 && !(m.rs === 1 && m.cs === 1))
+}
+
 function escapeHtml(s: string) {
   return s
     .replace(/&/g, '&amp;')
@@ -407,6 +535,20 @@ function normalizeSel(a: { r: number; c: number }, b: { r: number; c: number }) 
     c0: Math.min(a.c, b.c),
     c1: Math.max(a.c, b.c),
   }
+}
+
+function isFullRowSel(
+  sel: { r0: number; r1: number; c0: number; c1: number } | null,
+  cols: number
+) {
+  return !!(sel && sel.c0 === 0 && sel.c1 === cols - 1)
+}
+
+function isFullColSel(
+  sel: { r0: number; r1: number; c0: number; c1: number } | null,
+  rows: number
+) {
+  return !!(sel && sel.r0 === 0 && sel.r1 === rows - 1)
 }
 
 function inSel(
@@ -1363,6 +1505,18 @@ export default function SheetGrid({
     textOnly: Record<string, CellData>
     menuOpen: boolean
   } | null>(null)
+  const [headerMenu, setHeaderMenu] = useState<null | {
+    kind: 'row' | 'col'
+    x: number
+    y: number
+  }>(null)
+  const [axisDrag, setAxisDrag] = useState<null | 'row' | 'col'>(null)
+  const [deleteDirDialog, setDeleteDirDialog] = useState<null | {
+    kind: 'row' | 'col'
+    a0: number
+    a1: number
+  }>(null)
+  const [mergeWarnOpen, setMergeWarnOpen] = useState(false)
   const editRef = useRef<HTMLDivElement>(null)
   const toolbarRef = useRef<HTMLDivElement>(null)
   const gridWrapRef = useRef<HTMLDivElement>(null)
@@ -2020,7 +2174,10 @@ export default function SheetGrid({
   }
 
   const pasteAtFocus = async (clip?: { text?: string; html?: string }) => {
-    if (!focus || readOnly) return
+    if (readOnly) return
+    // 整列/整行选中时 focus 在末端；粘贴应对齐到选区左上角（与 Excel 一致）
+    const origin = sel ? { r: sel.r0, c: sel.c0 } : focus
+    if (!origin) return
     let text = clip?.text ?? ''
     let html = clip?.html ?? ''
     if (!text && !html) {
@@ -2047,10 +2204,10 @@ export default function SheetGrid({
       clipRef.current && text && text === lastCopiedText.current ? clipRef.current : null
 
     const finishSelection = (rowCount: number, colCount: number, nextRows: number, nextCols: number) => {
-      setAnchor({ r: focus.r, c: focus.c })
+      setAnchor({ r: origin.r, c: origin.c })
       setFocus({
-        r: Math.min(nextRows - 1, focus.r + Math.max(0, rowCount - 1)),
-        c: Math.min(nextCols - 1, focus.c + Math.max(0, colCount - 1)),
+        r: Math.min(nextRows - 1, origin.r + Math.max(0, rowCount - 1)),
+        c: Math.min(nextCols - 1, origin.c + Math.max(0, colCount - 1)),
       })
     }
 
@@ -2060,12 +2217,12 @@ export default function SheetGrid({
       rowCount: number,
       colCount: number
     ) => {
-      const needRows = Math.max(rows, focus.r + rowCount)
-      const needCols = Math.max(cols, focus.c + colCount)
+      const needRows = Math.max(rows, origin.r + rowCount)
+      const needCols = Math.max(cols, origin.c + colCount)
       for (let r = 0; r < rowCount; r++) {
         for (let c = 0; c < colCount; c++) {
-          const tr = focus.r + r
-          const tc = focus.c + c
+          const tr = origin.r + r
+          const tc = origin.c + c
           if (isCovered(merges, tr, tc)) continue
           const src = formatted[cellKey(r, c)]
           const key = cellKey(tr, tc)
@@ -2086,8 +2243,8 @@ export default function SheetGrid({
       finishSelection(rowCount, colCount, needRows, needCols)
       if (cellsHaveFormatDiff(formatted, textOnly)) {
         setPasteOpts({
-          r0: focus.r,
-          c0: focus.c,
+          r0: origin.r,
+          c0: origin.c,
           rows: rowCount,
           cols: colCount,
           mode: 'keep',
@@ -2320,23 +2477,56 @@ export default function SheetGrid({
     setFocus({ r: rows - 1, c: cols - 1 })
   }
 
-  const mergeSelection = () => {
+  const commitMergeSelection = () => {
     if (!sel || readOnly || !onChange) return
     const { r0, r1, c0, c1 } = sel
     const rs = r1 - r0 + 1
     const cs = c1 - c0 + 1
     if (rs === 1 && cs === 1) return
-    // 去掉与新区域重叠的旧合并
+    const nextCells = { ...(value.cells || {}) }
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) {
+        if (r === r0 && c === c0) continue
+        delete nextCells[cellKey(r, c)]
+      }
+    }
     const nextMerges = merges.filter((m) => {
       const mr1 = m.r + m.rs - 1
       const mc1 = m.c + m.cs - 1
       return mr1 < r0 || m.r > r1 || mc1 < c0 || m.c > c1
     })
     nextMerges.push({ r: r0, c: c0, rs, cs })
-    persist({ merges: nextMerges })
+    persist({ cells: nextCells, merges: nextMerges })
     setAnchor({ r: r0, c: c0 })
     setFocus({ r: r0, c: c0 })
     setEditing(false)
+    setMergeWarnOpen(false)
+  }
+
+  const mergeSelection = () => {
+    if (!sel || readOnly || !onChange) return
+    const { r0, r1, c0, c1 } = sel
+    const rs = r1 - r0 + 1
+    const cs = c1 - c0 + 1
+    if (rs === 1 && cs === 1) return
+    let hasOtherContent = false
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) {
+        if (r === r0 && c === c0) continue
+        if (isCovered(merges, r, c)) continue
+        const cell = value.cells?.[cellKey(r, c)]
+        if (cell?.f?.trim() || cellPlain(cell)) {
+          hasOtherContent = true
+          break
+        }
+      }
+      if (hasOtherContent) break
+    }
+    if (hasOtherContent) {
+      setMergeWarnOpen(true)
+      return
+    }
+    commitMergeSelection()
   }
 
   const unmergeSelection = () => {
@@ -2520,6 +2710,7 @@ export default function SheetGrid({
         requestAnimationFrame(() => formulaBarRef.current?.focus())
       }
       setDragging(false)
+      setAxisDrag(null)
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
     }
@@ -2569,6 +2760,7 @@ export default function SheetGrid({
       formulaPointingRef.current = true
       formulaPointStartRef.current = { r: tr, c: tc }
       applyFormulaPointRef(tr, tc, tr, tc)
+      setAxisDrag(null)
       setAnchor({ r: tr, c: tc })
       setFocus({ r: tr, c: tc })
       setDragging(true)
@@ -2585,6 +2777,7 @@ export default function SheetGrid({
       document.body.style.userSelect = 'none'
     }
     if (editing && editHost && (editHost.r !== tr || editHost.c !== tc)) endEdit()
+    setAxisDrag(null)
     setAnchor({ r: tr, c: tc })
     setFocus({ r: tr, c: tc })
     setDragging(true)
@@ -2594,6 +2787,14 @@ export default function SheetGrid({
   const onCellMouseEnter = (r: number, c: number) => {
     if (!dragging || readOnly) return
     window.getSelection()?.removeAllRanges()
+    if (axisDrag === 'row') {
+      setFocus({ r: Math.max(0, Math.min(rows - 1, r)), c: cols - 1 })
+      return
+    }
+    if (axisDrag === 'col') {
+      setFocus({ r: rows - 1, c: Math.max(0, Math.min(cols - 1, c)) })
+      return
+    }
     const m = findMergeAt(merges, r, c)
     const tr = m ? m.r : r
     const tc = m ? m.c : c
@@ -2614,70 +2815,398 @@ export default function SheetGrid({
   const addRows = () => {
     if (readOnly) return
     const n = clampDimCount(dimCount)
-    const nextRows = Math.min(200, rows + n)
-    persist({
-      rows: nextRows,
-      rowHeights: normalizeRowHeights(nextRows, rowHeights),
-    })
+    const at = focus ? focus.r + 1 : rows
+    insertRowsAt(at, n)
   }
 
   const addCols = () => {
     if (readOnly) return
     const n = clampDimCount(dimCount)
-    const nextCols = Math.min(52, cols + n)
-    persist({
-      cols: nextCols,
-      colWidths: normalizeColWidths(nextCols, colWidths),
-    })
+    const at = focus ? focus.c + 1 : cols
+    insertColsAt(at, n)
   }
 
-  const trimSheet = (nextRows: number, nextCols: number) => {
+  const insertRowsAt = (at: number, n: number) => {
+    if (readOnly || n < 1) return
+    const nextRows = Math.min(200, rows + n)
+    const actual = nextRows - rows
+    if (actual <= 0) {
+      toast.error('行数已达上限')
+      return
+    }
+    const insertAt = Math.max(0, Math.min(at, rows))
     const nextCells: Record<string, CellData> = {}
     for (const [key, cell] of Object.entries(value.cells || {})) {
-      const [rs, cs] = key.split(',').map(Number)
-      if (rs < nextRows && cs < nextCols) nextCells[key] = cell
+      const [r, c] = key.split(',').map(Number)
+      if (r >= insertAt) nextCells[cellKey(r + actual, c)] = cell
+      else nextCells[key] = cell
     }
-    const nextMerges = merges
-      .map((m) => {
-        if (m.r >= nextRows || m.c >= nextCols) return null
-        const rs = Math.min(m.rs, nextRows - m.r)
-        const cs = Math.min(m.cs, nextCols - m.c)
-        if (rs < 1 || cs < 1) return null
-        if (rs === 1 && cs === 1) return null
-        return { r: m.r, c: m.c, rs, cs }
-      })
-      .filter(Boolean) as MergeRange[]
-
-    if (focus && (focus.r >= nextRows || focus.c >= nextCols)) {
-      setFocus(null)
-      setAnchor(null)
-      setEditing(false)
-    }
-
+    const nextHeights = [...rowHeights]
+    nextHeights.splice(insertAt, 0, ...Array.from({ length: actual }, () => DEFAULT_ROW_HEIGHT))
     persist({
       rows: nextRows,
-      cols: nextCols,
-      rowHeights: normalizeRowHeights(nextRows, rowHeights),
-      colWidths: normalizeColWidths(nextCols, colWidths),
       cells: nextCells,
-      merges: nextMerges,
+      rowHeights: normalizeRowHeights(nextRows, nextHeights),
+      merges: remapMergesForRows(merges, insertAt, actual, 'insert'),
     })
+    if (focus && focus.r >= insertAt) {
+      setFocus({ r: focus.r + actual, c: focus.c })
+      setAnchor(anchor ? { r: anchor.r + actual, c: anchor.c } : { r: focus.r + actual, c: focus.c })
+    }
   }
 
-  const removeRows = () => {
-    if (readOnly) return
-    const n = clampDimCount(dimCount)
-    const nextRows = Math.max(10, rows - n)
-    if (nextRows === rows) return
-    trimSheet(nextRows, cols)
+  const insertColsAt = (at: number, n: number) => {
+    if (readOnly || n < 1) return
+    const nextCols = Math.min(52, cols + n)
+    const actual = nextCols - cols
+    if (actual <= 0) {
+      toast.error('列数已达上限')
+      return
+    }
+    const insertAt = Math.max(0, Math.min(at, cols))
+    const nextCells: Record<string, CellData> = {}
+    for (const [key, cell] of Object.entries(value.cells || {})) {
+      const [r, c] = key.split(',').map(Number)
+      if (c >= insertAt) nextCells[cellKey(r, c + actual)] = cell
+      else nextCells[key] = cell
+    }
+    const nextWidths = [...colWidths]
+    nextWidths.splice(insertAt, 0, ...Array.from({ length: actual }, () => DEFAULT_COL_WIDTH))
+    persist({
+      cols: nextCols,
+      cells: nextCells,
+      colWidths: normalizeColWidths(nextCols, nextWidths),
+      merges: remapMergesForCols(merges, insertAt, actual, 'insert'),
+    })
+    if (focus && focus.c >= insertAt) {
+      setFocus({ r: focus.r, c: focus.c + actual })
+      setAnchor(anchor ? { r: anchor.r, c: anchor.c + actual } : { r: focus.r, c: focus.c + actual })
+    }
   }
 
-  const removeCols = () => {
+  const finishDeleteSelection = () => {
+    setFocus(null)
+    setAnchor(null)
+    setEditing(false)
+    setDeleteDirDialog(null)
+    setHeaderMenu(null)
+  }
+
+  /** 边缘删除：缩小表格，下方/右侧内容上移/左移 */
+  const deleteRowsShrink = (r0: number, r1: number) => {
+    const count = r1 - r0 + 1
+    const nextRows = rows - count
+    if (nextRows < 10) {
+      toast.error('至少保留 10 行')
+      return
+    }
+    const nextCells: Record<string, CellData> = {}
+    for (const [key, cell] of Object.entries(value.cells || {})) {
+      const [r, c] = key.split(',').map(Number)
+      if (r < r0) nextCells[key] = cell
+      else if (r > r1) nextCells[cellKey(r - count, c)] = cell
+    }
+    const nextHeights = rowHeights.filter((_, i) => i < r0 || i > r1)
+    persist({
+      rows: nextRows,
+      cells: nextCells,
+      rowHeights: normalizeRowHeights(nextRows, nextHeights),
+      merges: remapMergesForRows(merges, r0, count, 'delete', r1),
+    })
+    finishDeleteSelection()
+  }
+
+  const deleteColsShrink = (c0: number, c1: number) => {
+    const count = c1 - c0 + 1
+    const nextCols = cols - count
+    if (nextCols < 5) {
+      toast.error('至少保留 5 列')
+      return
+    }
+    const nextCells: Record<string, CellData> = {}
+    for (const [key, cell] of Object.entries(value.cells || {})) {
+      const [r, c] = key.split(',').map(Number)
+      if (c < c0) nextCells[key] = cell
+      else if (c > c1) nextCells[cellKey(r, c - count)] = cell
+    }
+    const nextWidths = colWidths.filter((_, i) => i < c0 || i > c1)
+    persist({
+      cols: nextCols,
+      cells: nextCells,
+      colWidths: normalizeColWidths(nextCols, nextWidths),
+      merges: remapMergesForCols(merges, c0, count, 'delete', c1),
+    })
+    finishDeleteSelection()
+  }
+
+  /** 中间删除：保持尺寸，按方向迁移填补 */
+  const deleteRowsShift = (r0: number, r1: number, dir: 'up' | 'down') => {
+    const count = r1 - r0 + 1
+    const nextCells: Record<string, CellData> = {}
+    if (dir === 'up') {
+      for (const [key, cell] of Object.entries(value.cells || {})) {
+        const [r, c] = key.split(',').map(Number)
+        if (r < r0) nextCells[key] = cell
+        else if (r > r1) nextCells[cellKey(r - count, c)] = cell
+      }
+      const kept = rowHeights.filter((_, i) => i < r0 || i > r1)
+      const nextHeights = normalizeRowHeights(rows, [
+        ...kept,
+        ...Array.from({ length: count }, () => DEFAULT_ROW_HEIGHT),
+      ])
+      persist({
+        cells: nextCells,
+        rowHeights: nextHeights,
+        merges: remapMergesForRows(merges, r0, count, 'delete', r1),
+      })
+    } else {
+      for (const [key, cell] of Object.entries(value.cells || {})) {
+        const [r, c] = key.split(',').map(Number)
+        if (r > r1) nextCells[key] = cell
+        else if (r < r0) nextCells[cellKey(r + count, c)] = cell
+      }
+      const nextHeights = normalizeRowHeights(rows, [
+        ...Array.from({ length: count }, () => DEFAULT_ROW_HEIGHT),
+        ...rowHeights.slice(0, r0),
+        ...rowHeights.slice(r1 + 1),
+      ])
+      persist({
+        cells: nextCells,
+        rowHeights: nextHeights,
+        merges: remapMergesShiftRowsDown(merges, r0, r1),
+      })
+    }
+    finishDeleteSelection()
+  }
+
+  const deleteColsShift = (c0: number, c1: number, dir: 'left' | 'right') => {
+    const count = c1 - c0 + 1
+    const nextCells: Record<string, CellData> = {}
+    if (dir === 'left') {
+      for (const [key, cell] of Object.entries(value.cells || {})) {
+        const [r, c] = key.split(',').map(Number)
+        if (c < c0) nextCells[key] = cell
+        else if (c > c1) nextCells[cellKey(r, c - count)] = cell
+      }
+      const kept = colWidths.filter((_, i) => i < c0 || i > c1)
+      const nextWidths = normalizeColWidths(cols, [
+        ...kept,
+        ...Array.from({ length: count }, () => DEFAULT_COL_WIDTH),
+      ])
+      persist({
+        cells: nextCells,
+        colWidths: nextWidths,
+        merges: remapMergesForCols(merges, c0, count, 'delete', c1),
+      })
+    } else {
+      for (const [key, cell] of Object.entries(value.cells || {})) {
+        const [r, c] = key.split(',').map(Number)
+        if (c > c1) nextCells[key] = cell
+        else if (c < c0) nextCells[cellKey(r, c + count)] = cell
+      }
+      const nextWidths = normalizeColWidths(cols, [
+        ...Array.from({ length: count }, () => DEFAULT_COL_WIDTH),
+        ...colWidths.slice(0, c0),
+        ...colWidths.slice(c1 + 1),
+      ])
+      persist({
+        cells: nextCells,
+        colWidths: nextWidths,
+        merges: remapMergesShiftColsRight(merges, c0, c1),
+      })
+    }
+    finishDeleteSelection()
+  }
+
+  const deleteSelectedRows = () => {
     if (readOnly) return
-    const n = clampDimCount(dimCount)
-    const nextCols = Math.max(5, cols - n)
-    if (nextCols === cols) return
-    trimSheet(rows, nextCols)
+    if (!sel && !focus) {
+      toast.error('请先选中要删除的行')
+      return
+    }
+    const r0 = sel ? sel.r0 : focus!.r
+    const r1 = sel ? sel.r1 : focus!.r
+    const isMiddle = r0 > 0 && r1 < rows - 1
+    if (isMiddle) {
+      setDeleteDirDialog({ kind: 'row', a0: r0, a1: r1 })
+      setHeaderMenu(null)
+      return
+    }
+    deleteRowsShrink(r0, r1)
+  }
+
+  const deleteSelectedCols = () => {
+    if (readOnly) return
+    if (!sel && !focus) {
+      toast.error('请先选中要删除的列')
+      return
+    }
+    const c0 = sel ? sel.c0 : focus!.c
+    const c1 = sel ? sel.c1 : focus!.c
+    const isMiddle = c0 > 0 && c1 < cols - 1
+    if (isMiddle) {
+      setDeleteDirDialog({ kind: 'col', a0: c0, a1: c1 })
+      setHeaderMenu(null)
+      return
+    }
+    deleteColsShrink(c0, c1)
+  }
+
+  const moveRowBy = (dir: -1 | 1) => {
+    if (readOnly) return
+    if (merges.length) {
+      toast.error('请先取消合并单元格后再移动行')
+      return
+    }
+    const full = isFullRowSel(sel, cols)
+    const r0 = full && sel ? sel.r0 : focus?.r
+    const r1 = full && sel ? sel.r1 : focus?.r
+    if (r0 == null || r1 == null) {
+      toast.error('请先选中一行')
+      return
+    }
+    const minR = dataStartRow
+    const dest0 = r0 + dir
+    const dest1 = r1 + dir
+    if (dest0 < minR || dest1 >= rows) return
+
+    const nextCells: Record<string, CellData> = {}
+    for (const [key, cell] of Object.entries(value.cells || {})) {
+      const [rr, cc] = key.split(',').map(Number)
+      let nr = rr
+      if (dir === 1) {
+        if (rr === r1 + 1) nr = r0
+        else if (rr >= r0 && rr <= r1) nr = rr + 1
+      } else {
+        if (rr === r0 - 1) nr = r1
+        else if (rr >= r0 && rr <= r1) nr = rr - 1
+      }
+      nextCells[cellKey(nr, cc)] = cell
+    }
+    const nextHeights = [...rowHeights]
+    if (dir === 1) {
+      const taken = nextHeights[r1 + 1] || DEFAULT_ROW_HEIGHT
+      for (let i = r1; i >= r0; i--) nextHeights[i + 1] = nextHeights[i] || DEFAULT_ROW_HEIGHT
+      nextHeights[r0] = taken
+    } else {
+      const taken = nextHeights[r0 - 1] || DEFAULT_ROW_HEIGHT
+      for (let i = r0; i <= r1; i++) nextHeights[i - 1] = nextHeights[i] || DEFAULT_ROW_HEIGHT
+      nextHeights[r1] = taken
+    }
+    persist({
+      cells: nextCells,
+      rowHeights: normalizeRowHeights(rows, nextHeights),
+    })
+    setAnchor({ r: dest0, c: 0 })
+    setFocus({ r: dest1, c: cols - 1 })
+  }
+
+  const moveColBy = (dir: -1 | 1) => {
+    if (readOnly) return
+    if (merges.length) {
+      toast.error('请先取消合并单元格后再移动列')
+      return
+    }
+    const full = isFullColSel(sel, rows)
+    const c0 = full && sel ? sel.c0 : focus?.c
+    const c1 = full && sel ? sel.c1 : focus?.c
+    if (c0 == null || c1 == null) {
+      toast.error('请先选中一列')
+      return
+    }
+    const dest0 = c0 + dir
+    const dest1 = c1 + dir
+    if (dest0 < 0 || dest1 >= cols) return
+
+    const nextCells: Record<string, CellData> = {}
+    for (const [key, cell] of Object.entries(value.cells || {})) {
+      const [rr, cc] = key.split(',').map(Number)
+      let nc = cc
+      if (dir === 1) {
+        if (cc === c1 + 1) nc = c0
+        else if (cc >= c0 && cc <= c1) nc = cc + 1
+      } else {
+        if (cc === c0 - 1) nc = c1
+        else if (cc >= c0 && cc <= c1) nc = cc - 1
+      }
+      nextCells[cellKey(rr, nc)] = cell
+    }
+    const nextWidths = [...colWidths]
+    if (dir === 1) {
+      const taken = nextWidths[c1 + 1] || DEFAULT_COL_WIDTH
+      for (let i = c1; i >= c0; i--) nextWidths[i + 1] = nextWidths[i] || DEFAULT_COL_WIDTH
+      nextWidths[c0] = taken
+    } else {
+      const taken = nextWidths[c0 - 1] || DEFAULT_COL_WIDTH
+      for (let i = c0; i <= c1; i++) nextWidths[i - 1] = nextWidths[i] || DEFAULT_COL_WIDTH
+      nextWidths[c1] = taken
+    }
+    persist({
+      cells: nextCells,
+      colWidths: normalizeColWidths(cols, nextWidths),
+    })
+    setAnchor({ r: 0, c: dest0 })
+    setFocus({ r: rows - 1, c: dest1 })
+  }
+
+  const selectEntireRow = (r: number, extend: boolean) => {
+    if (editing) endEdit()
+    const clamped = Math.max(0, Math.min(rows - 1, r))
+    if (extend && isFullRowSel(sel, cols) && anchor) {
+      setFocus({ r: clamped, c: cols - 1 })
+    } else {
+      setAnchor({ r: clamped, c: 0 })
+      setFocus({ r: clamped, c: cols - 1 })
+    }
+    setHeaderMenu(null)
+    gridWrapRef.current?.focus({ preventScroll: true })
+  }
+
+  const selectEntireCol = (c: number, extend: boolean) => {
+    if (editing) endEdit()
+    const clamped = Math.max(0, Math.min(cols - 1, c))
+    if (extend && isFullColSel(sel, rows) && anchor) {
+      setFocus({ r: rows - 1, c: clamped })
+    } else {
+      setAnchor({ r: 0, c: clamped })
+      setFocus({ r: rows - 1, c: clamped })
+    }
+    setHeaderMenu(null)
+    gridWrapRef.current?.focus({ preventScroll: true })
+  }
+
+  const beginRowHeaderDrag = (r: number, extend: boolean) => {
+    selectEntireRow(r, extend)
+    setAxisDrag('row')
+    setDragging(true)
+    document.body.style.userSelect = 'none'
+  }
+
+  const beginColHeaderDrag = (c: number, extend: boolean) => {
+    selectEntireCol(c, extend)
+    setAxisDrag('col')
+    setDragging(true)
+    document.body.style.userSelect = 'none'
+  }
+
+  const openRowHeaderMenu = (r: number, e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (readOnly) return
+    const already =
+      isFullRowSel(sel, cols) && sel && r >= sel.r0 && r <= sel.r1
+    if (!already) selectEntireRow(r, false)
+    setHeaderMenu({ kind: 'row', x: e.clientX, y: e.clientY })
+  }
+
+  const openColHeaderMenu = (c: number, e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (readOnly) return
+    const already =
+      isFullColSel(sel, rows) && sel && c >= sel.c0 && c <= sel.c1
+    if (!already) selectEntireCol(c, false)
+    setHeaderMenu({ kind: 'col', x: e.clientX, y: e.clientY })
   }
 
   const autofitColWidth = (colIndex: number, widths: number[]) => {
@@ -3350,7 +3879,7 @@ export default function SheetGrid({
             type="button"
             onMouseDown={(e) => e.preventDefault()}
             onClick={addRows}
-            title={`增加 ${clampDimCount(dimCount)} 行`}
+            title={`在当前行下方插入 ${clampDimCount(dimCount)} 行`}
             className="h-7 px-2 rounded-md text-xs text-gray-300 hover:bg-white/10 inline-flex items-center gap-0.5"
           >
             <Plus size={12} /> 行
@@ -3358,31 +3887,11 @@ export default function SheetGrid({
           <button
             type="button"
             onMouseDown={(e) => e.preventDefault()}
-            onClick={removeRows}
-            title={`减少 ${clampDimCount(dimCount)} 行（最少 10 行）`}
-            disabled={rows <= 10}
-            className="h-7 px-1.5 rounded-md text-xs text-gray-300 hover:bg-white/10 inline-flex items-center disabled:opacity-35"
-          >
-            <Minus size={12} />
-          </button>
-          <button
-            type="button"
-            onMouseDown={(e) => e.preventDefault()}
             onClick={addCols}
-            title={`增加 ${clampDimCount(dimCount)} 列`}
+            title={`在当前列右侧插入 ${clampDimCount(dimCount)} 列`}
             className="h-7 px-2 rounded-md text-xs text-gray-300 hover:bg-white/10 inline-flex items-center gap-0.5"
           >
             <Plus size={12} /> 列
-          </button>
-          <button
-            type="button"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={removeCols}
-            title={`减少 ${clampDimCount(dimCount)} 列（最少 5 列）`}
-            disabled={cols <= 5}
-            className="h-7 px-1.5 rounded-md text-xs text-gray-300 hover:bg-white/10 inline-flex items-center disabled:opacity-35"
-          >
-            <Minus size={12} />
           </button>
 
           <FormatSizeMenu
@@ -3618,7 +4127,7 @@ export default function SheetGrid({
 
       {canResize && (
         <div className="shrink-0 text-[11px] text-gray-500 px-2 py-1 border-b border-white/5 bg-gray-950/40">
-          「格式」调行高列宽 · 拖表头/行号调整 · 双击分隔线自适应 · Ctrl+滚轮缩放
+          「格式」调行高列宽 · + 插入行列 · 点选表头选行列 · 右键删除/移动 · 拖表头调整 · Ctrl+滚轮缩放
         </div>
       )}
 
@@ -3653,21 +4162,47 @@ export default function SheetGrid({
           <thead>
             <tr style={{ height: viewHeaderH }}>
               <th
-                className="sticky left-0 top-0 z-30 border-b border-r border-gray-700/70 bg-gray-800 text-gray-500 font-normal"
+                className="sticky left-0 top-0 z-40 border-b border-r border-gray-700/70 bg-gray-800 text-gray-500 font-normal cursor-pointer hover:bg-gray-750"
                 style={{ boxShadow: '0 -4px 0 0 #1f2937', width: viewGutter }}
+                title="全选"
+                onMouseDown={(e) => {
+                  if (e.button !== 0) return
+                  e.preventDefault()
+                  if (editing) endEdit()
+                  setAnchor({ r: 0, c: 0 })
+                  setFocus({ r: rows - 1, c: cols - 1 })
+                  setHeaderMenu(null)
+                  gridWrapRef.current?.focus({ preventScroll: true })
+                }}
               />
               {Array.from({ length: cols }, (_, c) => {
                 const filtered = !!colFilters[c]
+                const colSelected = isFullColSel(sel, rows) && !!sel && c >= sel.c0 && c <= sel.c1
                 return (
                 <th
                   key={c}
-                  className="sticky top-0 z-20 border-b border-r border-gray-700/70 bg-gray-800 px-2 py-1 text-center text-gray-400 font-medium relative select-none"
+                  className={`sticky top-0 z-[35] border-b border-r border-gray-700/70 px-2 py-1 text-center font-medium relative select-none cursor-pointer ${
+                    colSelected
+                      ? 'bg-violet-600/35 text-violet-100'
+                      : 'bg-gray-800 text-gray-400 hover:bg-gray-750'
+                  }`}
                   style={{
                     width: viewColWidths[c],
                     height: viewHeaderH,
-                    // 盖住 sticky 表头与滚动容器顶边之间的透缝
                     boxShadow: '0 -4px 0 0 #1f2937',
                   }}
+                  onMouseDown={(e) => {
+                    if (e.button !== 0) return
+                    // 筛选项 / 拖拽改宽不触发选列
+                    if ((e.target as HTMLElement).closest('button, .cursor-col-resize')) return
+                    e.preventDefault()
+                    beginColHeaderDrag(c, e.shiftKey)
+                  }}
+                  onMouseEnter={() => {
+                    if (!dragging || axisDrag !== 'col') return
+                    setFocus({ r: rows - 1, c })
+                  }}
+                  onContextMenu={(e) => openColHeaderMenu(c, e)}
                 >
                   <div className="flex items-center justify-center gap-0.5 min-w-0">
                     <span className="truncate">{colLabel(c)}</span>
@@ -3745,11 +4280,27 @@ export default function SheetGrid({
           <tbody>
             {visibleRowList.map((r) => {
               const rh = viewRowHeights[r] || DEFAULT_ROW_HEIGHT
+              const rowSelected = isFullRowSel(sel, cols) && !!sel && r >= sel.r0 && r <= sel.r1
               return (
                 <tr key={r} style={{ height: rh }}>
                   <td
-                    className="sticky left-0 z-10 bg-gray-800 border-b border-r border-gray-700/70 px-1 text-center text-gray-500 text-xs relative select-none align-middle"
+                    className={`sticky left-0 z-30 border-b border-r border-gray-700/70 px-1 text-center text-xs relative select-none align-middle cursor-pointer ${
+                      rowSelected
+                        ? 'bg-violet-600/35 text-violet-100'
+                        : 'bg-gray-800 text-gray-500 hover:bg-gray-750'
+                    }`}
                     style={{ height: rh, width: viewGutter, boxShadow: '-2px 0 0 0 #1f2937' }}
+                    onMouseDown={(e) => {
+                      if (e.button !== 0) return
+                      if ((e.target as HTMLElement).closest('.cursor-row-resize')) return
+                      e.preventDefault()
+                      beginRowHeaderDrag(r, e.shiftKey)
+                    }}
+                    onMouseEnter={() => {
+                      if (!dragging || axisDrag !== 'row') return
+                      setFocus({ r, c: cols - 1 })
+                    }}
+                    onContextMenu={(e) => openRowHeaderMenu(r, e)}
                   >
                     {r + 1}
                     {canResize && (
@@ -3930,7 +4481,7 @@ export default function SheetGrid({
             {borderSegments.map((s) => (
               <div
                 key={s.key}
-                className="absolute pointer-events-none z-[25]"
+                className="absolute pointer-events-none z-[12]"
                 style={{
                   left: s.left,
                   top: s.top,
@@ -4059,6 +4610,216 @@ export default function SheetGrid({
           </div>
         </div>
       )}
+
+      {headerMenu && !readOnly && (
+        <>
+          <div
+            className="fixed inset-0 z-[10040]"
+            onClick={() => setHeaderMenu(null)}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              setHeaderMenu(null)
+            }}
+          />
+          <div
+            className="fixed z-[10050] min-w-[10.5rem] rounded-lg border border-white/15 bg-gray-900 shadow-xl py-1"
+            style={{
+              left: Math.min(
+                headerMenu.x,
+                typeof window !== 'undefined' ? window.innerWidth - 180 : headerMenu.x
+              ),
+              top: Math.min(
+                headerMenu.y,
+                typeof window !== 'undefined' ? window.innerHeight - 200 : headerMenu.y
+              ),
+            }}
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            {headerMenu.kind === 'row' ? (
+              <>
+                <button
+                  type="button"
+                  className="w-full px-3 py-1.5 text-left text-xs text-gray-200 hover:bg-white/10 inline-flex items-center gap-2 disabled:opacity-35"
+                  disabled={
+                    !!merges.length ||
+                    !isFullRowSel(sel, cols) ||
+                    !sel ||
+                    sel.r0 <= dataStartRow
+                  }
+                  onClick={() => {
+                    moveRowBy(-1)
+                    setHeaderMenu(null)
+                  }}
+                >
+                  <ArrowUp size={13} /> 上移
+                </button>
+                <button
+                  type="button"
+                  className="w-full px-3 py-1.5 text-left text-xs text-gray-200 hover:bg-white/10 inline-flex items-center gap-2 disabled:opacity-35"
+                  disabled={
+                    !!merges.length ||
+                    !isFullRowSel(sel, cols) ||
+                    !sel ||
+                    sel.r1 >= rows - 1
+                  }
+                  onClick={() => {
+                    moveRowBy(1)
+                    setHeaderMenu(null)
+                  }}
+                >
+                  <ArrowDown size={13} /> 下移
+                </button>
+                <div className="my-1 border-t border-white/10" />
+                <button
+                  type="button"
+                  className="w-full px-3 py-1.5 text-left text-xs text-rose-300 hover:bg-rose-500/15 inline-flex items-center gap-2 disabled:opacity-35"
+                  disabled={rows <= 10 || !isFullRowSel(sel, cols)}
+                  onClick={() => {
+                    deleteSelectedRows()
+                    setHeaderMenu(null)
+                  }}
+                >
+                  <Trash2 size={13} /> 删除行
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="w-full px-3 py-1.5 text-left text-xs text-gray-200 hover:bg-white/10 inline-flex items-center gap-2 disabled:opacity-35"
+                  disabled={
+                    !!merges.length ||
+                    !isFullColSel(sel, rows) ||
+                    !sel ||
+                    sel.c0 <= 0
+                  }
+                  onClick={() => {
+                    moveColBy(-1)
+                    setHeaderMenu(null)
+                  }}
+                >
+                  <ArrowLeft size={13} /> 左移
+                </button>
+                <button
+                  type="button"
+                  className="w-full px-3 py-1.5 text-left text-xs text-gray-200 hover:bg-white/10 inline-flex items-center gap-2 disabled:opacity-35"
+                  disabled={
+                    !!merges.length ||
+                    !isFullColSel(sel, rows) ||
+                    !sel ||
+                    sel.c1 >= cols - 1
+                  }
+                  onClick={() => {
+                    moveColBy(1)
+                    setHeaderMenu(null)
+                  }}
+                >
+                  <ArrowRight size={13} /> 右移
+                </button>
+                <div className="my-1 border-t border-white/10" />
+                <button
+                  type="button"
+                  className="w-full px-3 py-1.5 text-left text-xs text-rose-300 hover:bg-rose-500/15 inline-flex items-center gap-2 disabled:opacity-35"
+                  disabled={cols <= 5 || !isFullColSel(sel, rows)}
+                  onClick={() => {
+                    deleteSelectedCols()
+                    setHeaderMenu(null)
+                  }}
+                >
+                  <Trash2 size={13} /> 删除列
+                </button>
+              </>
+            )}
+          </div>
+        </>
+      )}
+      {deleteDirDialog && (
+        <div
+          className="fixed inset-0 z-[10050] flex items-center justify-center p-4"
+          onClick={() => setDeleteDirDialog(null)}
+        >
+          <div className="absolute inset-0 bg-black/50" aria-hidden />
+          <div
+            className="relative z-10 w-full max-w-sm rounded-xl border border-white/10 bg-gray-900 shadow-2xl p-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-sm font-medium text-white mb-1">
+              {deleteDirDialog.kind === 'row' ? '删除行后如何填补？' : '删除列后如何填补？'}
+            </div>
+            <p className="text-[11px] text-gray-500 mb-4">
+              {deleteDirDialog.kind === 'row'
+                ? '中间行删除后，请选择其余内容的迁移方向（对侧会留出空行）。'
+                : '中间列删除后，请选择其余内容的迁移方向（对侧会留出空列）。'}
+            </p>
+            <div className="flex flex-col gap-2">
+              {deleteDirDialog.kind === 'row' ? (
+                <>
+                  <button
+                    type="button"
+                    className="h-9 rounded-lg bg-violet-600 hover:bg-violet-500 text-sm text-white"
+                    onClick={() =>
+                      deleteRowsShift(deleteDirDialog.a0, deleteDirDialog.a1, 'up')
+                    }
+                  >
+                    下方内容上移填补
+                  </button>
+                  <button
+                    type="button"
+                    className="h-9 rounded-lg bg-white/10 hover:bg-white/15 text-sm text-gray-200"
+                    onClick={() =>
+                      deleteRowsShift(deleteDirDialog.a0, deleteDirDialog.a1, 'down')
+                    }
+                  >
+                    上方内容下移填补
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="h-9 rounded-lg bg-violet-600 hover:bg-violet-500 text-sm text-white"
+                    onClick={() =>
+                      deleteColsShift(deleteDirDialog.a0, deleteDirDialog.a1, 'left')
+                    }
+                  >
+                    右侧内容左移填补
+                  </button>
+                  <button
+                    type="button"
+                    className="h-9 rounded-lg bg-white/10 hover:bg-white/15 text-sm text-gray-200"
+                    onClick={() =>
+                      deleteColsShift(deleteDirDialog.a0, deleteDirDialog.a1, 'right')
+                    }
+                  >
+                    左侧内容右移填补
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                className="h-9 rounded-lg border border-white/10 text-sm text-gray-400 hover:bg-white/5"
+                onClick={() => setDeleteDirDialog(null)}
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {mergeWarnOpen && (
+        <ConfirmDialog
+          title="合并将覆盖内容"
+          message="选区内除左上角外还有单元格含有内容，合并后这些内容会被清除，仅保留左上角单元格。是否继续？"
+          confirmText="继续合并"
+          cancelText="取消"
+          type="warning"
+          zClassName="z-[10060]"
+          onConfirm={commitMergeSelection}
+          onCancel={() => setMergeWarnOpen(false)}
+        />
+      )}
+
     </div>
   )
 }

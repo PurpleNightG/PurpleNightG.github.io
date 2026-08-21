@@ -2,26 +2,26 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 会议号输入框：placeholder 中文勿继承 font-mono（Windows 会回落宋体） */
+/* ???????placeholder ????? font-mono?Windows ?????? */
 .meeting-code-input::placeholder {
   font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   letter-spacing: normal;
   text-transform: none;
 }
 
-/* ====== 管理后台表格统一样式 ====== */
+/* ====== ?????????? ====== */
 @layer components {
-  /* 管理后台表格容器 */
+  /* ???????? */
   .admin-table-container {
     @apply overflow-x-auto;
   }
 
-  /* 管理后台表格 */
+  /* ?????? */
   .admin-table {
     @apply w-full;
   }
 
-  /* 表头样式 */
+  /* ???? */
   .admin-table thead {
     @apply bg-gray-700/50;
   }
@@ -30,7 +30,7 @@
     @apply px-6 py-4 text-left text-base font-semibold text-gray-300;
   }
 
-  /* 表体样式 */
+  /* ???? */
   .admin-table tbody {
     @apply divide-y divide-gray-700;
   }
@@ -43,25 +43,25 @@
     @apply px-6 py-4 text-base text-gray-200;
   }
 
-  /* 选择列样式 */
+  /* ????? */
   .admin-table th.checkbox-col,
   .admin-table td.checkbox-col {
     @apply w-12;
   }
 
-  /* 操作列样式 */
+  /* ????? */
   .admin-table th.action-col,
   .admin-table td.action-col {
     @apply text-base;
   }
 
-  /* 状态标签统一样式（尺寸由下方液态玻璃规则覆盖） */
+  /* ??????????????????????? */
   .status-badge {
     @apply font-medium;
   }
 }
 
-/* ====== 自定义动画 ====== */
+/* ====== ????? ====== */
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -144,7 +144,7 @@
   }
 }
 
-/* 动画工具类 */
+/* ????? */
 .animate-fade-in {
   animation: fadeIn 0.6s ease-out forwards;
 }
@@ -259,7 +259,7 @@
     0 0 36px -10px rgba(168, 85, 247, 0.35);
 }
 
-/* 学员液态玻璃 — 磨砂透底 + 边缘高光随指针流动 */
+/* ?????? ? ???? + ????????? */
 .student-glass-panel,
 .student-glass-chip,
 .student-glass-btn,
@@ -277,7 +277,7 @@
   background: rgba(12, 10, 20, 0.42);
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 16px 40px -24px rgba(0, 0, 0, 0.7);
-  /* 勿对 transform 做 transition：与指针逐帧倾斜叠加会明显卡顿 */
+  /* ?? transform ? transition??????????????? */
   transition: border-color 0.28s ease, box-shadow 0.28s ease;
   overflow: hidden;
   isolation: isolate;
@@ -363,7 +363,7 @@
   border-radius: 0.85rem;
   backdrop-filter: blur(18px) saturate(1.35);
   -webkit-backdrop-filter: blur(18px) saturate(1.35);
-  /* 对齐学员端「课程进度」小卡片：冷紫灰磨砂，不发棕 */
+  /* ???????????????????????? */
   background:
     linear-gradient(155deg, rgba(255, 255, 255, 0.08) 0%, transparent 45%),
     rgba(42, 32, 68, 0.52);
@@ -425,7 +425,7 @@
     0 10px 22px -14px rgba(0, 0, 0, 0.45);
 }
 
-/* 默认不露容器，悬停 / 展开时再显玻璃壳（用户菜单触发器） */
+/* ????????? / ????????????????? */
 .student-glass-chip--ghost {
   background: transparent;
   border-color: transparent;
@@ -510,7 +510,7 @@
   opacity: 0;
 }
 
-/* 分段切换条：内页签圆角 = 外壳圆角 − 内边距，避免「外圆内方」 */
+/* ??????????? = ???? ? ???????????? */
 .student-glass-chip.student-glass-seg {
   gap: 0.25rem;
   padding: 0.25rem;
@@ -531,7 +531,7 @@
   border-radius: 0.85rem;
   backdrop-filter: blur(18px) saturate(1.35);
   -webkit-backdrop-filter: blur(18px) saturate(1.35);
-  /* 与课程进度小卡片 / chip 同款冷紫灰磨砂 */
+  /* ???????? / chip ??????? */
   background:
     linear-gradient(155deg, rgba(255, 255, 255, 0.08) 0%, transparent 45%),
     rgba(42, 32, 68, 0.52);
@@ -594,7 +594,7 @@
   transform: translateY(-1px);
 }
 
-/* 学员端侧栏液态玻璃（悬浮卡片） */
+/* ??????????????? */
 .student-glass-sidebar,
 .student-glass-nav-item {
   --glass-x: 50%;
@@ -602,7 +602,7 @@
 }
 
 .student-glass-sidebar {
-  /* 勿写 position:relative，会盖掉 aside 的 fixed，导致主区双重左偏移 */
+  /* ?? position:relative???? aside ? fixed?????????? */
   border-radius: 1.25rem;
   backdrop-filter: blur(28px) saturate(1.35);
   -webkit-backdrop-filter: blur(28px) saturate(1.35);
@@ -728,15 +728,15 @@
   will-change: auto;
 }
 
-/* 仅保留指针倾斜 / 高光，关闭会“抬升偏移”的 hover 阴影与描边变化 */
+/* ??????? / ????????????? hover ??????? */
 .student-glass-panel--tilt-only:hover {
   border-color: rgba(255, 255, 255, 0.08);
   box-shadow: 0 16px 40px -24px rgba(0, 0, 0, 0.7);
 }
 
 /*
- * 模态框毛玻璃：适度模糊；倾斜请加在 .glass-modal-tilt 上，
- * 勿与 backdrop-filter 同元素，否则会留下未倾斜的残影。
+ * ????????????????? .glass-modal-tilt ??
+ * ?? backdrop-filter ????????????????
  */
 .student-glass-modal {
   isolation: auto !important;
@@ -759,17 +759,17 @@
   border-radius: 1.25rem;
   transform-style: preserve-3d;
   will-change: transform;
-  /* 勿加 transition：与每帧指针更新叠加会明显卡顿 */
+  /* ?? transition??????????????? */
   backface-visibility: hidden;
 }
 
-/* 下拉/日期等浮层：毛玻璃但不做全屏压暗、不倾斜 */
+/* ??/???????????????????? */
 .student-glass-popover {
   isolation: auto !important;
   transform: none !important;
   transform-style: flat !important;
   will-change: auto !important;
-  /* 覆盖 .student-glass-panel 的 overflow:hidden，否则列表无法滚动 */
+  /* ?? .student-glass-panel ? overflow:hidden????????? */
   overflow-x: hidden !important;
   overflow-y: auto !important;
   backdrop-filter: blur(28px) saturate(1.4) !important;
@@ -781,7 +781,7 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
 }
 
-/* 可滚动浮层关掉边缘光：否则 ::after 按内容高度铺开，滚动时亮边会横在列表中间 */
+/* ????????????? ::after ???????????????????? */
 .student-glass-popover::after,
 .student-glass-popover:hover::after {
   content: none !important;
@@ -789,21 +789,21 @@
   opacity: 0 !important;
 }
 
-/* 全屏遮罩：轻压暗 + 淡模糊；面板毛玻璃单独由 .student-glass-modal 控制 */
+/* ???????? + ???????????? .student-glass-modal ?? */
 .glass-modal-backdrop {
   background: rgba(0, 0, 0, 0.36);
   backdrop-filter: blur(3px) saturate(1.02);
   -webkit-backdrop-filter: blur(3px) saturate(1.02);
 }
 
-/* 仅需点击穿透、不要视觉遮罩时使用 */
+/* ???????????????? */
 .glass-modal-hitarea {
   background: transparent;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
 
-/* 隐藏滚动条但仍可滚动 */
+/* ?????????? */
 .scrollbar-none {
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -814,7 +814,7 @@
   height: 0;
 }
 
-/* 液态玻璃表单控件 */
+/* ???????? */
 .student-glass-field {
   width: 100%;
   border-radius: 0.75rem;
@@ -829,7 +829,7 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-/* 左右有搜索/清除图标时留出空间（避免被上面 padding 简写盖掉 Tailwind pl/pr） */
+/* ?????/??????????????? padding ???? Tailwind pl/pr? */
 .student-glass-field.student-glass-field--icon {
   padding-left: 2.5rem;
   padding-right: 2.5rem;
@@ -857,7 +857,7 @@ textarea.student-glass-field {
   min-height: 6rem;
 }
 
-/* 阶段/角色标签：液态玻璃 + getRoleColor 配色 */
+/* ??/????????? + getRoleColor ?? */
 .student-glass-badge,
 .status-badge {
   position: relative;
@@ -901,7 +901,7 @@ textarea.student-glass-field {
   mix-blend-mode: soft-light;
 }
 
-/* 新训阶段彩色底：强制背景色，避免玻璃叠层把浅绿/浅黄压成黑底 */
+/* ???????????????????????/?????? */
 .student-glass-badge.role-tint-green,
 .status-badge.role-tint-green,
 .role-tint-green {
@@ -918,7 +918,7 @@ textarea.student-glass-field {
   border-color: rgba(250, 204, 21, 0.45) !important;
 }
 
-/* 黑金属系列标签：暗底 + 金属色描边/文字 + 高光（具体色相由各修饰类 CSS 变量决定） */
+/* ?????????? + ?????/?? + ???????????? CSS ????? */
 .status-badge.tag-color-metal,
 .student-glass-badge.tag-color-metal,
 .tag-color-metal {
@@ -1058,7 +1058,7 @@ textarea.student-glass-field {
 }
 
 /*
- * 主区内限宽居中（学员首页 / 管理首页等）
+ * ???????????? / ??????
  */
 .student-main-center {
   width: 100%;
@@ -1068,7 +1068,7 @@ textarea.student-glass-field {
   box-sizing: border-box;
 }
 
-/* 不在 max-w 内容区另铺环境光，避免与外侧背景形成色界 */
+/* ?? max-w ???????????????????? */
 .student-home-ambient {
   position: relative;
 }
@@ -1081,7 +1081,7 @@ textarea.student-glass-field {
   animation: slideInRight 0.3s ease-out forwards;
 }
 
-/* 延迟动画 */
+/* ???? */
 .animate-delay-100 {
   animation-delay: 0.1s;
   opacity: 0;
@@ -1107,7 +1107,7 @@ textarea.student-glass-field {
   opacity: 0;
 }
 
-/* 悬停效果增强 */
+/* ?????? */
 .hover-lift {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -1256,7 +1256,7 @@ body {
   scrollbar-color: rgba(167, 139, 250, 0.35) transparent;
 }
 
-/* 管理端侧栏细滚动条 */
+/* ????????? */
 .sidebar-scrollbar::-webkit-scrollbar {
   width: 4px;
 }
@@ -1279,7 +1279,7 @@ body {
   scrollbar-color: rgba(148, 163, 184, 0.28) transparent;
 }
 
-/* 催促规则总设置：勿给毛玻璃祖先加 transform/opacity，否则遮罩模糊会失效 */
+/* ???????????????? transform/opacity?????????? */
 @keyframes reminderRulesBackdropIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -1298,7 +1298,7 @@ body {
   animation: reminderRulesContentIn 0.28s ease-out both;
 }
 
-/* 展开区高度过渡（grid 0fr→1fr，比 max-height 更顺） */
+/* ????????grid 0fr?1fr?? max-height ??? */
 .reminder-rules-expand {
   display: grid;
   grid-template-rows: 0fr;
@@ -1556,7 +1556,7 @@ select::-ms-expand {
   line-height: 1.45;
 }
 
-/* 富文本 HTML 块：直接渲染，无代码框包裹 */
+/* ??? HTML ????????????? */
 .html-block-preview [data-html-text-edit='1'] {
   cursor: text;
   border-radius: 0.25rem;
@@ -1835,7 +1835,7 @@ select::-ms-expand {
   white-space: pre-wrap;
 }
 
-/* 富文本编辑区：保留连续空格 */
+/* ????????????? */
 .ProseMirror {
   white-space: pre-wrap;
 }
@@ -1869,7 +1869,7 @@ select::-ms-expand {
 .markdown-content li {
   @apply mb-2 ml-2;
   transition: all 0.2s ease;
-  /* 勿用 pre-wrap：松散列表会变成 <li>\n<p>…</p>，换行会被保留，导致「2.」与正文上下拆开 */
+  /* ?? pre-wrap???????? <li>\n<p>?</p>???????????2.???????? */
 }
 
 .markdown-content li > p {
@@ -1973,7 +1973,7 @@ select::-ms-expand {
 }
 
 .markdown-content hr::before {
-  content: '◆';
+  content: '?';
   position: absolute;
   left: 50%;
   top: 50%;
@@ -1984,7 +1984,7 @@ select::-ms-expand {
   font-size: 0.75rem;
 }
 
-/* ====== 学员端进度条动画 ====== */
+/* ====== ???????? ====== */
 @keyframes shimmer {
   0% {
     transform: translateX(-100%);
@@ -1998,7 +1998,7 @@ select::-ms-expand {
   animation: shimmer 2s infinite;
 }
 
-/* AI 活跃度：单框炫彩流光边（尺寸用 vmax，避免内容变高后边框“跳一下”） */
+/* AI ??????????????? vmax???????????????? */
 @keyframes ai-aurora-spin-centered {
   to {
     transform: translate(-50%, -50%) rotate(360deg);
@@ -2024,7 +2024,7 @@ select::-ms-expand {
 }
 
 .ai-aurora-shell {
-  /* 不用写 position：悬浮面板必须保持 fixed；页面内卡片自行加 relative */
+  /* ??? position????????? fixed????????? relative */
   border-radius: 1rem;
   padding: 1.5px;
   isolation: isolate;
@@ -2061,7 +2061,7 @@ select::-ms-expand {
   opacity: 0.5;
 }
 
-/* 思考中：边框改成横向滚动流光（像加载条），与完成后的旋转流光明显区分 */
+/* ?????????????????????????????????? */
 .ai-aurora-shell.is-thinking {
   background-image: linear-gradient(
     90deg,
@@ -2110,7 +2110,7 @@ select::-ms-expand {
   }
 }
 
-/* 管理端悬浮 AI 圆钮 + 面板入场 */
+/* ????? AI ?? + ???? */
 @keyframes ai-aurora-spin {
   to {
     transform: rotate(360deg);
@@ -2221,7 +2221,7 @@ select::-ms-expand {
   animation: admin-ai-msg-in 0.28s ease-out both;
 }
 
-/* 智能助手回复：紧凑 Markdown */
+/* ????????? Markdown */
 .admin-ai-md {
   font-size: 12px;
   line-height: 1.55;
@@ -2296,7 +2296,7 @@ select::-ms-expand {
   color: #fff;
 }
 
-/* 签到页活跃度卡片：正文略大 */
+/* ????????????? */
 .admin-ai-md--card {
   font-size: 14px;
   line-height: 1.65;
@@ -2323,7 +2323,7 @@ select::-ms-expand {
   }
 }
 
-/* 问卷星式编辑器：强制浅色，避免继承全站深色 color-scheme */
+/* ????????????????????? color-scheme */
 .survey-editor-light {
   color-scheme: light;
   color: #1f2937;
@@ -2365,7 +2365,7 @@ select::-ms-expand {
   box-shadow: none;
 }
 
-/* 投放设置等浅色区域内的滚动条，避免继承全站紫色滚动条 */
+/* ?????????????????????????? */
 .survey-editor-light,
 .survey-editor-light * {
   scrollbar-width: thin;
@@ -2395,7 +2395,7 @@ select::-ms-expand {
   background: #94a3b8;
 }
 
-/* 学员填写页：放大单选/多选控件，减轻视觉负担 */
+/* ??????????/??????????? */
 .survey-fill-form input[type='radio'],
 .survey-fill-form input[type='checkbox'] {
   width: 1.2rem;
@@ -2411,7 +2411,7 @@ select::-ms-expand {
   line-height: 1.55;
 }
 
-/* 数字输入框：隐藏浏览器原生上下箭头，与深色主题一致 */
+/* ????????????????????????? */
 input[type="number"] {
   -moz-appearance: textfield;
   appearance: textfield;
@@ -2423,13 +2423,13 @@ input[type="number"]::-webkit-inner-spin-button {
   margin: 0;
 }
 
-/* 日期输入框优化 */
+/* ??????? */
 input[type="date"] {
   position: relative;
   cursor: pointer;
 }
 
-/* 让整个日期输入框都可点击 */
+/* ???????????? */
 input[type="date"]::-webkit-calendar-picker-indicator {
   position: absolute;
   top: 0;
@@ -2443,7 +2443,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   cursor: pointer;
 }
 
-/* 深色主题下的日期选择器 */
+/* ??????????? */
 input[type="date"]::-webkit-datetime-edit {
   color: inherit;
 }
@@ -2467,13 +2467,13 @@ input[type="date"]:disabled::-webkit-calendar-picker-indicator {
   cursor: not-allowed;
 }
 
-/* 时间输入框优化 */
+/* ??????? */
 input[type="time"] {
   position: relative;
   cursor: pointer;
 }
 
-/* 让整个时间输入框都可点击 */
+/* ???????????? */
 input[type="time"]::-webkit-calendar-picker-indicator {
   position: absolute;
   top: 0;
@@ -2487,7 +2487,7 @@ input[type="time"]::-webkit-calendar-picker-indicator {
   cursor: pointer;
 }
 
-/* 深色主题下的时间选择器 */
+/* ??????????? */
 input[type="time"]::-webkit-datetime-edit {
   color: inherit;
 }
@@ -2511,7 +2511,7 @@ input[type="time"]:disabled::-webkit-calendar-picker-indicator {
   cursor: not-allowed;
 }
 
-/* 学员首页动画 */
+/* ?????? */
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -2540,7 +2540,7 @@ input[type="time"]:disabled::-webkit-calendar-picker-indicator {
   animation: scaleIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-/* 高亮闪烁动画（用于同步阶段后提示被更新的成员） */
+/* ??????????????????????? */
 @keyframes highlightPulse {
   0%, 100% {
     background-color: rgba(6, 182, 212, 0.15);
@@ -2555,4 +2555,1202 @@ input[type="time"]:disabled::-webkit-calendar-picker-indicator {
 .highlighted-row {
   animation: highlightPulse 1.5s ease-in-out 2;
   transition: all 0.3s ease;
+}
+
+/* ========== ????? ? ??? FX-01 ========== */
+.opinion-fax-page {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 1.25rem 1rem 2.5rem;
+  min-height: min(100%, 100dvh);
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 28%, rgba(235, 220, 190, 0.14), transparent 62%),
+    radial-gradient(ellipse 50% 40% at 50% 100%, rgba(40, 20, 50, 0.35), transparent 70%);
+}
+
+.opinion-fax-page--admin {
+  width: 100%;
+  min-height: 100%;
+  height: 100%;
+  padding: 1.25rem 1.25rem 1.25rem;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  scrollbar-width: thin;
+  scrollbar-color: #b7aa96 #efe6d6;
+}
+
+.opinion-fax-page--admin::-webkit-scrollbar,
+.opinion-fax-page--admin *::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.opinion-fax-page--admin::-webkit-scrollbar-track,
+.opinion-fax-page--admin *::-webkit-scrollbar-track {
+  background: #efe6d6;
+  border-radius: 2px;
+}
+
+.opinion-fax-page--admin::-webkit-scrollbar-thumb,
+.opinion-fax-page--admin *::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #cfc3ae 0%, #a89880 100%);
+  border-radius: 2px;
+  border: 1px solid #9a8a72;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.opinion-fax-page--admin::-webkit-scrollbar-thumb:hover,
+.opinion-fax-page--admin *::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #c2b49c 0%, #96866e 100%);
+}
+
+.opinion-fax-page--admin::-webkit-scrollbar-corner,
+.opinion-fax-page--admin *::-webkit-scrollbar-corner {
+  background: #efe6d6;
+}
+
+/* ???????????????????????? */
+main:has(.opinion-fax-page--admin) {
+  display: flex;
+  flex-direction: column;
+  scrollbar-width: thin;
+  scrollbar-color: #b7aa96 #2a2620;
+}
+
+main:has(.opinion-fax-page--admin)::-webkit-scrollbar {
+  width: 10px;
+}
+
+main:has(.opinion-fax-page--admin)::-webkit-scrollbar-track {
+  background: #2a241c;
+}
+
+main:has(.opinion-fax-page--admin)::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #cfc3ae 0%, #a89880 100%);
+  border-radius: 3px;
+  border: 1px solid #9a8a72;
+}
+
+main:has(.opinion-fax-page--admin)::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #c2b49c 0%, #96866e 100%);
+}
+
+.opinion-fax {
+  --fax-cream: #ebe4d6;
+  --fax-cream-2: #e2d9c8;
+  --fax-ink: #2a2620;
+  --fax-muted: #7a7266;
+  --fax-red: #c43a2f;
+  --fax-paper: #fbf8f2;
+  --fax-line: #d7d0c3;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+.opinion-fax--wide,
+.opinion-fax-page--admin .opinion-fax {
+  max-width: none;
+  width: 100%;
+}
+
+.opinion-fax-page--admin .opinion-fax {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.opinion-fax-page--admin .opinion-fax__panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.opinion-fax__titlebar {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0 0.55rem 0.5rem;
+  color: rgba(245, 236, 220, 0.78);
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+}
+
+.opinion-fax__brand {
+  font-weight: 600;
+}
+
+.opinion-fax__model {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.opinion-fax__panel {
+  background:
+    linear-gradient(180deg, #f3ece0 0%, var(--fax-cream) 38%, var(--fax-cream-2) 100%);
+  border-radius: 24px;
+  padding: 1.15rem 1.2rem 1.15rem;
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.06);
+  color: var(--fax-ink);
+}
+
+.opinion-fax__led {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+  background: #141210;
+  color: #f4f0e8;
+  border-radius: 12px;
+  padding: 0.7rem 1rem;
+  font-size: 0.88rem;
+  letter-spacing: 0.04em;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.55);
+  font-variant-numeric: tabular-nums;
+}
+
+.opinion-fax__led-msg {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.25);
+}
+
+.opinion-fax__led-chars {
+  flex-shrink: 0;
+  opacity: 0.85;
+  font-size: 0.8rem;
+}
+
+.opinion-fax__modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+
+.opinion-fax__modes--filter {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.opinion-fax__mode {
+  position: relative;
+  text-align: left;
+  border: none;
+  border-radius: 12px;
+  padding: 0.85rem 0.95rem 0.8rem;
+  background: #f7f1e6;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.8),
+    0 2px 4px rgba(0, 0, 0, 0.08),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.04);
+  cursor: pointer;
+  transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
+  color: var(--fax-ink);
+}
+
+.opinion-fax__mode:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.opinion-fax__mode.is-on {
+  background: #e8d8c4;
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.14),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.06);
+}
+
+.opinion-fax__mode-dot {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.5rem;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: var(--fax-red);
+  box-shadow: 0 0 0 2px rgba(196, 58, 47, 0.2);
+}
+
+.opinion-fax__mode-en {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+}
+
+.opinion-fax__mode-zh {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.opinion-fax__feed-label {
+  margin-top: 1rem;
+  text-align: center;
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  color: var(--fax-muted);
+  text-transform: uppercase;
+}
+
+.opinion-fax__slot {
+  height: 12px;
+  margin-top: 0.4rem;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #1a1714 0%, #3a342c 45%, #120f0c 100%);
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.65),
+    0 1px 0 rgba(255, 255, 255, 0.35);
+  position: relative;
+  z-index: 3;
+}
+
+.opinion-fax__bay {
+  position: relative;
+  /* ?????????????????????????? */
+  height: 560px;
+  min-height: 560px;
+  margin-top: -4px;
+  overflow: hidden;
+  padding: 0;
+}
+
+.opinion-fax__bay-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  padding: 0 0.45rem 0.55rem;
+}
+
+.opinion-fax__sheet {
+  position: relative;
+  width: calc(100% - 0.5rem);
+  margin: 0 auto;
+  transform-origin: top center;
+  /* ??????????? Windows ????? */
+  will-change: auto;
+  -webkit-font-smoothing: antialiased;
+}
+
+.opinion-fax__sheet.is-feeding,
+.opinion-fax__sheet.is-retracting,
+.opinion-fax__sheet.is-falling {
+  will-change: transform, opacity;
+}
+
+.opinion-fax__sheet--form {
+  display: grid;
+  grid-template-columns: 18px 1fr 18px;
+  background: var(--fax-paper);
+  border-radius: 0 0 4px 4px;
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.18),
+    0 1px 0 rgba(0, 0, 0, 0.06);
+  max-height: 100%;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #b7aa96 #efe6d6;
+}
+
+.opinion-fax__sheet--form::-webkit-scrollbar {
+  width: 8px;
+}
+
+.opinion-fax__sheet--form::-webkit-scrollbar-track {
+  background: #efe6d6;
+}
+
+.opinion-fax__sheet--form::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #cfc3ae 0%, #a89880 100%);
+  border-radius: 2px;
+  border: 1px solid #9a8a72;
+}
+
+.opinion-fax__holes {
+  background:
+    radial-gradient(circle at 50% 12px, #cfc6b6 3.5px, transparent 4px) 0 0 / 100% 22px repeat-y;
+  opacity: 0.9;
+}
+
+.opinion-fax__sheet-inner {
+  padding: 1.05rem 0.95rem 0.9rem;
+  min-width: 0;
+}
+
+.opinion-fax__doc-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: flex-start;
+  border-bottom: 1px solid var(--fax-line);
+  padding-bottom: 0.65rem;
+  margin-bottom: 0.75rem;
+}
+
+.opinion-fax__doc-title {
+  font-weight: 700;
+  font-size: 1.1rem;
+  letter-spacing: 0.02em;
+}
+
+.opinion-fax__doc-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.25rem 0.85rem;
+  margin-top: 0.45rem;
+  font-size: 0.82rem;
+  color: var(--fax-muted);
+}
+
+.opinion-fax__serial {
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 0.85rem;
+  color: var(--fax-muted);
+  white-space: nowrap;
+}
+
+.opinion-fax__stamp {
+  display: inline-block;
+  margin-bottom: 0.65rem;
+  padding: 0.28rem 0.7rem;
+  border: 2px solid var(--stamp-color, var(--fax-red));
+  color: var(--stamp-color, var(--fax-red));
+  font-weight: 700;
+  font-size: 0.92rem;
+  letter-spacing: 0.08em;
+  transform: rotate(-8deg);
+  transform-origin: center center;
+  border-radius: 2px;
+  opacity: 0.92;
+  background: color-mix(in srgb, var(--stamp-color, var(--fax-red)) 8%, transparent);
+}
+
+.opinion-fax__stamp--bug {
+  --stamp-color: #c43a2f;
+}
+
+.opinion-fax__stamp--suggest {
+  --stamp-color: #2f6fad;
+}
+
+.opinion-fax__stamp--praise {
+  --stamp-color: #2a8f5b;
+}
+
+.opinion-fax__stamp--other {
+  --stamp-color: #b07a28;
+}
+
+@keyframes opinion-fax-stamp-press {
+  0% {
+    transform: rotate(-8deg) scale(1.55);
+    opacity: 0.15;
+    filter: blur(0.4px);
+  }
+  35% {
+    transform: rotate(-10deg) scale(1.18);
+    opacity: 0.85;
+    filter: none;
+  }
+  55% {
+    transform: rotate(-7deg) scale(0.92);
+    opacity: 1;
+  }
+  75% {
+    transform: rotate(-9deg) scale(1.06);
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(-8deg) scale(1);
+    opacity: 0.92;
+  }
+}
+
+.opinion-fax__stamp.is-stamping {
+  animation: opinion-fax-stamp-press 0.48s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.opinion-fax__lines {
+  width: 100%;
+  min-height: 11rem;
+  resize: vertical;
+  border: none;
+  outline: none;
+  background:
+    repeating-linear-gradient(
+      transparent,
+      transparent 31px,
+      rgba(120, 140, 170, 0.28) 31px,
+      rgba(120, 140, 170, 0.28) 32px
+    );
+  background-attachment: local;
+  line-height: 32px;
+  padding: 0 0.2rem;
+  font-size: 1.05rem;
+  color: var(--fax-ink);
+  font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  scrollbar-width: thin;
+  scrollbar-color: #b7aa96 #efe6d6;
+}
+
+.opinion-fax__lines::-webkit-scrollbar {
+  width: 9px;
+}
+
+.opinion-fax__lines::-webkit-scrollbar-track {
+  background: #efe6d6;
+  border-left: 1px solid #d7d0c3;
+}
+
+.opinion-fax__lines::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #cfc3ae 0%, #a89880 100%);
+  border-radius: 2px;
+  border: 1px solid #9a8a72;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.opinion-fax__lines::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #c2b49c 0%, #96866e 100%);
+}
+
+.opinion-fax__lines::-webkit-scrollbar-corner {
+  background: #efe6d6;
+}
+
+.opinion-fax__lines::placeholder {
+  color: rgba(90, 84, 74, 0.45);
+}
+
+.opinion-fax__lines:disabled {
+  opacity: 0.85;
+}
+
+.opinion-fax__lines--blank {
+  min-height: 12rem;
+  pointer-events: none;
+}
+
+.opinion-fax__disclaimer {
+  margin: 0.7rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: #9a9184;
+}
+
+/* ????? */
+.opinion-fax__sheet--receipt {
+  display: block;
+  width: calc(100% - 2.5rem);
+  max-width: 420px;
+  margin: 0.15rem auto 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.opinion-fax__receipt-body {
+  background: #fffef9;
+  padding: 1.05rem 1.1rem 1.45rem;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.2);
+  clip-path: polygon(
+    0 0,
+    100% 0,
+    100% calc(100% - 10px),
+    96% 100%,
+    92% calc(100% - 10px),
+    88% 100%,
+    84% calc(100% - 10px),
+    80% 100%,
+    76% calc(100% - 10px),
+    72% 100%,
+    68% calc(100% - 10px),
+    64% 100%,
+    60% calc(100% - 10px),
+    56% 100%,
+    52% calc(100% - 10px),
+    48% 100%,
+    44% calc(100% - 10px),
+    40% 100%,
+    36% calc(100% - 10px),
+    32% 100%,
+    28% calc(100% - 10px),
+    24% 100%,
+    20% calc(100% - 10px),
+    16% 100%,
+    12% calc(100% - 10px),
+    8% 100%,
+    4% calc(100% - 10px),
+    0 100%
+  );
+}
+
+.opinion-fax__receipt-head {
+  text-align: center;
+  margin-bottom: 0.55rem;
+}
+
+.opinion-fax__receipt-title {
+  font-weight: 800;
+  font-size: 1.15rem;
+  letter-spacing: 0.12em;
+  color: var(--fax-ink);
+  font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+.opinion-fax__receipt-sub {
+  margin-top: 0.2rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  color: var(--fax-muted);
+  font-family: ui-monospace, Consolas, monospace;
+}
+
+.opinion-fax__receipt-rule {
+  height: 0;
+  border: none;
+  border-top: 1px dashed #c4baa8;
+  margin: 0.55rem 0;
+}
+
+.opinion-fax__receipt-dl {
+  margin: 0;
+  display: grid;
+  gap: 0.42rem;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.9rem;
+}
+
+.opinion-fax__receipt-dl > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.opinion-fax__receipt-dl dt {
+  color: var(--fax-muted);
+  flex-shrink: 0;
+}
+
+.opinion-fax__receipt-dl dd {
+  margin: 0;
+  text-align: right;
+  color: var(--fax-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.opinion-fax__receipt-dl dd.is-ok {
+  color: #1f8a4c;
+  font-weight: 700;
+}
+
+.opinion-fax__receipt-foot {
+  text-align: center;
+  padding-top: 0.15rem;
+}
+
+.opinion-fax__receipt-thanks {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--fax-ink);
+  letter-spacing: 0.04em;
+  line-height: 1.45;
+}
+
+.opinion-fax__receipt-hint {
+  margin: 0.55rem 0 0;
+  font-size: 0.72rem;
+  color: #9a9184;
+  line-height: 1.4;
+  font-weight: 400;
+}
+
+/* ?/????? + ???????/????? */
+@keyframes opinion-fax-stutter-out {
+  0% { transform: translate3d(0, -100%, 0); }
+  5% { transform: translate3d(0, -86%, 0); }
+  14% { transform: translate3d(0, -86%, 0); }
+  19% { transform: translate3d(0, -72%, 0); }
+  28% { transform: translate3d(0, -72%, 0); }
+  33% { transform: translate3d(0, -58%, 0); }
+  42% { transform: translate3d(0, -58%, 0); }
+  47% { transform: translate3d(0, -44%, 0); }
+  56% { transform: translate3d(0, -44%, 0); }
+  61% { transform: translate3d(0, -30%, 0); }
+  70% { transform: translate3d(0, -30%, 0); }
+  75% { transform: translate3d(0, -16%, 0); }
+  84% { transform: translate3d(0, -16%, 0); }
+  89% { transform: translate3d(0, -6%, 0); }
+  96% { transform: translate3d(0, -6%, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
+@keyframes opinion-fax-stutter-in {
+  0% { transform: translate3d(0, 0, 0); }
+  5% { transform: translate3d(0, -8%, 0); }
+  14% { transform: translate3d(0, -8%, 0); }
+  19% { transform: translate3d(0, -22%, 0); }
+  28% { transform: translate3d(0, -22%, 0); }
+  33% { transform: translate3d(0, -36%, 0); }
+  42% { transform: translate3d(0, -36%, 0); }
+  47% { transform: translate3d(0, -50%, 0); }
+  56% { transform: translate3d(0, -50%, 0); }
+  61% { transform: translate3d(0, -64%, 0); }
+  70% { transform: translate3d(0, -64%, 0); }
+  75% { transform: translate3d(0, -78%, 0); }
+  84% { transform: translate3d(0, -78%, 0); }
+  89% { transform: translate3d(0, -90%, 0); }
+  96% { transform: translate3d(0, -90%, 0); }
+  100% { transform: translate3d(0, -105%, 0); }
+}
+
+@keyframes opinion-fax-receipt-out {
+  0% { transform: translate3d(0, -92%, 0) rotate(0deg); opacity: 0.15; }
+  5% { transform: translate3d(0, -78%, 0) rotate(0.3deg); opacity: 1; }
+  14% { transform: translate3d(0, -78%, 0) rotate(0.3deg); }
+  19% { transform: translate3d(0, -62%, 0) rotate(0.8deg); }
+  28% { transform: translate3d(0, -62%, 0) rotate(0.8deg); }
+  33% { transform: translate3d(0, -46%, 0) rotate(1.4deg); }
+  42% { transform: translate3d(0, -46%, 0) rotate(1.4deg); }
+  47% { transform: translate3d(0, -30%, 0) rotate(2deg); }
+  56% { transform: translate3d(0, -30%, 0) rotate(2deg); }
+  61% { transform: translate3d(0, -16%, 0) rotate(2.5deg); }
+  70% { transform: translate3d(0, -16%, 0) rotate(2.5deg); }
+  75% { transform: translate3d(0, -6%, 0) rotate(2.9deg); }
+  84% { transform: translate3d(0, -6%, 0) rotate(2.9deg); }
+  100% { transform: translate3d(0, 0, 0) rotate(3.2deg); }
+}
+
+@keyframes opinion-fax-receipt-fall {
+  0% { transform: translate3d(0, 0, 0) rotate(3.2deg); opacity: 1; }
+  35% { transform: translate3d(8px, 40px, 0) rotate(-12deg); opacity: 0.95; }
+  100% { transform: translate3d(18px, 220px, 0) rotate(-28deg); opacity: 0; }
+}
+
+.opinion-fax__sheet--form.is-feeding {
+  animation: opinion-fax-stutter-out 1.4s linear both;
+}
+
+.opinion-fax__sheet--form.is-retracting {
+  animation: opinion-fax-stutter-in 1.4s linear both;
+}
+
+.opinion-fax__sheet--form.is-idle {
+  animation: none;
+  transform: none;
+  will-change: auto;
+  filter: none;
+}
+
+.opinion-fax__sheet--receipt.is-feeding {
+  animation: opinion-fax-receipt-out 1.35s linear both;
+}
+
+.opinion-fax__sheet--receipt.is-falling {
+  animation: opinion-fax-receipt-fall 0.78s cubic-bezier(0.4, 0.05, 0.7, 0.2) both;
+  pointer-events: none;
+}
+
+.opinion-fax__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+  padding-top: 0.15rem;
+}
+
+.opinion-fax__toggles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  font-size: 0.88rem;
+  color: #5c554c;
+}
+
+.opinion-fax__switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.opinion-fax__switch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.opinion-fax__switch-track {
+  width: 2.1rem;
+  height: 1.15rem;
+  border-radius: 999px;
+  background: #cfc6b8;
+  position: relative;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: background 0.15s ease;
+}
+
+.opinion-fax__switch.is-on .opinion-fax__switch-track {
+  background: var(--fax-red);
+}
+
+.opinion-fax__switch-knob {
+  position: absolute;
+  top: 0.12rem;
+  left: 0.12rem;
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s ease;
+}
+
+.opinion-fax__switch.is-on .opinion-fax__switch-knob {
+  transform: translateX(0.92rem);
+}
+
+.opinion-fax__line {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #8a8276;
+}
+
+.opinion-fax__line i {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: #9a9184;
+  display: inline-block;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.opinion-fax__line.is-off i {
+  background: #6e675c;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+.opinion-fax__line.is-sending i {
+  background: #e23b2e;
+  box-shadow: 0 0 8px rgba(226, 59, 46, 0.85);
+  animation: opinion-fax-line-blink 0.42s steps(1, end) infinite;
+}
+
+.opinion-fax__line.is-ok i {
+  background: #2faf5c;
+  box-shadow: 0 0 9px rgba(47, 175, 92, 0.85);
+}
+
+@keyframes opinion-fax-line-blink {
+  0%,
+  49% {
+    opacity: 1;
+    background: #e23b2e;
+    box-shadow: 0 0 10px rgba(226, 59, 46, 0.9);
+  }
+  50%,
+  100% {
+    opacity: 0.25;
+    background: #7a2a24;
+    box-shadow: none;
+  }
+}
+
+.opinion-fax__actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.opinion-fax__btn-clear,
+.opinion-fax__btn-tx {
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.65rem 1.1rem;
+  cursor: pointer;
+  transition: transform 0.12s ease, filter 0.12s ease, opacity 0.12s ease;
+}
+
+.opinion-fax__btn-clear {
+  background: #f7f1e6;
+  border: 1px solid #cfc6b8;
+  color: #4a433a;
+}
+
+.opinion-fax__btn-tx {
+  background: var(--fax-red);
+  border: 1px solid #a52f26;
+  color: #fff;
+  min-width: 8.5rem;
+  box-shadow: 0 2px 0 #8e261e;
+}
+
+.opinion-fax__btn-clear:hover:not(:disabled),
+.opinion-fax__btn-tx:hover:not(:disabled) {
+  filter: brightness(1.04);
+  transform: translateY(-1px);
+}
+
+.opinion-fax__btn-clear:disabled,
+.opinion-fax__btn-tx:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+@media (max-width: 520px) {
+  .opinion-fax__modes {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .opinion-fax__doc-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .opinion-fax__led {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .opinion-fax__controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .opinion-fax__actions {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .opinion-fax__btn-clear,
+  .opinion-fax__btn-tx {
+    flex: 1;
+  }
+
+  .opinion-fax__bay {
+    height: 480px;
+    min-height: 480px;
+  }
+}
+
+.opinion-fax__outbox {
+  margin-top: 0.85rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  padding-top: 0.55rem;
+}
+
+.opinion-fax__outbox-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: none;
+  background: transparent;
+  padding: 0.4rem 0.15rem;
+  cursor: pointer;
+  color: #5c554c;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.opinion-fax__outbox-count {
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.08);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.68rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.opinion-fax__outbox-chevron {
+  margin-left: auto;
+  transition: transform 0.2s ease;
+  opacity: 0.65;
+}
+
+.opinion-fax__outbox-toggle.is-open .opinion-fax__outbox-chevron {
+  transform: rotate(180deg);
+}
+
+.opinion-fax__outbox-list {
+  max-height: 240px;
+  overflow: auto;
+  margin-top: 0.35rem;
+  padding: 0.15rem 0.1rem 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  scrollbar-width: thin;
+  scrollbar-color: #b7aa96 #efe6d6;
+}
+
+.opinion-fax__outbox-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.opinion-fax__outbox-list::-webkit-scrollbar-track {
+  background: #efe6d6;
+}
+
+.opinion-fax__outbox-list::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #cfc3ae 0%, #a89880 100%);
+  border-radius: 2px;
+  border: 1px solid #9a8a72;
+}
+
+.opinion-fax__outbox-empty {
+  margin: 0;
+  padding: 0.65rem 0.35rem;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--fax-muted);
+}
+
+.opinion-fax__slip {
+  background: var(--fax-paper);
+  border-radius: 6px;
+  padding: 0.55rem 0.65rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.opinion-fax__slip-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.55rem;
+  font-size: 0.65rem;
+  color: var(--fax-muted);
+  margin-bottom: 0.3rem;
+}
+
+.opinion-fax__slip-meta time {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.opinion-fax__slip-body {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--fax-ink);
+  white-space: pre-wrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.opinion-fax__slip-note {
+  margin: 0.4rem 0 0;
+  padding: 0.35rem 0.45rem;
+  font-size: 0.8rem;
+  color: #7a4a1a;
+  background: rgba(196, 140, 60, 0.12);
+  border-radius: 4px;
+}
+
+/* ??????? */
+.opinion-fax-admin__tray {
+  margin-top: 0.35rem;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  max-height: none;
+  overflow: auto;
+  padding: 0.35rem 0.45rem 0.5rem 0.25rem;
+  scrollbar-width: thin;
+  scrollbar-color: #b7aa96 #efe6d6;
+}
+
+.opinion-fax-admin__tray::-webkit-scrollbar {
+  width: 10px;
+}
+
+.opinion-fax-admin__tray::-webkit-scrollbar-track {
+  background: #efe6d6;
+  border-radius: 3px;
+  border: 1px solid #e0d6c4;
+}
+
+.opinion-fax-admin__tray::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #cfc3ae 0%, #a89880 100%);
+  border-radius: 3px;
+  border: 1px solid #9a8a72;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.opinion-fax-admin__tray::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #c2b49c 0%, #96866e 100%);
+}
+
+.opinion-fax-admin__sheet {
+  background: var(--fax-paper);
+  border-radius: 8px;
+  padding: 1rem 1.1rem 0.95rem;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.opinion-fax-admin__sheet.is-pending {
+  box-shadow:
+    0 6px 16px rgba(0, 0, 0, 0.1),
+    inset 3px 0 0 var(--fax-red);
+}
+
+.opinion-fax-admin__sheet-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+
+.opinion-fax-admin__from {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.opinion-fax-admin__body {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  color: var(--fax-ink);
+  padding: 0.35rem 0 0.75rem;
+  border-bottom: 1px dashed var(--fax-line);
+}
+
+.opinion-fax-admin__reply {
+  margin-top: 0.75rem;
+}
+
+.opinion-fax-admin__reply label {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--fax-muted);
+  margin-bottom: 0.35rem;
+  letter-spacing: 0.04em;
+}
+
+.opinion-fax-admin__reply-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.opinion-fax-admin__reply-row input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #cfc6b8;
+  border-radius: 8px;
+  background: #fff;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.9rem;
+  color: var(--fax-ink);
+  outline: none;
+}
+
+.opinion-fax-admin__reply-row input:focus {
+  border-color: #a89a86;
+  box-shadow: 0 0 0 2px rgba(168, 154, 134, 0.25);
+}
+
+.opinion-fax-admin__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.75rem;
+  align-items: center;
+}
+
+.opinion-fax-admin__actions .opinion-fax__btn-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.8rem;
+}
+
+.opinion-fax-admin__btn-del {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: none;
+  background: transparent;
+  color: #a33a32;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.45rem 0.5rem;
+  border-radius: 8px;
+}
+
+.opinion-fax-admin__btn-del:hover:not(:disabled) {
+  background: rgba(196, 58, 47, 0.1);
+}
+
+.opinion-fax-admin__btn-del:disabled,
+.opinion-fax-admin__actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 720px) {
+  .opinion-fax__modes--filter {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .opinion-fax-admin__sheet-head {
+    flex-direction: column;
+  }
+
+  .opinion-fax-admin__reply-row {
+    flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .opinion-fax__sheet--form.is-feeding,
+  .opinion-fax__sheet--form.is-retracting,
+  .opinion-fax__sheet--receipt.is-feeding,
+  .opinion-fax__sheet--receipt.is-falling {
+    animation-duration: 0.01ms !important;
+  }
 }

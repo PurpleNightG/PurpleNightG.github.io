@@ -1,17 +1,23 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Mailbox, Trash2, Eye, Archive, RotateCcw } from 'lucide-react'
+import { Trash2, Eye, Archive, RotateCcw } from 'lucide-react'
 import { opinionBoxAPI } from '../../utils/api'
 import { toast } from '../../utils/toast'
 import { formatDateTime } from '../../utils/dateFormat'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { useBadges } from '../../contexts/BadgeContext'
 import MemberNameCell from '../../components/MemberNameCell'
-import PageSkeleton from '../../components/Skeleton'
 
 const STATUS_LABEL: Record<string, string> = {
   pending: '待查阅',
   read: '已读',
   archived: '已归档',
+}
+
+const CATEGORY_STAMP: Record<string, { label: string; tone: string }> = {
+  问题反馈: { label: '错误报告', tone: 'bug' },
+  建议: { label: '功能建议', tone: 'suggest' },
+  表扬: { label: '表扬感谢', tone: 'praise' },
+  其他: { label: '其他事项', tone: 'other' },
 }
 
 interface OpinionItem {
@@ -27,6 +33,10 @@ interface OpinionItem {
   member_name: string | null
   member_qq: string | null
   avatar?: string | null
+}
+
+function padSerial(n: number) {
+  return String(n).padStart(4, '0')
 }
 
 export default function OpinionBoxManagement() {
@@ -110,137 +120,164 @@ export default function OpinionBoxManagement() {
     }
   }
 
+  const filters = [
+    ['all', '全部'],
+    ['pending', '待查阅'],
+    ['read', '已读'],
+    ['archived', '已归档'],
+  ] as const
+
   return (
-    <div className="p-6 space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Mailbox className="text-purple-400" size={26} />
-            意见箱
-          </h1>
-          <p className="text-sm text-gray-400 mt-1">
-            学员投递的建议与反馈。匿名条目不会展示身份信息。
-            {filter === 'all' || filter === 'pending' ? (
-              <span className="text-amber-300/90"> 待查阅 {pendingCount} 条</span>
-            ) : null}
-          </p>
-        </div>
-        <div className="flex flex-wrap student-glass-chip student-glass-seg">
-          {([
-            ['all', '全部'],
-            ['pending', '待查阅'],
-            ['read', '已读'],
-            ['archived', '已归档'],
-          ] as const).map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setFilter(key)}
-              className={`px-3 py-1.5 text-sm transition-colors ${
-                filter === key ? 'bg-purple-600 text-white' : 'text-gray-300 hover:bg-white/5'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
+    <div className="opinion-fax-page opinion-fax-page--admin">
+      <div className="opinion-fax opinion-fax--wide" aria-label="意见收件台">
+        <header className="opinion-fax__titlebar">
+          <span className="opinion-fax__brand">意见箱 · 收件专线 INBOX LINE</span>
+          <span className="opinion-fax__model">FX-02</span>
+        </header>
 
-      <div className="student-glass-panel student-glass-panel--static overflow-hidden">
-        {loading ? (
-        <PageSkeleton variant="table" padded={false} />
-      ) : items.length === 0 ? (
-          <p className="text-center text-gray-500 py-14 text-sm">暂无意见</p>
-        ) : (
-          <div className="divide-y divide-white/5">
-            {items.map((item) => (
-              <div key={item.id} className="p-4 sm:p-5 space-y-3">
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-200">{item.category}</span>
-                  {item.is_anonymous ? (
-                    <span className="px-2 py-0.5 rounded bg-white/5 text-gray-300">
-                      {item.display_label}
-                    </span>
-                  ) : (
-                    <span className="px-2 py-0.5 rounded bg-sky-500/15 text-sky-200 inline-flex items-center gap-1">
-                      <MemberNameCell name={item.member_name || item.display_label} avatar={item.avatar} qq={item.member_qq} />
-                      {item.member_qq ? ` · QQ ${item.member_qq}` : ''}
-                    </span>
-                  )}
-                  <span className="px-2 py-0.5 rounded bg-white/5 text-gray-400">
-                    {STATUS_LABEL[item.status] || item.status}
-                  </span>
-                  <span className="text-gray-500 ml-auto">{formatDateTime(item.created_at)}</span>
-                </div>
-
-                <p className="text-sm text-gray-100 whitespace-pre-wrap leading-relaxed">{item.content}</p>
-
-                <div className="flex flex-col sm:flex-row gap-2 sm:items-end">
-                  <div className="flex-1">
-                    <label className="block text-[11px] text-gray-500 mb-1">管理备注（学员本人可见）</label>
-                    <input
-                      value={noteDraft[item.id] ?? ''}
-                      onChange={(e) =>
-                        setNoteDraft((prev) => ({ ...prev, [item.id]: e.target.value }))
-                      }
-                      className="student-glass-field text-sm py-1.5"
-                      placeholder="可选：给学员的简短回复"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    disabled={busyId === item.id}
-                    onClick={() => saveNote(item.id)}
-                    className="px-3 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-sm text-white disabled:opacity-50"
-                  >
-                    保存备注
-                  </button>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  {item.status !== 'read' && (
-                    <button
-                      type="button"
-                      disabled={busyId === item.id}
-                      onClick={() => setStatus(item.id, 'read')}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs bg-sky-600/80 text-white disabled:opacity-50"
-                    >
-                      <Eye size={12} /> 标为已读
-                    </button>
-                  )}
-                  {item.status !== 'pending' && (
-                    <button
-                      type="button"
-                      disabled={busyId === item.id}
-                      onClick={() => setStatus(item.id, 'pending')}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs bg-amber-600/70 text-white disabled:opacity-50"
-                    >
-                      <RotateCcw size={12} /> 标为待查阅
-                    </button>
-                  )}
-                  {item.status !== 'archived' && (
-                    <button
-                      type="button"
-                      disabled={busyId === item.id}
-                      onClick={() => setStatus(item.id, 'archived')}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs bg-gray-600 text-white disabled:opacity-50"
-                    >
-                      <Archive size={12} /> 归档
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    disabled={busyId === item.id}
-                    onClick={() => setConfirmDelete(item)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs text-red-300 hover:bg-red-500/10 disabled:opacity-50 ml-auto"
-                  >
-                    <Trash2 size={12} /> 删除
-                  </button>
-                </div>
-              </div>
-            ))}
+        <div className="opinion-fax__panel">
+          <div className="opinion-fax__led">
+            <span className="opinion-fax__led-msg">
+              {loading
+                ? '检索中 · SCANNING'
+                : filter === 'pending' || filter === 'all'
+                  ? `待命收件 · PENDING ${pendingCount}`
+                  : `已载入 ${items.length} 份 · LOADED`}
+            </span>
+            <span className="opinion-fax__led-chars">{items.length} 份传真</span>
           </div>
-        )}
+
+          <div className="opinion-fax__modes opinion-fax__modes--filter" role="group" aria-label="筛选">
+            {filters.map(([key, label]) => {
+              const on = filter === key
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setFilter(key)}
+                  className={`opinion-fax__mode${on ? ' is-on' : ''}`}
+                >
+                  {on && <span className="opinion-fax__mode-dot" aria-hidden />}
+                  <span className="opinion-fax__mode-en">{key.toUpperCase()}</span>
+                  <span className="opinion-fax__mode-zh">{label}</span>
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="opinion-fax__feed-label">收件托盘 · INCOMING</div>
+          <div className="opinion-fax__slot" aria-hidden />
+
+          <div className="opinion-fax-admin__tray">
+            {loading ? (
+              <p className="opinion-fax__outbox-empty">正在拉取传真…</p>
+            ) : items.length === 0 ? (
+              <p className="opinion-fax__outbox-empty">托盘空着，暂无意见。</p>
+            ) : (
+              items.map((item) => (
+                <article
+                  key={item.id}
+                  className={`opinion-fax-admin__sheet${item.status === 'pending' ? ' is-pending' : ''}`}
+                >
+                  <div className="opinion-fax-admin__sheet-head">
+                    <div>
+                      <div className="opinion-fax__doc-title">紫夜 · 来信传真 NO.{padSerial(item.id)}</div>
+                      <div className="opinion-fax__doc-meta">
+                        <span>分类：{item.category}</span>
+                        <span>时间：{formatDateTime(item.created_at)}</span>
+                        <span className="opinion-fax-admin__from">
+                          发件：
+                          {item.is_anonymous ? (
+                            item.display_label
+                          ) : (
+                            <MemberNameCell
+                              name={item.member_name || item.display_label}
+                              avatar={item.avatar}
+                              qq={item.member_qq}
+                            />
+                          )}
+                          {!item.is_anonymous && item.member_qq ? ` · QQ ${item.member_qq}` : ''}
+                        </span>
+                        <span>状态：{STATUS_LABEL[item.status] || item.status}</span>
+                      </div>
+                    </div>
+                    <div
+                      className={`opinion-fax__stamp opinion-fax__stamp--${
+                        CATEGORY_STAMP[item.category]?.tone || 'other'
+                      }`}
+                    >
+                      {CATEGORY_STAMP[item.category]?.label || item.category}
+                    </div>
+                  </div>
+
+                  <p className="opinion-fax-admin__body">{item.content}</p>
+
+                  <div className="opinion-fax-admin__reply">
+                    <label>管理回复（学员可见）</label>
+                    <div className="opinion-fax-admin__reply-row">
+                      <input
+                        value={noteDraft[item.id] ?? ''}
+                        onChange={(e) =>
+                          setNoteDraft((prev) => ({ ...prev, [item.id]: e.target.value }))
+                        }
+                        placeholder="可选：给学员的简短回复"
+                      />
+                      <button
+                        type="button"
+                        disabled={busyId === item.id}
+                        onClick={() => saveNote(item.id)}
+                        className="opinion-fax__btn-clear"
+                      >
+                        保存
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="opinion-fax-admin__actions">
+                    {item.status !== 'read' && (
+                      <button
+                        type="button"
+                        disabled={busyId === item.id}
+                        onClick={() => setStatus(item.id, 'read')}
+                        className="opinion-fax__btn-clear"
+                      >
+                        <Eye size={14} /> 标为已读
+                      </button>
+                    )}
+                    {item.status !== 'pending' && (
+                      <button
+                        type="button"
+                        disabled={busyId === item.id}
+                        onClick={() => setStatus(item.id, 'pending')}
+                        className="opinion-fax__btn-clear"
+                      >
+                        <RotateCcw size={14} /> 待查阅
+                      </button>
+                    )}
+                    {item.status !== 'archived' && (
+                      <button
+                        type="button"
+                        disabled={busyId === item.id}
+                        onClick={() => setStatus(item.id, 'archived')}
+                        className="opinion-fax__btn-clear"
+                      >
+                        <Archive size={14} /> 归档
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={busyId === item.id}
+                      onClick={() => setConfirmDelete(item)}
+                      className="opinion-fax-admin__btn-del"
+                    >
+                      <Trash2 size={14} /> 删除
+                    </button>
+                  </div>
+                </article>
+              ))
+            )}
+          </div>
+        </div>
       </div>
 
       {confirmDelete && (

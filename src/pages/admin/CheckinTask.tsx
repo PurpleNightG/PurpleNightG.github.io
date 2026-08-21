@@ -8,46 +8,56 @@ import DateInput from '../../components/DateInput'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import MemberNameCell from '../../components/MemberNameCell'
 
-/** 会话内去重；持久化由服务端 DB 单条覆盖保存 */
-let activityNarrativeCache: {
-  text: string
-  updatedAt: string | null
-  inflight: Promise<{ text: string; updatedAt: string | null; fromCache: boolean }> | null
-} = {
-  text: '',
-  updatedAt: null,
-  inflight: null,
-}
+/** 按查看日期缓存；持久化由服务端按日保存 */
+const activityNarrativeByDate = new Map<
+  string,
+  {
+    text: string
+    updatedAt: string | null
+    inflight: Promise<{ text: string; updatedAt: string | null; fromCache: boolean }> | null
+  }
+>()
 
-async function fetchActivityNarrative(force = false): Promise<{
+async function fetchActivityNarrative(
+  date: string,
+  force = false
+): Promise<{
   text: string
   updatedAt: string | null
   fromCache: boolean
 }> {
+  const d = String(date || '').slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+    throw new Error('请先选择查看日期')
+  }
+  let entry = activityNarrativeByDate.get(d)
+  if (!entry) {
+    entry = { text: '', updatedAt: null, inflight: null }
+    activityNarrativeByDate.set(d, entry)
+  }
   if (force) {
-    activityNarrativeCache.text = ''
-    activityNarrativeCache.updatedAt = null
-    activityNarrativeCache.inflight = null
+    entry.text = ''
+    entry.updatedAt = null
+    entry.inflight = null
   }
-  // 始终打服务端，由指纹判断是否过期；仅用 inflight 防 StrictMode 双请求
-  if (!force && activityNarrativeCache.inflight) {
-    return activityNarrativeCache.inflight
-  }
+  if (!force && entry.inflight) return entry.inflight
+
   const inflight = adminAiAPI
-    .activityReport(14, force)
+    .activityReport(d, force)
     .then((res) => {
       const text =
         res.data?.narrative || JSON.stringify(res.data?.summary || {}, null, 2)
       const updatedAt = res.data?.updated_at ? String(res.data.updated_at) : null
       const fromCache = !!res.data?.from_cache
-      activityNarrativeCache = { text, updatedAt, inflight: null }
+      activityNarrativeByDate.set(d, { text, updatedAt, inflight: null })
       return { text, updatedAt, fromCache }
     })
     .catch((err) => {
-      activityNarrativeCache.inflight = null
+      const cur = activityNarrativeByDate.get(d)
+      if (cur) cur.inflight = null
       throw err
     })
-  activityNarrativeCache.inflight = inflight
+  entry.inflight = inflight
   return inflight
 }
 
@@ -98,17 +108,18 @@ export default function CheckinTaskPage({ mode }: Props) {
   const [summaryUpdatedAt, setSummaryUpdatedAt] = useState<string | null>(null)
   const summaryReqId = useRef(0)
 
-  const loadSummary = useCallback(async (force = false) => {
+  const loadSummary = useCallback(async (date: string, force = false) => {
     if (!isAdmin) return
+    const d = String(date || '').slice(0, 10)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return
     const reqId = ++summaryReqId.current
     setSummaryBusy(true)
     if (force) setSummary('')
     try {
-      const { text, updatedAt, fromCache } = await fetchActivityNarrative(force)
+      const { text, updatedAt, fromCache } = await fetchActivityNarrative(d, force)
       if (reqId !== summaryReqId.current) return
       setSummaryUpdatedAt(updatedAt)
       const full = String(text || '')
-      // 读缓存：直接展示；刷新生成：逐字弹出
       if (fromCache && !force) {
         setSummary(full)
         return
@@ -130,9 +141,11 @@ export default function CheckinTaskPage({ mode }: Props) {
   }, [isAdmin])
 
   useEffect(() => {
-    if (!isAdmin) return
-    void loadSummary(false)
-  }, [isAdmin, loadSummary])
+    if (!isAdmin || !viewDate) return
+    setSummary('')
+    setSummaryUpdatedAt(null)
+    void loadSummary(viewDate, false)
+  }, [isAdmin, viewDate, loadSummary])
 
   const loadToday = useCallback(async () => {
     setLoading(true)
@@ -190,6 +203,10 @@ export default function CheckinTaskPage({ mode }: Props) {
 
   const onRegenerate = async () => {
     if (!isAdmin) return
+    if (!today || viewDate !== today) {
+      toast.error('只能更换今日签到码')
+      return
+    }
     setBusy(true)
     try {
       const res = await checkinAPI.adminRegenerate()
@@ -205,6 +222,10 @@ export default function CheckinTaskPage({ mode }: Props) {
 
   const onResume = async () => {
     if (!isAdmin) return
+    if (!today || viewDate !== today) {
+      toast.error('只能重新开训今日任务')
+      return
+    }
     setBusy(true)
     setResumeConfirmOpen(false)
     try {
@@ -221,6 +242,10 @@ export default function CheckinTaskPage({ mode }: Props) {
 
   const onStop = async () => {
     if (!isAdmin) return
+    if (!today || viewDate !== today) {
+      toast.error('只能停止今日签到')
+      return
+    }
     setBusy(true)
     setStopConfirmOpen(false)
     try {
@@ -259,8 +284,22 @@ export default function CheckinTaskPage({ mode }: Props) {
     )
   }
 
-  const dayDate = String(day?.checkin_date || today || '').slice(0, 10)
-  const isViewingToday = viewDate === dayDate || viewDate === today
+  const isViewingToday = !!today && viewDate === today
+  const dayIsPast = !!today && !!viewDate && viewDate < today
+  const checkedCount = Number(day?.checked_count ?? records.length) || 0
+  const statusBadge = !day
+    ? null
+    : isViewingToday
+      ? day.status === 'active'
+        ? { label: '进行中', className: 'bg-emerald-600/20 text-emerald-300' }
+        : { label: '已停止（未开训）', className: 'bg-gray-600/30 text-gray-300' }
+      : dayIsPast
+        ? checkedCount > 0 || day.status === 'active'
+          ? { label: '已结束', className: 'bg-slate-600/30 text-slate-200' }
+          : { label: '未开训', className: 'bg-gray-600/30 text-gray-300' }
+        : day.status === 'active'
+          ? { label: '进行中', className: 'bg-emerald-600/20 text-emerald-300' }
+          : { label: '已停止（未开训）', className: 'bg-gray-600/30 text-gray-300' }
 
   return (
     <div className="p-6">
@@ -294,24 +333,24 @@ export default function CheckinTaskPage({ mode }: Props) {
               <div className="flex items-center gap-2 min-w-0">
                 <Sparkles size={16} className="text-sky-300 shrink-0" />
                 <div className="min-w-0">
-                  <div className="ai-aurora-title text-sm font-semibold tracking-wide">AI 活跃度总结</div>
+                  <div className="ai-aurora-title text-sm font-semibold tracking-wide">AI 签到总结</div>
                   <div className="text-[11px] text-gray-500 mt-0.5">
                     {summaryUpdatedAt
-                      ? `近 14 日签到 · 已保存 ${new Date(summaryUpdatedAt).toLocaleString('zh-CN', {
+                      ? `${viewDate || '当日'} · 已保存 ${new Date(summaryUpdatedAt).toLocaleString('zh-CN', {
                           month: 'numeric',
                           day: 'numeric',
                           hour: '2-digit',
                           minute: '2-digit',
                         })}`
-                      : '近 14 日签到参与 · 自动点评'}
+                      : `${viewDate || '当日'} 签到 · 按日自动点评`}
                   </div>
                 </div>
               </div>
               <button
                 type="button"
-                disabled={summaryBusy}
-                onClick={() => void loadSummary(true)}
-                title="重新生成"
+                disabled={summaryBusy || !viewDate}
+                onClick={() => void loadSummary(viewDate, true)}
+                title="重新生成本日总结"
                 className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-md text-gray-400 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-50 shrink-0"
               >
                 <RefreshCw size={12} className={summaryBusy ? 'animate-spin' : ''} />
@@ -372,18 +411,12 @@ export default function CheckinTaskPage({ mode }: Props) {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2 text-sm">
-                  <span
-                    className={`px-2 py-0.5 rounded ${
-                      day.status === 'active'
-                        ? 'bg-emerald-600/20 text-emerald-300'
-                        : 'bg-gray-600/30 text-gray-300'
-                    }`}
-                  >
-                    {day.status === 'active' ? '进行中' : '已停止（未开训）'}
+                  <span className={`px-2 py-0.5 rounded ${statusBadge.className}`}>
+                    {statusBadge.label}
                   </span>
                   <span className="px-2 py-0.5 rounded bg-purple-600/20 text-purple-200 inline-flex items-center gap-1">
                     <Users size={14} />
-                    已签 {day.checked_count ?? records.length} 人
+                    已签 {checkedCount} 人
                   </span>
                 </div>
                 {isAdmin && isViewingToday && (
@@ -438,7 +471,11 @@ export default function CheckinTaskPage({ mode }: Props) {
                     >
                       <span>{String(h.checkin_date).slice(0, 10)}</span>
                       <span className="text-gray-500">
-                        {h.status === 'active' ? '开' : '停'} · {h.checked_count || 0}人
+                        {(() => {
+                          const d = String(h.checkin_date).slice(0, 10)
+                          if (today && d < today) return `结 · ${h.checked_count || 0}人`
+                          return `${h.status === 'active' ? '开' : '停'} · ${h.checked_count || 0}人`
+                        })()}
                       </span>
                     </button>
                   ))}

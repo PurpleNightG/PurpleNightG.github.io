@@ -142,7 +142,15 @@ router.get('/my', requireStudent, async (req, res) => {
        LIMIT 100`,
       [memberId]
     )
-    res.json({ success: true, data: (rows || []).map(mapStudentRow) })
+    const [nextRows] = await pool.query(
+      `SELECT COALESCE(MAX(id), 0) + 1 AS next_serial FROM opinion_box`
+    )
+    const nextSerial = Number(nextRows?.[0]?.next_serial || 1)
+    res.json({
+      success: true,
+      data: (rows || []).map(mapStudentRow),
+      next_serial: nextSerial,
+    })
   } catch (error) {
     console.error('[opinion-box] my', error)
     res.status(500).json({ success: false, message: '加载失败' })

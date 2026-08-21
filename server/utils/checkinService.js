@@ -126,11 +126,24 @@ function randomCode() {
 
 export async function getDayByDate(date) {
   const d = toMySQLDate(date) || shanghaiToday()
+  await expirePastActiveDays()
   const [[row]] = await pool.query(
     `SELECT * FROM training_checkin_days WHERE checkin_date = ? LIMIT 1`,
     [d]
   )
   return row || null
+}
+
+/** 跨日自动结束此前仍为 active 的任务（不标「未开训」，仅收口状态） */
+async function expirePastActiveDays() {
+  const today = shanghaiToday()
+  await pool.query(
+    `UPDATE training_checkin_days
+     SET status = 'stopped',
+         stopped_at = COALESCE(stopped_at, NOW())
+     WHERE checkin_date < ? AND status = 'active'`,
+    [today]
+  )
 }
 
 /** 获取或创建当日签到任务（仅管理端创建时传 actor） */
@@ -142,6 +155,8 @@ export async function getOrCreateTodayDay(actor = null) {
   if (!actor) return null
   const code = randomCode()
   try {
+    // 创建今日任务前再收口一次历史 active
+    await expirePastActiveDays()
     const [result] = await pool.query(
       `INSERT INTO training_checkin_days
         (checkin_date, code, status, created_by_admin_id, created_by_name)
@@ -220,6 +235,7 @@ export async function listRecords(dayId) {
 }
 
 export async function listRecentDays(limit = 30) {
+  await expirePastActiveDays()
   const [rows] = await pool.query(
     `SELECT d.*,
        (SELECT COUNT(*) FROM training_checkin_records r WHERE r.day_id = d.id) AS checked_count
@@ -581,6 +597,10 @@ export async function buildActivitySummary({ days = 14 } = {}) {
 
   return {
     today,
+    /** 明确字段，避免模型把窗口内其它日误写成「今日」 */
+    today_date: today,
+    today_checked_count: todayChecked,
+    today_task_status: todayDay?.status || null,
     window_days: n,
     /** 签到维度（活跃度主数据） */
     checkin_unique_members: unique,
@@ -590,13 +610,18 @@ export async function buildActivitySummary({ days = 14 } = {}) {
     checkin_self: Number(selfCheckins?.c) || 0,
     checkin_proxy: Number(proxyCheckins?.c) || 0,
     checkin_avg_per_active_day: avgPerActiveDay,
-    checkin_by_day: topRecent,
+    checkin_by_day: (topRecent || []).map((r) => ({
+      date: toMySQLDate(r.checkin_date),
+      count: Number(r.c) || 0,
+      is_today: toMySQLDate(r.checkin_date) === today,
+    })),
     today_checkin: todayDay
       ? {
+          date: today,
           status: todayDay.status,
           checked_count: todayChecked,
         }
-      : null,
+      : { date: today, status: null, checked_count: 0 },
     /** 可疑代签线索（不含具体 IP；必须用 member_name 点名） */
     ip_change_suspects: ipChangeSuspects,
     ip_change_suspect_count: ipChangeSuspects.length,
@@ -604,5 +629,124 @@ export async function buildActivitySummary({ days = 14 } = {}) {
     /** 系统已记录的代签（管理/助教） */
     proxy_checkins: proxyRecords,
     proxy_member_names: proxyMemberNames,
+  }
+}
+
+/**
+ * 单日签到总结事实（按查看日期；每天一份）
+ */
+export async function buildDayActivitySummary(date) {
+  await ensureCheckinTables()
+  const focus = toMySQLDate(date) || shanghaiToday()
+  const calendarToday = shanghaiToday()
+  const day = await getDayByDate(focus)
+  const checkedCount = day ? await countRecords(day.id) : 0
+
+  const [[selfRow]] = await pool.query(
+    `SELECT COUNT(*) AS c FROM training_checkin_records
+     WHERE checkin_date = ? AND source = 'self'`,
+    [focus]
+  )
+  const [[proxyRow]] = await pool.query(
+    `SELECT COUNT(*) AS c FROM training_checkin_records
+     WHERE checkin_date = ? AND source <> 'self'`,
+    [focus]
+  )
+
+  let proxyRecords = []
+  try {
+    const [rows] = await pool.query(
+      `SELECT member_name, source, proxy_name
+       FROM training_checkin_records
+       WHERE checkin_date = ? AND source <> 'self'
+       ORDER BY id ASC
+       LIMIT 40`,
+      [focus]
+    )
+    proxyRecords = (rows || []).map((r) => ({
+      member_name: r.member_name,
+      source: r.source,
+      proxy_name: r.proxy_name || null,
+    }))
+  } catch {
+    proxyRecords = []
+  }
+
+  let ipChangeSuspects = []
+  try {
+    const [ipRows] = await pool.query(
+      `SELECT member_id, member_name, checkin_date, client_ip
+       FROM training_checkin_records
+       WHERE source = 'self'
+         AND checkin_date >= DATE_SUB(?, INTERVAL 7 DAY)
+         AND checkin_date <= ?
+         AND client_ip IS NOT NULL AND client_ip != ''
+       ORDER BY member_id ASC, checkin_date ASC, id ASC`,
+      [focus, focus]
+    )
+    const byMember = new Map()
+    for (const row of ipRows || []) {
+      const mid = Number(row.member_id)
+      if (!byMember.has(mid)) byMember.set(mid, [])
+      byMember.get(mid).push(row)
+    }
+    for (const [, rows] of byMember) {
+      for (let i = 1; i < rows.length; i++) {
+        const prev = rows[i - 1]
+        const cur = rows[i]
+        const d1 = toMySQLDate(cur.checkin_date)
+        if (d1 !== focus) continue
+        const a = normalizeIp(prev.client_ip)
+        const b = normalizeIp(cur.client_ip)
+        if (!a || !b || a === b) continue
+        if (isLoopbackIp(a) && isLoopbackIp(b)) continue
+        ipChangeSuspects.push({
+          member_name: cur.member_name || prev.member_name,
+          from_date: toMySQLDate(prev.checkin_date),
+          to_date: d1,
+          note: '相对前一次自助签到，网络环境不一致',
+        })
+      }
+    }
+    ipChangeSuspects = ipChangeSuspects.slice(0, 15)
+  } catch {
+    ipChangeSuspects = []
+  }
+
+  // 前一日人数，便于对比
+  let prevDayCount = null
+  try {
+    const [[prev]] = await pool.query(
+      `SELECT COUNT(*) AS c FROM training_checkin_records
+       WHERE checkin_date = DATE_SUB(?, INTERVAL 1 DAY)`,
+      [focus]
+    )
+    prevDayCount = Number(prev?.c) || 0
+  } catch {
+    prevDayCount = null
+  }
+
+  const suspectNames = [
+    ...new Set(ipChangeSuspects.map((s) => s.member_name).filter(Boolean)),
+  ]
+  const proxyMemberNames = [
+    ...new Set(proxyRecords.map((s) => s.member_name).filter(Boolean)),
+  ]
+
+  return {
+    focus_date: focus,
+    is_calendar_today: focus === calendarToday,
+    calendar_today: calendarToday,
+    has_task: !!day,
+    task_status: day?.status || null,
+    checked_count: checkedCount,
+    self_count: Number(selfRow?.c) || 0,
+    proxy_count: Number(proxyRow?.c) || 0,
+    prev_day_count: prevDayCount,
+    proxy_checkins: proxyRecords,
+    proxy_member_names: proxyMemberNames,
+    ip_change_suspects: ipChangeSuspects,
+    ip_change_suspect_count: ipChangeSuspects.length,
+    ip_change_suspect_names: suspectNames,
   }
 }

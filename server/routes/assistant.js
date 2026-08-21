@@ -17,7 +17,7 @@ import {
   DEFAULT_ASSISTANT_PERMISSIONS,
   mergePermissions,
 } from '../utils/assistantConstants.js'
-import { clearAssistantRoleData, cleanupOrphanedAssistantData } from '../utils/clearAssistantData.js'
+import { clearAssistantRoleData, cleanupOrphanedAssistantData, cleanupAssignmentsForRetiredStudents, releaseAssignmentsForStudent } from '../utils/clearAssistantData.js'
 import { requireAdmin, assertIdentityValid } from '../utils/authGate.js'
 import { assertSessionActive, touchSession } from '../utils/loginSessions.js'
 
@@ -81,8 +81,10 @@ function shanghaiToday() {
 /** 长期归属 */
 async function isPermanentStudent(assistantId, studentId) {
   const [rows] = await pool.query(
-    `SELECT id FROM assistant_student_assignments
-     WHERE assistant_member_id = ? AND student_member_id = ? AND status = '已通过'`,
+    `SELECT a.id FROM assistant_student_assignments a
+     INNER JOIN members m ON m.id = a.student_member_id
+     WHERE a.assistant_member_id = ? AND a.student_member_id = ? AND a.status = '已通过'
+       AND m.status != '已退队'`,
     [assistantId, studentId]
   )
   return rows.length > 0
@@ -92,8 +94,10 @@ async function isPermanentStudent(assistantId, studentId) {
 async function isDailyStudent(assistantId, studentId) {
   const today = shanghaiToday()
   const [rows] = await pool.query(
-    `SELECT id FROM assistant_daily_assignments
-     WHERE assistant_member_id = ? AND student_member_id = ? AND assign_date = ?`,
+    `SELECT d.id FROM assistant_daily_assignments d
+     INNER JOIN members m ON m.id = d.student_member_id
+     WHERE d.assistant_member_id = ? AND d.student_member_id = ? AND d.assign_date = ?
+       AND m.status != '已退队'`,
     [assistantId, studentId, today]
   )
   return rows.length > 0
@@ -108,13 +112,15 @@ async function isAssignedStudent(assistantId, studentId) {
 async function getAssignedStudentIds(assistantId) {
   const today = shanghaiToday()
   const [perm] = await pool.query(
-    `SELECT student_member_id AS id FROM assistant_student_assignments
-     WHERE assistant_member_id = ? AND status = '已通过'`,
+    `SELECT a.student_member_id AS id FROM assistant_student_assignments a
+     INNER JOIN members m ON m.id = a.student_member_id
+     WHERE a.assistant_member_id = ? AND a.status = '已通过' AND m.status != '已退队'`,
     [assistantId]
   )
   const [daily] = await pool.query(
-    `SELECT student_member_id AS id FROM assistant_daily_assignments
-     WHERE assistant_member_id = ? AND assign_date = ?`,
+    `SELECT d.student_member_id AS id FROM assistant_daily_assignments d
+     INNER JOIN members m ON m.id = d.student_member_id
+     WHERE d.assistant_member_id = ? AND d.assign_date = ? AND m.status != '已退队'`,
     [assistantId, today]
   )
   return [...new Set([...perm, ...daily].map((r) => Number(r.id)))]
@@ -927,6 +933,9 @@ router.post('/quit', requireAssistant, requirePerm('propose_quit'), async (req, 
     )
 
     await pool.query(`UPDATE members SET status = '已退队' WHERE id = ?`, [memberId])
+    await releaseAssignmentsForStudent(pool, memberId).catch((e) => {
+      console.warn('退队后解除助教归属失败:', e.message)
+    })
 
     res.json({ success: true, message: '退队申请已提交，等待管理审批', data: { id: result.insertId } })
   } catch (error) {
@@ -1251,13 +1260,18 @@ router.get('/admin/list', requireAdmin, async (req, res) => {
     await cleanupOrphanedAssistantData(pool, ASSISTANT_ROLE).catch((e) => {
       console.warn('清理残留助教数据失败:', e.message)
     })
+    await cleanupAssignmentsForRetiredStudents(pool).catch((e) => {
+      console.warn('清理已退队学员归属失败:', e.message)
+    })
     const [rows] = await pool.query(
       `SELECT m.id, m.nickname, m.qq, m.stage_role, m.avatar, m.status,
               m.is_assistant, m.is_ziye_assistant, m.screen_share_enabled, m.screen_share_quota, m.screen_share_used,
               m.guest_code_max,
               ap.permissions_json,
               (SELECT COUNT(*) FROM assistant_student_assignments a
-               WHERE a.assistant_member_id = m.id AND a.status = '已通过') AS student_count
+               INNER JOIN members sm ON sm.id = a.student_member_id
+               WHERE a.assistant_member_id = m.id AND a.status = '已通过'
+                 AND sm.status != '已退队') AS student_count
        FROM members m
        LEFT JOIN assistant_permissions ap ON ap.assistant_member_id = m.id
        WHERE m.status != '已退队'
@@ -1381,6 +1395,13 @@ router.post('/admin/assignments', requireAdmin, async (req, res) => {
     )
     if (!asst || !isZiyeAssistantMember(asst)) {
       return res.status(400).json({ success: false, message: '助教不存在' })
+    }
+    const [[student]] = await pool.query(
+      'SELECT id, status FROM members WHERE id = ?',
+      [studentId]
+    )
+    if (!student || student.status === '已退队') {
+      return res.status(404).json({ success: false, message: '学员不存在或已退队' })
     }
 
     const [existing] = await pool.query(
@@ -1969,16 +1990,18 @@ router.get('/admin/assignments-by-assistant/:id', requireAdmin, async (req, res)
     const [rows] = await pool.query(
       `SELECT a.*, m.nickname AS student_name, m.qq AS student_qq, m.stage_role, m.avatar
        FROM assistant_student_assignments a
-       LEFT JOIN members m ON m.id = a.student_member_id
+       INNER JOIN members m ON m.id = a.student_member_id
        WHERE a.assistant_member_id = ? AND a.status IN ('已通过', '待审批')
+         AND m.status != '已退队'
        ORDER BY a.status, a.updated_at DESC`,
       [assistantId]
     )
     const [daily] = await pool.query(
       `SELECT d.*, m.nickname AS student_name, m.qq AS student_qq, m.stage_role, m.avatar
        FROM assistant_daily_assignments d
-       LEFT JOIN members m ON m.id = d.student_member_id
+       INNER JOIN members m ON m.id = d.student_member_id
        WHERE d.assistant_member_id = ? AND d.assign_date = ?
+         AND m.status != '已退队'
        ORDER BY d.created_at DESC`,
       [assistantId, today]
     )

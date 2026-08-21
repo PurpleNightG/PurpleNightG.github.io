@@ -2,6 +2,7 @@ import express from 'express'
 import { pool } from '../config/database.js'
 import { ensurePhase3ReachedAt } from '../utils/attendanceReminder.js'
 import { purgeArchivedMember } from '../utils/purgeMember.js'
+import { releaseAssignmentsForStudent } from '../utils/clearAssistantData.js'
 import bcrypt from 'bcryptjs'
 import { toMySQLDate } from '../utils/date.js'
 import { authenticateRequest } from '../utils/authGate.js'
@@ -485,7 +486,7 @@ router.put('/:id', async (req, res) => {
     
     // 检查成员是否存在
     const [existing] = await pool.query(
-      'SELECT id, stage_role, last_training_date FROM members WHERE id = ?',
+      'SELECT id, stage_role, last_training_date, status FROM members WHERE id = ?',
       [id]
     )
     
@@ -497,6 +498,7 @@ router.put('/:id', async (req, res) => {
     }
 
     const prevTrainingDate = toMySQLDate(existing[0].last_training_date)
+    const prevStatus = existing[0].status
 
     const hasPhase3Field = Object.prototype.hasOwnProperty.call(req.body, 'phase3_reached_at')
     
@@ -554,6 +556,15 @@ router.put('/:id', async (req, res) => {
     // 阶段升到三期及以上时自动补首次达三期日；若本次已显式提交该字段则尊重管理员设置
     if (stage_role && !hasPhase3Field) {
       await ensurePhase3ReachedAt(pool, id, stage_role)
+    }
+
+    // 新设为已退队：解除助教学员归属（档案仍保留）
+    if (status === '已退队' && prevStatus !== '已退队') {
+      await releaseAssignmentsForStudent(pool, id, {
+        adminId: req.admin?.id || null,
+      }).catch((e) => {
+        console.warn('成员退队后解除助教归属失败:', e.message)
+      })
     }
 
     // 设为「紫夜助教」阶段时同步开启助教身份；改为其他阶段不自动取消（可与尖兵并存）

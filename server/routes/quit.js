@@ -1,5 +1,6 @@
 import express from 'express'
 import { pool } from '../config/database.js'
+import { releaseAssignmentsForStudent } from '../utils/clearAssistantData.js'
 
 const router = express.Router()
 
@@ -168,12 +169,17 @@ router.put('/:id/approve', async (req, res) => {
       id
     ])
     
-    // 如果批准，更新成员状态为已退队
+    // 如果批准，更新成员状态为已退队，并解除助教归属
     if (status === '已批准') {
       await pool.query(
         'UPDATE members SET status = ? WHERE id = ?',
         ['已退队', approval[0].member_id]
       )
+      await releaseAssignmentsForStudent(pool, approval[0].member_id, {
+        adminId: approver_id || null,
+      }).catch((e) => {
+        console.warn('退队批准后解除助教归属失败:', e.message)
+      })
     }
     
     res.json({

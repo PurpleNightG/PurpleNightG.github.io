@@ -2,8 +2,8 @@
  * 管理端智能助手（智谱 GLM，工具调用可操作/查询管理系统）
  * 环境变量：
  *   ZHIPU_API_KEY   必填才可用
- *   ZHIPU_MODEL            默认 glm-4.5-flash（优先）
- *   ZHIPU_FALLBACK_MODEL   过载降级链，逗号分隔，默认 glm-4.7-flash,glm-4-flash
+ *   ZHIPU_MODEL            默认 glm-4-flash（优先）
+ *   ZHIPU_FALLBACK_MODEL   过载降级链，逗号分隔，默认 glm-4.5-flash,glm-4.7-flash
  */
 import express from 'express'
 import { pool } from '../config/database.js'
@@ -11,6 +11,7 @@ import { requireAdmin } from '../utils/authGate.js'
 import { toMySQLDate, parseShanghaiDateTime } from '../utils/date.js'
 import {
   buildActivitySummary,
+  buildDayActivitySummary,
   shanghaiToday,
   getOrCreateTodayDay,
   regenerateCode,
@@ -39,17 +40,24 @@ import {
   buildSatisfactionSummary,
   buildSurveyAiSummary,
 } from '../utils/surveyHelpers.js'
+import { releaseAssignmentsForStudent } from '../utils/clearAssistantData.js'
 
 const router = express.Router()
 
 const ACTIVITY_REPORT_KEY = 'admin_ai_activity_report'
 
+function activityReportSettingKey(dateYmd) {
+  const d = toMySQLDate(dateYmd) || shanghaiToday()
+  return `admin_ai_activity_report_${d}`
+}
+
 function surveyReportSettingKey(surveyId) {
   return `admin_ai_survey_report_${Number(surveyId)}`
 }
 
-async function readStoredActivityReport() {
-  const row = await getSetting(ACTIVITY_REPORT_KEY, null)
+async function readStoredActivityReport(dateYmd) {
+  const key = dateYmd ? activityReportSettingKey(dateYmd) : ACTIVITY_REPORT_KEY
+  const row = await getSetting(key, null)
   if (!row?.setting_value) return null
   try {
     const parsed = JSON.parse(row.setting_value)
@@ -61,11 +69,12 @@ async function readStoredActivityReport() {
   }
 }
 
-async function writeStoredActivityReport(payload) {
+async function writeStoredActivityReport(dateYmd, payload) {
+  const d = toMySQLDate(dateYmd) || shanghaiToday()
   await upsertSetting(
-    ACTIVITY_REPORT_KEY,
+    activityReportSettingKey(d),
     JSON.stringify(payload),
-    '管理端 AI 活跃度总结（单条覆盖保存）'
+    `管理端 AI 签到日总结 ${d}`
   )
 }
 
@@ -90,10 +99,28 @@ async function writeStoredSurveyReport(surveyId, payload) {
   )
 }
 
-/** 签到数据指纹：有人签到 / 代签线索变化时与缓存比对，自动重生成 */
+/** 单日签到总结指纹 */
+function dayActivityFingerprint(summary) {
+  if (!summary) return ''
+  return [
+    'day-v1',
+    summary.focus_date,
+    summary.has_task ? 1 : 0,
+    summary.task_status || '',
+    summary.checked_count ?? -1,
+    summary.self_count ?? 0,
+    summary.proxy_count ?? 0,
+    summary.ip_change_suspect_count ?? 0,
+    (summary.ip_change_suspect_names || []).join(','),
+    (summary.proxy_member_names || []).join(','),
+  ].join('|')
+}
+
+/** 兼容旧的 14 日窗口工具指纹 */
 function activityFingerprint(summary) {
   if (!summary) return ''
   return [
+    'v3',
     summary.today,
     summary.window_days,
     summary.checkin_total,
@@ -101,7 +128,7 @@ function activityFingerprint(summary) {
     summary.checkin_days_with_records,
     summary.checkin_self,
     summary.checkin_proxy,
-    summary.today_checkin?.checked_count ?? -1,
+    summary.today_checked_count ?? summary.today_checkin?.checked_count ?? -1,
     summary.today_checkin?.status ?? '',
     summary.ip_change_suspect_count ?? 0,
     (summary.ip_change_suspect_names || []).join(','),
@@ -275,11 +302,11 @@ async function upsertTrainingCustomTimeout(memberId, timeoutValue) {
 
 const ZHIPU_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions'
 
-/** 调用链：优先 4.5 → 4.7 → 4-flash（过载时依次降级） */
+/** 调用链：优先 4-flash → 4.5 → 4.7（过载时依次降级） */
 function modelChain() {
-  const primary = String(process.env.ZHIPU_MODEL || 'glm-4.5-flash').trim()
+  const primary = String(process.env.ZHIPU_MODEL || 'glm-4-flash').trim()
   const fbRaw = String(
-    process.env.ZHIPU_FALLBACK_MODEL || 'glm-4.7-flash,glm-4-flash'
+    process.env.ZHIPU_FALLBACK_MODEL || 'glm-4.5-flash,glm-4.7-flash'
   )
   const fallbacks = fbRaw
     .split(/[,，\s]+/)
@@ -290,12 +317,12 @@ function modelChain() {
 }
 
 function modelName() {
-  return modelChain()[0] || 'glm-4.5-flash'
+  return modelChain()[0] || 'glm-4-flash'
 }
 
 function fallbackModelName() {
   const chain = modelChain()
-  return chain.slice(1).join(',') || 'glm-4.7-flash,glm-4-flash'
+  return chain.slice(1).join(',') || 'glm-4.5-flash,glm-4.7-flash'
 }
 
 function apiKey() {
@@ -1789,6 +1816,12 @@ async function runTool(name, args, req) {
         await pool.query('UPDATE members SET is_ziye_assistant = 1 WHERE id = ?', [memberId])
       }
 
+      if (nextStatus === '已退队' && before.status !== '已退队') {
+        await releaseAssignmentsForStudent(pool, memberId, {
+          adminId: req.admin?.id || null,
+        }).catch((e) => console.warn('AI 退队解除归属失败:', e.message))
+      }
+
       const [[after]] = await pool.query(
         `SELECT id, nickname, status, stage_role, remarks, is_ziye_assistant FROM members WHERE id = ?`,
         [memberId]
@@ -2531,6 +2564,9 @@ async function runTool(name, args, req) {
         )
         if (action === 'approve') {
           await pool.query(`UPDATE members SET status = '已退队' WHERE id = ?`, [row.member_id])
+          await releaseAssignmentsForStudent(pool, row.member_id, {
+            adminId: actor.id || null,
+          }).catch((e) => console.warn('AI 退队批准解除归属失败:', e.message))
         } else {
           await pool.query(
             `UPDATE members SET status = '正常' WHERE id = ? AND status != '请假中'`,
@@ -2706,6 +2742,11 @@ async function runTool(name, args, req) {
         await pool.query(`UPDATE members SET ${sets.join(', ')} WHERE id = ?`, vals)
         if (nextStage === '紫夜助教') {
           await pool.query(`UPDATE members SET is_ziye_assistant = 1 WHERE id = ?`, [mid])
+        }
+        if (nextStatus === '已退队' && before.status !== '已退队') {
+          await releaseAssignmentsForStudent(pool, mid, {
+            adminId: req.admin?.id || null,
+          }).catch((e) => console.warn('AI 批量退队解除归属失败:', e.message))
         }
         updated.push({
           member_id: mid,
@@ -3731,21 +3772,24 @@ router.post('/chat-stream', requireAdmin, async (req, res) => {
   }
 })
 
-/** 一键活跃度总结：数据未变读缓存；签到变化或 ?refresh=1 时重新生成并覆盖 */
+/**
+ * 按日签到总结：?date=YYYY-MM-DD（默认上海今日）。
+ * 每天独立缓存；签到人数变化或 ?refresh=1 时重生成。
+ */
 router.get('/activity-report', requireAdmin, async (req, res) => {
   try {
-    const days = Number(req.query.days) || 14
+    const focusDate = toMySQLDate(req.query.date) || shanghaiToday()
     const forceRefresh =
       req.query.refresh === '1' ||
       req.query.refresh === 'true' ||
       req.query.force === '1' ||
       req.query.force === 'true'
 
-    const summary = await buildActivitySummary({ days })
-    const fingerprint = activityFingerprint(summary)
+    const summary = await buildDayActivitySummary(focusDate)
+    const fingerprint = dayActivityFingerprint(summary)
 
     if (!forceRefresh) {
-      const cached = await readStoredActivityReport()
+      const cached = await readStoredActivityReport(focusDate)
       if (cached?.narrative && cached.fingerprint === fingerprint) {
         return res.json({
           success: true,
@@ -3755,13 +3799,18 @@ router.get('/activity-report', requireAdmin, async (req, res) => {
             updated_at: cached.updated_at || null,
             from_cache: true,
             model: cached.model || null,
+            date: focusDate,
           },
         })
       }
     }
 
     let narrative = ''
-    if (!apiKey()) {
+    const dayLabel = summary.is_calendar_today ? `今日（${summary.focus_date}）` : summary.focus_date
+
+    if (!summary.has_task) {
+      narrative = `${dayLabel} 尚无签到任务，暂无活跃度可总结。`
+    } else if (!apiKey()) {
       const suspectBit = summary.ip_change_suspect_names?.length
         ? `网络环境变化需核实：${summary.ip_change_suspect_names.join('、')}。`
         : ''
@@ -3769,44 +3818,52 @@ router.get('/activity-report', requireAdmin, async (req, res) => {
         ? `已登记代签：${summary.proxy_member_names.join('、')}。`
         : ''
       narrative =
-        `近 ${summary.window_days} 天签到：共 ${summary.checkin_total} 人次、` +
-        `${summary.checkin_unique_members} 人到场，有签到记录的天数 ${summary.checkin_days_with_records}/` +
-        `${summary.window_days}，日均约 ${summary.checkin_avg_per_active_day} 人。` +
-        (summary.today_checkin
-          ? `今日已签 ${summary.today_checkin.checked_count} 人。`
-          : '今日尚无签到任务。') +
+        `${dayLabel} 签到：已签 ${summary.checked_count} 人` +
+        `（本人 ${summary.self_count} / 代签 ${summary.proxy_count}）` +
+        `，任务${summary.task_status === 'active' ? '进行中' : '已停止'}。` +
+        (summary.prev_day_count != null
+          ? `相对前一日 ${summary.prev_day_count} 人。`
+          : '') +
         suspectBit +
         proxyBit +
-        '（未配置 ZHIPU_API_KEY，以上为签到汇总）'
+        '（未配置 ZHIPU_API_KEY，以上为当日汇总）'
     } else {
       const data = await callZhipu(
         [
           {
             role: 'system',
             content:
-              '你是公会「签到活跃度」分析助手。活跃度只看签到参与。' +
+              '你是公会「单日签到」分析助手。只总结 focus_date 这一天，不要写成别的日期。' +
               '硬性要求：' +
-              '1) 若 ip_change_suspect_names / ip_change_suspects 非空，必须用真实昵称点名（如「某某相邻两天网络不一致，疑似代签或换设备」），禁止只说「有人/部分成员」。' +
-              '2) 若 proxy_member_names / proxy_checkins 非空，必须点名谁被代签（可带代签人 proxy_name）。' +
-              '3) 绝对不要写出任何具体 IP 或网段。' +
-              '4) 字段少就自由总结；不超过 200 字，不要用项目符号列表。',
+              '1) 人数只用 checked_count / self_count / proxy_count；可对比 prev_day_count，但须写清「前一日」。' +
+              '2) 若是日历今日可用「今日」，否则必须写具体日期 focus_date。' +
+              '3) ip_change_suspect_names / proxy_member_names 非空时必须点名，禁止只说「有人」。' +
+              '4) 不要写任何 IP；不超过 200 字，不要用项目符号列表。',
           },
-          { role: 'user', content: JSON.stringify(summary) },
+          {
+            role: 'user',
+            content:
+              `请总结 ${summary.focus_date} 的签到（已签 ${summary.checked_count} 人）：\n` +
+              JSON.stringify(summary),
+          },
         ],
         undefined
       )
-      narrative = data?.choices?.[0]?.message?.content || ''
+      narrative = String(data?.choices?.[0]?.message?.content || '').trim()
+      if (!narrative) {
+        narrative = `${dayLabel} 已签 ${summary.checked_count} 人（本人 ${summary.self_count} / 代签 ${summary.proxy_count}）。`
+      }
     }
 
     const payload = {
       narrative,
       summary,
-      days,
       fingerprint,
+      date: focusDate,
       updated_at: new Date().toISOString(),
       model: activeModelName(),
     }
-    await writeStoredActivityReport(payload)
+    await writeStoredActivityReport(focusDate, payload)
 
     res.json({
       success: true,
@@ -3816,6 +3873,7 @@ router.get('/activity-report', requireAdmin, async (req, res) => {
         updated_at: payload.updated_at,
         from_cache: false,
         model: payload.model,
+        date: focusDate,
       },
     })
   } catch (e) {

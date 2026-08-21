@@ -4,7 +4,7 @@ import { surveyAPI } from '../utils/api'
 import { toast } from '../utils/toast'
 import { isFieldVisible, NOT_ATTENDED } from '../utils/surveyHelpers'
 import { useSurveyPending } from '../contexts/SurveyPendingContext'
-import { formatDateTime } from '../utils/dateFormat'
+import { formatDateTime, getTodayDateString, parseShanghaiDateTime } from '../utils/dateFormat'
 import PageSkeleton from '../components/Skeleton'
 import {
   Loader2,
@@ -104,6 +104,21 @@ function clearStoredClaim(surveyId: number) {
   } catch {
     /* ignore */
   }
+}
+
+/** 截止时刻对应的上海日历日 YYYY-MM-DD */
+function endDateShanghai(endAt: string | null | undefined): string | null {
+  if (!endAt) return null
+  const m = String(endAt).trim().match(/^(\d{4}-\d{2}-\d{2})/)
+  if (m) return m[1]
+  const d = parseShanghaiDateTime(endAt)
+  if (!d) return null
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai' }).format(d)
+}
+
+/** 仅截止当日提醒，隔日不再顶栏轰炸 */
+function isExpiredToday(s: SurveyListItem): boolean {
+  return s.my_status === 'ended' && endDateShanghai(s.end_at) === getTodayDateString()
 }
 
 export default function StudentSurveys() {
@@ -645,6 +660,27 @@ export default function StudentSurveys() {
     )
   }
 
+  const expiredToday = list.filter(isExpiredToday)
+  const fullSurveys = list.filter((s) => s.my_status === 'full')
+  const expiredTitles = expiredToday.map((s) => s.title)
+  const fullTitles = fullSurveys.map((s) => s.title)
+  const expiredSummary =
+    expiredTitles.length === 1
+      ? `「${expiredTitles[0]}」今日已过期，无法再填写`
+      : expiredTitles.length > 1
+        ? `今日 ${expiredTitles.length} 份问卷已过期：${expiredTitles.slice(0, 2).join('、')}${
+            expiredTitles.length > 2 ? ` 等${expiredTitles.length}份` : ''
+          }`
+        : ''
+  const fullSummary =
+    fullTitles.length === 1
+      ? `「${fullTitles[0]}」填写人数已达上限`
+      : fullTitles.length > 1
+        ? `${fullTitles.length} 份问卷人数已满：${fullTitles.slice(0, 2).join('、')}${
+            fullTitles.length > 2 ? ` 等${fullTitles.length}份` : ''
+          }`
+        : ''
+
   return (
     <div className="p-6 space-y-4">
       <div>
@@ -654,22 +690,20 @@ export default function StudentSurveys() {
         <p className="text-sm text-gray-400 mt-1">参与满意度调查与其它问卷</p>
       </div>
 
-      {list.some((s) => s.my_status === 'ended') && (
-        <div className="student-glass-chip student-glass-chip--yellow px-4 py-3 flex gap-3 text-sm text-amber-100">
-          <AlertTriangle className="text-amber-400 shrink-0" size={18} />
-          <span>
-            以下问卷已过期，无法再填写：
-            {list.filter((s) => s.my_status === 'ended').map((s) => s.title).join('、')}
+      {expiredToday.length > 0 && (
+        <div className="student-glass-chip student-glass-chip--yellow px-3 py-2 flex items-center gap-2 text-sm text-amber-100">
+          <AlertTriangle className="text-amber-400 shrink-0" size={16} />
+          <span className="min-w-0 flex-1 truncate" title={expiredTitles.join('、')}>
+            {expiredSummary}
           </span>
         </div>
       )}
 
-      {list.some((s) => s.my_status === 'full') && (
-        <div className="student-glass-chip student-glass-chip--pink px-4 py-3 flex gap-3 text-sm text-rose-100">
-          <AlertTriangle className="text-rose-400 shrink-0" size={18} />
-          <span>
-            以下问卷填写人数已达上限：
-            {list.filter((s) => s.my_status === 'full').map((s) => s.title).join('、')}
+      {fullSurveys.length > 0 && (
+        <div className="student-glass-chip student-glass-chip--pink px-3 py-2 flex items-center gap-2 text-sm text-rose-100">
+          <AlertTriangle className="text-rose-400 shrink-0" size={16} />
+          <span className="min-w-0 flex-1 truncate" title={fullTitles.join('、')}>
+            {fullSummary}
           </span>
         </div>
       )}

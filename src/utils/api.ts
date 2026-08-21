@@ -1875,10 +1875,17 @@ export const adminAiAPI = {
       }
     }
   },
-  activityReport: (days = 14, refresh = false) =>
-    request(
-      `/admin-ai/activity-report?days=${days}${refresh ? '&refresh=1' : ''}`
-    ),
+  activityReport: (dateOrDays: string | number = '', refresh = false) => {
+    const params = new URLSearchParams()
+    if (typeof dateOrDays === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateOrDays)) {
+      params.set('date', dateOrDays)
+    } else if (typeof dateOrDays === 'number' && dateOrDays > 0) {
+      params.set('days', String(dateOrDays))
+    }
+    if (refresh) params.set('refresh', '1')
+    const q = params.toString()
+    return request(`/admin-ai/activity-report${q ? `?${q}` : ''}`)
+  },
   /** 单张问卷结果总结：服务端按问卷缓存，无手动刷新 */
   surveyReport: (surveyId: number) =>
     request(`/admin-ai/survey-report?survey_id=${Number(surveyId)}`),

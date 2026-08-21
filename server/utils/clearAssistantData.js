@@ -1,5 +1,6 @@
 /**
  * 撤销助教时：清除该成员作为助教产生的全部归属与申请数据。
+ * 学员退队时：解除其作为学员的归属关系。
  */
 
 async function safeExec(connOrPool, sql, params = []) {
@@ -44,6 +45,51 @@ export async function clearAssistantRoleData(pool, assistantMemberId) {
   } finally {
     conn.release()
   }
+}
+
+/**
+ * 学员退队：解除长期归属（标为已解除）并删除当日临时分配。
+ * 不删成员档案；恢复进队后需重新分配助教。
+ * @param {import('mysql2/promise').Pool|import('mysql2/promise').PoolConnection} poolOrConn
+ * @param {number} studentMemberId
+ * @param {{ adminId?: number|null }} [opts]
+ */
+export async function releaseAssignmentsForStudent(poolOrConn, studentMemberId, opts = {}) {
+  const id = Number(studentMemberId)
+  if (!id) return
+  const adminId = opts.adminId != null ? Number(opts.adminId) : null
+
+  await safeExec(
+    poolOrConn,
+    `UPDATE assistant_student_assignments
+     SET status = '已解除',
+         reviewed_by_admin_id = COALESCE(?, reviewed_by_admin_id),
+         reviewed_at = NOW(),
+         hidden_from_approval = 0
+     WHERE student_member_id = ? AND status IN ('已通过', '待审批')`,
+    [adminId, id]
+  )
+  await safeExec(poolOrConn, 'DELETE FROM assistant_daily_assignments WHERE student_member_id = ?', [id])
+}
+
+/**
+ * 修复历史：已退队学员仍挂着有效归属的，一并解除
+ * @param {import('mysql2/promise').Pool} pool
+ */
+export async function cleanupAssignmentsForRetiredStudents(pool) {
+  await safeExec(
+    pool,
+    `UPDATE assistant_student_assignments a
+     INNER JOIN members m ON m.id = a.student_member_id
+     SET a.status = '已解除', a.reviewed_at = NOW(), a.hidden_from_approval = 0
+     WHERE m.status = '已退队' AND a.status IN ('已通过', '待审批')`
+  )
+  await safeExec(
+    pool,
+    `DELETE d FROM assistant_daily_assignments d
+     INNER JOIN members m ON m.id = d.student_member_id
+     WHERE m.status = '已退队'`
+  )
 }
 
 /**
